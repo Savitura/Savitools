@@ -1,10 +1,17 @@
+import { SiteHeader } from '@/components/layout/site-header';
+import { ComposerTool } from '@/components/tools/other-tools';
+import { ToolPageShell } from '@/components/tools/tool-page-shell';
+
 export default function ComposerPage() {
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
-      <h1 className="text-xl font-semibold mb-2">Transaction Composer</h1>
-      <p className="text-muted-foreground text-sm">
-        Visual multi-op transaction builder — implementation in progress.
-      </p>
-    </div>
+    <>
+      <SiteHeader />
+      <ToolPageShell
+        title="Transaction Composer"
+        description="Visual builder for multi-operation Stellar transactions."
+      >
+        <ComposerTool />
+      </ToolPageShell>
+    </>
   );
 }

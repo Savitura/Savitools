@@ -1,10 +1,20 @@
+import { SiteHeader } from '@/components/layout/site-header';
+import { InspectorTool } from '@/components/tools/inspector-tool';
+import { ToolPageShell } from '@/components/tools/tool-page-shell';
+import { Suspense } from 'react';
+
 export default function InspectorPage() {
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
-      <h1 className="text-xl font-semibold mb-2">Transaction Inspector</h1>
-      <p className="text-muted-foreground text-sm">
-        Decode and visualize Stellar transactions — implementation in progress.
-      </p>
-    </div>
+    <>
+      <SiteHeader />
+      <ToolPageShell
+        title="Transaction Inspector"
+        description="Decode and visualize Stellar transactions, operations, and XDR."
+      >
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+          <InspectorTool />
+        </Suspense>
+      </ToolPageShell>
+    </>
   );
 }

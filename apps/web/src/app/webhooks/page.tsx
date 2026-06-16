@@ -1,10 +1,17 @@
+import { SiteHeader } from '@/components/layout/site-header';
+import { WebhooksTool } from '@/components/tools/other-tools';
+import { ToolPageShell } from '@/components/tools/tool-page-shell';
+
 export default function WebhooksPage() {
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
-      <h1 className="text-xl font-semibold mb-2">Webhook Infrastructure</h1>
-      <p className="text-muted-foreground text-sm">
-        Manage Stellar event subscriptions with retry delivery — implementation in progress.
-      </p>
-    </div>
+    <>
+      <SiteHeader />
+      <ToolPageShell
+        title="Webhook Infrastructure"
+        description="Test CrowdPay and Fluxa webhook payloads against your endpoint."
+      >
+        <WebhooksTool />
+      </ToolPageShell>
+    </>
   );
 }
