@@ -2,6 +2,10 @@
 
 import { FormEvent, useState } from 'react';
 import { useWorkspaceState } from '@/lib/workspace-storage';
+import { SiteHeader } from '@/components/layout/site-header';
+import { SandboxTool } from '@/components/tools/sandbox-tool';
+import { ToolPageShell } from '@/components/tools/tool-page-shell';
+import { Suspense } from 'react';
 
 interface SandboxWallet {
   id: string;
@@ -21,6 +25,7 @@ function createWallet(label: string): SandboxWallet {
 
   return { id, label, publicKey };
 }
+
 
 export default function SandboxPage() {
   const { data, setData, ready, isAuthenticated } = useWorkspaceState(
@@ -102,5 +107,16 @@ export default function SandboxPage() {
         )}
       </div>
     </div>
+    <>
+      <SiteHeader />
+      <ToolPageShell
+        title="Wallet Sandbox"
+        description="Generate keypairs, fund testnet accounts, and create trustlines."
+      >
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+          <SandboxTool />
+        </Suspense>
+      </ToolPageShell>
+    </>
   );
 }
