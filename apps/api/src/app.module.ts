@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuthModule } from './modules/auth/auth.module';
+import { WorkspaceModule } from './modules/workspace/workspace.module';
 
 @Module({
   imports: [
@@ -18,6 +20,9 @@ import { AppService } from './app.service';
         logging: config.get<string>('NODE_ENV') === 'development',
       }),
     }),
+
+    AuthModule,
+    WorkspaceModule,
 
     // Feature modules — added as each is built
     // TransactionModule,

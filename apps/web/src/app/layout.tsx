@@ -1,6 +1,8 @@
 import { QuickstartWidget } from '@/components/onboarding/quickstart-widget';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { AuthProvider } from '@/lib/auth-context';
+import { SiteHeader } from '@/components/site-header';
 import './globals.css';
 
 const geistSans = Geist({
@@ -27,6 +29,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <AuthProvider>
+          <SiteHeader />
+          {children}
+        </AuthProvider>
         {children}
         <QuickstartWidget />
       </body>
