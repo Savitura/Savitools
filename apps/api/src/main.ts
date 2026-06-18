@@ -4,6 +4,7 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -13,6 +14,7 @@ async function bootstrap() {
   );
 
   await app.register(cookie);
+  await app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
 
   const config = app.get(ConfigService);
   const port = config.get<number>('API_PORT', 3001);
