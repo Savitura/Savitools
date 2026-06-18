@@ -90,3 +90,121 @@ export async function saveWorkspace(tool: WorkspaceTool, data: Record<string, un
     },
   );
 }
+
+/* ─── Contracts ─────────────────────────────────────────────────────────── */
+
+export interface DeployedContract {
+  contractId: string;
+  wasmHash: string;
+  deployedAt: string;
+  network: string;
+}
+
+interface DeployResult {
+  contractId: string;
+  wasmHash: string;
+  txHash: string;
+}
+
+interface InvokeResult {
+  result: unknown;
+  txHash: string;
+}
+
+interface ContractInfo {
+  contractId: string;
+  wasmHash: string;
+  network: string;
+}
+
+async function apiFetchFormData<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_URL}/v1${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  return parseJson<T>(response);
+}
+
+export async function deployContract(formData: FormData) {
+  return apiFetchFormData<DeployResult>('/contracts/deploy', formData);
+}
+
+export async function invokeContract(
+  contractId: string,
+  functionName: string,
+  args: unknown[],
+) {
+  return apiFetch<InvokeResult>(`/contracts/${contractId}/invoke`, {
+    method: 'POST',
+    body: JSON.stringify({ functionName, args }),
+  });
+}
+
+export async function getContractInfo(contractId: string) {
+  return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
+// ─── Playground ──────────────────────────────────────────────────────────────────
+
+export type PlaygroundProvider = 'fluxa' | 'crowdpay';
+
+export interface PlaygroundApiKey {
+  id: string;
+  label: string;
+  provider: PlaygroundProvider;
+  maskedKey: string;
+  createdAt: string;
+}
+
+export interface PlaygroundProxyRequest {
+  provider: PlaygroundProvider;
+  method: string;
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+export interface PlaygroundProxyResult {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  latencyMs: number;
+}
+
+export async function fetchPlaygroundSpec(provider: PlaygroundProvider) {
+  return apiFetch<{ provider: PlaygroundProvider; spec: Record<string, unknown> }>(
+    `/playground/spec/${provider}`,
+  );
+}
+
+export async function proxyPlaygroundRequest(dto: PlaygroundProxyRequest) {
+  return apiFetch<PlaygroundProxyResult>('/playground/proxy', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function savePlaygroundApiKey(
+  provider: PlaygroundProvider,
+  label: string,
+  apiKey: string,
+) {
+  return apiFetch<{ id: string; label: string; provider: PlaygroundProvider }>(
+    '/playground/keys',
+    {
+      method: 'POST',
+      body: JSON.stringify({ provider, label, apiKey }),
+    },
+  );
+}
+
+export async function listPlaygroundApiKeys() {
+  return apiFetch<PlaygroundApiKey[]>('/playground/keys');
+}
+
+export async function deletePlaygroundApiKey(id: string) {
+  return apiFetch<{ success: boolean }>(`/playground/keys/${id}`, {
+    method: 'DELETE',
+  });
+}

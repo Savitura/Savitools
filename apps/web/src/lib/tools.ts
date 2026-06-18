@@ -24,9 +24,21 @@ export const tools = [
     status: 'MVP' as const,
   },
   {
+    href: '/playground',
+    label: 'Playground',
+    description: 'Explore and test the Fluxa and CrowdPay APIs interactively.',
+    status: 'MVP' as const,
+  },
+  {
     href: '/webhooks',
     label: 'Webhooks',
     description: 'Test CrowdPay and Fluxa webhook payloads against your endpoint.',
+    status: 'MVP' as const,
+  },
+  {
+    href: '/contracts',
+    label: 'Contracts',
+    description: 'Deploy Soroban smart contracts to testnet from your browser.',
     status: 'MVP' as const,
   },
   {
