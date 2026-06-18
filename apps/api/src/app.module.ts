@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
+import { ContractsModule } from './modules/contracts/contracts.module';
 import { NetworkModule } from './modules/network/network.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { NetworkModule } from './modules/network/network.module';
     AuthModule,
     PlaygroundModule,
     WorkspaceModule,
+    ContractsModule,
     NetworkModule,
 
     // Feature modules — added as each is built

@@ -91,6 +91,59 @@ export async function saveWorkspace(tool: WorkspaceTool, data: Record<string, un
   );
 }
 
+/* ─── Contracts ─────────────────────────────────────────────────────────── */
+
+export interface DeployedContract {
+  contractId: string;
+  wasmHash: string;
+  deployedAt: string;
+  network: string;
+}
+
+interface DeployResult {
+  contractId: string;
+  wasmHash: string;
+  txHash: string;
+}
+
+interface InvokeResult {
+  result: unknown;
+  txHash: string;
+}
+
+interface ContractInfo {
+  contractId: string;
+  wasmHash: string;
+  network: string;
+}
+
+async function apiFetchFormData<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${API_URL}/v1${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  return parseJson<T>(response);
+}
+
+export async function deployContract(formData: FormData) {
+  return apiFetchFormData<DeployResult>('/contracts/deploy', formData);
+}
+
+export async function invokeContract(
+  contractId: string,
+  functionName: string,
+  args: unknown[],
+) {
+  return apiFetch<InvokeResult>(`/contracts/${contractId}/invoke`, {
+    method: 'POST',
+    body: JSON.stringify({ functionName, args }),
+  });
+}
+
+export async function getContractInfo(contractId: string) {
+  return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
 // ─── Playground ──────────────────────────────────────────────────────────────────
 
 export type PlaygroundProvider = 'fluxa' | 'crowdpay';
