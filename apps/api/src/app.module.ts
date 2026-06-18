@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
+import { ContractsModule } from './modules/contracts/contracts.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WorkspaceModule } from './modules/workspace/workspace.module';
 
     AuthModule,
     WorkspaceModule,
+    ContractsModule,
 
     // Feature modules — added as each is built
     // TransactionModule,

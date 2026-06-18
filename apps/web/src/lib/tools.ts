@@ -30,6 +30,12 @@ export const tools = [
     status: 'MVP' as const,
   },
   {
+    href: '/contracts',
+    label: 'Contracts',
+    description: 'Deploy Soroban smart contracts to testnet from your browser.',
+    status: 'MVP' as const,
+  },
+  {
     href: '/monitor',
     label: 'Monitor',
     description: 'Watch addresses and contracts for live ledger activity.',
