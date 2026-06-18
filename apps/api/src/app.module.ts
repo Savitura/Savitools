@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
+import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { SdkgenModule } from './modules/sdkgen/sdkgen.module';
 
@@ -23,6 +24,7 @@ import { SdkgenModule } from './modules/sdkgen/sdkgen.module';
     }),
 
     AuthModule,
+    PlaygroundModule,
     WorkspaceModule,
     SdkgenModule,
 
