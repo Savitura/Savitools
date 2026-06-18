@@ -5,6 +5,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { ApiKey } from '../../playground/entities/api-key.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { Workspace } from '../../workspace/entities/workspace.entity';
 
@@ -30,4 +31,7 @@ export class User {
 
   @OneToMany(() => Workspace, (workspace) => workspace.user)
   workspaces!: Workspace[];
+
+  @OneToMany(() => ApiKey, (apiKey) => apiKey.user)
+  apiKeys!: ApiKey[];
 }

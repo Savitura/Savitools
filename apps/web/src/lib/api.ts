@@ -144,4 +144,67 @@ export async function invokeContract(
 
 export async function getContractInfo(contractId: string) {
   return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
+// ─── Playground ──────────────────────────────────────────────────────────────────
+
+export type PlaygroundProvider = 'fluxa' | 'crowdpay';
+
+export interface PlaygroundApiKey {
+  id: string;
+  label: string;
+  provider: PlaygroundProvider;
+  maskedKey: string;
+  createdAt: string;
+}
+
+export interface PlaygroundProxyRequest {
+  provider: PlaygroundProvider;
+  method: string;
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
+export interface PlaygroundProxyResult {
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  latencyMs: number;
+}
+
+export async function fetchPlaygroundSpec(provider: PlaygroundProvider) {
+  return apiFetch<{ provider: PlaygroundProvider; spec: Record<string, unknown> }>(
+    `/playground/spec/${provider}`,
+  );
+}
+
+export async function proxyPlaygroundRequest(dto: PlaygroundProxyRequest) {
+  return apiFetch<PlaygroundProxyResult>('/playground/proxy', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function savePlaygroundApiKey(
+  provider: PlaygroundProvider,
+  label: string,
+  apiKey: string,
+) {
+  return apiFetch<{ id: string; label: string; provider: PlaygroundProvider }>(
+    '/playground/keys',
+    {
+      method: 'POST',
+      body: JSON.stringify({ provider, label, apiKey }),
+    },
+  );
+}
+
+export async function listPlaygroundApiKeys() {
+  return apiFetch<PlaygroundApiKey[]>('/playground/keys');
+}
+
+export async function deletePlaygroundApiKey(id: string) {
+  return apiFetch<{ success: boolean }>(`/playground/keys/${id}`, {
+    method: 'DELETE',
+  });
 }
