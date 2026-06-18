@@ -33,7 +33,6 @@ export default function RootLayout({
           <SiteHeader />
           {children}
         </AuthProvider>
-        {children}
         <QuickstartWidget />
       </body>
     </html>
