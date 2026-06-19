@@ -1,0 +1,218 @@
+export interface WebhookTemplate {
+  provider: 'crowdpay' | 'fluxa';
+  eventType: string;
+  description: string;
+  schema: Record<string, string>;
+  samplePayload: Record<string, unknown>;
+}
+
+export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
+  {
+    provider: 'crowdpay',
+    eventType: 'campaign.funded',
+    description: 'Fired when a CrowdPay campaign reaches its funding goal',
+    schema: {
+      campaignId: 'Unique campaign identifier',
+      title: 'Campaign title',
+      goalAmount: 'Funding goal in stroops',
+      fundedAmount: 'Total amount funded in stroops',
+      fundedAt: 'ISO 8601 timestamp of funding completion',
+    },
+    samplePayload: {
+      event: 'campaign.funded',
+      timestamp: '2026-01-15T14:32:00Z',
+      data: {
+        campaignId: 'cp_campaign_a1b2c3d4',
+        title: 'Stellar Community Fund Grant',
+        goalAmount: '10000000000',
+        fundedAmount: '10000000000',
+        asset: { code: 'XLM', issuer: null },
+        fundedAt: '2026-01-15T14:32:00Z',
+        creatorAddress: 'GAKSG...EXAMPLE',
+      },
+    },
+  },
+  {
+    provider: 'crowdpay',
+    eventType: 'campaign.contribution_received',
+    description: 'Fired when a contribution is confirmed on a campaign',
+    schema: {
+      campaignId: 'Unique campaign identifier',
+      contributionId: 'Unique contribution identifier',
+      amount: 'Contribution amount in stroops',
+      contributorAddress: 'Stellar address of the contributor',
+      receivedAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'campaign.contribution_received',
+      timestamp: '2026-01-15T12:10:00Z',
+      data: {
+        campaignId: 'cp_campaign_a1b2c3d4',
+        contributionId: 'cp_contrib_x9y8z7',
+        amount: '5000000000',
+        asset: { code: 'XLM', issuer: null },
+        contributorAddress: 'GB6N...EXAMPLE',
+        memo: 'Happy to support!',
+        receivedAt: '2026-01-15T12:10:00Z',
+      },
+    },
+  },
+  {
+    provider: 'crowdpay',
+    eventType: 'campaign.withdrawn',
+    description: 'Fired when the campaign creator withdraws funded assets',
+    schema: {
+      campaignId: 'Unique campaign identifier',
+      withdrawalId: 'Unique withdrawal identifier',
+      amount: 'Withdrawal amount in stroops',
+      destinationAddress: 'Stellar address receiving the withdrawal',
+      withdrawnAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'campaign.withdrawn',
+      timestamp: '2026-01-20T09:00:00Z',
+      data: {
+        campaignId: 'cp_campaign_a1b2c3d4',
+        withdrawalId: 'cp_wd_m3n4o5',
+        amount: '10000000000',
+        asset: { code: 'XLM', issuer: null },
+        destinationAddress: 'GAKSG...EXAMPLE',
+        withdrawnAt: '2026-01-20T09:00:00Z',
+      },
+    },
+  },
+  {
+    provider: 'crowdpay',
+    eventType: 'campaign.expired',
+    description: 'Fired when a campaign reaches its deadline without meeting the goal',
+    schema: {
+      campaignId: 'Unique campaign identifier',
+      title: 'Campaign title',
+      goalAmount: 'Funding goal in stroops',
+      raisedAmount: 'Total raised in stroops',
+      expiredAt: 'ISO 8601 timestamp of expiration',
+    },
+    samplePayload: {
+      event: 'campaign.expired',
+      timestamp: '2026-02-01T00:00:00Z',
+      data: {
+        campaignId: 'cp_campaign_e6f7g8',
+        title: 'Experimental Stellar DEX Tool',
+        goalAmount: '50000000000',
+        raisedAmount: '12000000000',
+        asset: { code: 'XLM', issuer: null },
+        expiredAt: '2026-02-01T00:00:00Z',
+      },
+    },
+  },
+  {
+    provider: 'fluxa',
+    eventType: 'swap.completed',
+    description: 'Fired when a swap execution completes successfully',
+    schema: {
+      swapId: 'Unique swap identifier',
+      sourceAsset: 'Asset being sold',
+      destAsset: 'Asset being bought',
+      sourceAmount: 'Amount of source asset',
+      destAmount: 'Amount of destination asset',
+      completedAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'swap.completed',
+      timestamp: '2026-01-15T16:45:00Z',
+      data: {
+        swapId: 'fx_swap_h9i0j1',
+        sourceAsset: { type: 'native', code: 'XLM' },
+        destAsset: { type: 'credit_alphanum4', code: 'USDC', issuer: 'GA5Z...EXAMPLE' },
+        sourceAmount: '2500000000',
+        destAmount: '32000000',
+        priceImpact: '0.12',
+        fee: '125000',
+        completedAt: '2026-01-15T16:45:00Z',
+        userAddress: 'GDFK...EXAMPLE',
+      },
+    },
+  },
+  {
+    provider: 'fluxa',
+    eventType: 'swap.failed',
+    description: 'Fired when a swap execution fails',
+    schema: {
+      swapId: 'Unique swap identifier',
+      sourceAsset: 'Asset being sold',
+      destAsset: 'Asset being bought',
+      errorCode: 'Machine-readable error code',
+      errorMessage: 'Human-readable error description',
+      failedAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'swap.failed',
+      timestamp: '2026-01-15T16:46:00Z',
+      data: {
+        swapId: 'fx_swap_k2l3m4',
+        sourceAsset: { type: 'native', code: 'XLM' },
+        destAsset: { type: 'credit_alphanum4', code: 'USDC', issuer: 'GA5Z...EXAMPLE' },
+        sourceAmount: '999999999999999',
+        errorCode: 'INSUFFICIENT_LIQUIDITY',
+        errorMessage: 'No path found with sufficient liquidity for the requested amount',
+        failedAt: '2026-01-15T16:46:00Z',
+        userAddress: 'GDFK...EXAMPLE',
+      },
+    },
+  },
+  {
+    provider: 'fluxa',
+    eventType: 'liquidity.added',
+    description: 'Fired when liquidity is deposited into a pool',
+    schema: {
+      poolId: 'Unique pool identifier',
+      providerAddress: 'Stellar address of the liquidity provider',
+      assetA: 'First asset in the pair',
+      assetB: 'Second asset in the pair',
+      amountA: 'Amount of asset A deposited',
+      amountB: 'Amount of asset B deposited',
+      addedAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'liquidity.added',
+      timestamp: '2026-01-16T10:20:00Z',
+      data: {
+        poolId: 'fx_pool_n5o6p7',
+        providerAddress: 'GCFD...EXAMPLE',
+        assetA: { type: 'native', code: 'XLM' },
+        assetB: { type: 'credit_alphanum4', code: 'USDC', issuer: 'GA5Z...EXAMPLE' },
+        amountA: '50000000000',
+        amountB: '640000000',
+        sharesReceived: '5656854249',
+        addedAt: '2026-01-16T10:20:00Z',
+      },
+    },
+  },
+  {
+    provider: 'fluxa',
+    eventType: 'liquidity.removed',
+    description: 'Fired when liquidity is withdrawn from a pool',
+    schema: {
+      poolId: 'Unique pool identifier',
+      providerAddress: 'Stellar address of the liquidity provider',
+      assetA: 'First asset in the pair',
+      assetB: 'Second asset in the pair',
+      shares: 'Number of pool shares burned',
+      removedAt: 'ISO 8601 timestamp',
+    },
+    samplePayload: {
+      event: 'liquidity.removed',
+      timestamp: '2026-01-17T14:00:00Z',
+      data: {
+        poolId: 'fx_pool_n5o6p7',
+        providerAddress: 'GCFD...EXAMPLE',
+        assetA: { type: 'native', code: 'XLM' },
+        assetB: { type: 'credit_alphanum4', code: 'USDC', issuer: 'GA5Z...EXAMPLE' },
+        shares: '2828427124',
+        amountA: '25000000000',
+        amountB: '320000000',
+        removedAt: '2026-01-17T14:00:00Z',
+      },
+    },
+  },
+];
