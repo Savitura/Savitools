@@ -8,6 +8,7 @@ import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { NetworkModule } from './modules/network/network.module';
+import { WebhookModule } from './modules/webhook/webhook.module';
 
 @Module({
   imports: [
@@ -29,11 +30,11 @@ import { NetworkModule } from './modules/network/network.module';
     WorkspaceModule,
     ContractsModule,
     NetworkModule,
+    WebhookModule,
 
     // Feature modules — added as each is built
     // TransactionModule,
     // WalletModule,
-    // WebhookModule,
     // SimulatorModule,
   ],
   controllers: [AppController],

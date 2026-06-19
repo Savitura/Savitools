@@ -144,7 +144,9 @@ export async function invokeContract(
 
 export async function getContractInfo(contractId: string) {
   return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
-// ─── Playground ──────────────────────────────────────────────────────────────────
+}
+
+/* ─── Playground ────────────────────────────────────────────────────────────────── */
 
 export type PlaygroundProvider = 'fluxa' | 'crowdpay';
 
@@ -207,4 +209,78 @@ export async function deletePlaygroundApiKey(id: string) {
   return apiFetch<{ success: boolean }>(`/playground/keys/${id}`, {
     method: 'DELETE',
   });
+}
+
+/* ─── Webhooks ──────────────────────────────────────────────────────────── */
+
+export interface WebhookEndpointInfo {
+  id: string;
+  url: string;
+  events: string[];
+  secret: string;
+  createdAt: string;
+}
+
+export interface WebhookDeliveryInfo {
+  id: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  signature: string;
+  responseStatus: number;
+  responseBody: string;
+  latencyMs: number;
+  createdAt: string;
+}
+
+export interface WebhookEventType {
+  type: string;
+  provider: string;
+  label: string;
+  description: string;
+  samplePayload: Record<string, unknown>;
+}
+
+export interface FireEventResult {
+  eventType: string;
+  payload: Record<string, unknown>;
+  signature: string;
+  responseStatus: number;
+  responseBody: string;
+  latencyMs: number;
+}
+
+export async function registerWebhook(url: string, events: string[]) {
+  return apiFetch<WebhookEndpointInfo>('/webhooks', {
+    method: 'POST',
+    body: JSON.stringify({ url, events }),
+  });
+}
+
+export async function listWebhooks() {
+  return apiFetch<WebhookEndpointInfo[]>('/webhooks');
+}
+
+export async function getWebhook(id: string) {
+  return apiFetch<WebhookEndpointInfo>(`/webhooks/${id}`);
+}
+
+export async function deleteWebhook(id: string) {
+  return apiFetch<{ success: boolean }>(`/webhooks/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getWebhookEventTypes() {
+  return apiFetch<WebhookEventType[]>('/webhooks/events');
+}
+
+export async function fireWebhookEvent(endpointId: string, eventType: string) {
+  return apiFetch<FireEventResult>(`/webhooks/${endpointId}/fire`, {
+    method: 'POST',
+    body: JSON.stringify({ eventType }),
+  });
+}
+
+export async function getWebhookDeliveries(endpointId: string) {
+  return apiFetch<WebhookDeliveryInfo[]>(`/webhooks/${endpointId}/deliveries`);
 }
