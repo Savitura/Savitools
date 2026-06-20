@@ -4,40 +4,8 @@ import { ToolEmptyState } from '@/components/tools/tool-empty-state';
 import { EXAMPLE_STELLAR_ADDRESS } from '@/lib/examples';
 import { useState } from 'react';
 
-export function ComposerTool() {
-  const [operations, setOperations] = useState<{ type: string; detail: string }[]>([]);
-
-  const loadExample = () => {
-    setOperations([
-      { type: 'Payment', detail: 'Send 10 XLM to a testnet address' },
-      { type: 'Change Trust', detail: 'Trust USDC on testnet' },
-    ]);
-  };
-
-  return (
-    <div>
-      {operations.length === 0 ? (
-        <ToolEmptyState
-          message="Add operations to build a multi-op Stellar transaction"
-          exampleLabel="Load sample payment + trustline"
-          onExample={loadExample}
-        />
-      ) : (
-        <div className="rounded-lg border border-border divide-y divide-border">
-          {operations.map((op, i) => (
-            <div key={i} className="p-4">
-              <p className="text-sm font-medium">{op.type}</p>
-              <p className="text-xs text-muted-foreground mt-1">{op.detail}</p>
-            </div>
-          ))}
-          <p className="p-4 text-xs text-muted-foreground">
-            Visual composer will connect to the API — implementation in progress.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
+// ComposerTool is now the full implementation — re-exported from the composer module.
+export { ComposerTool } from '@/components/tools/composer';
 
 export function WebhooksTool() {
   const [endpoint, setEndpoint] = useState('');
