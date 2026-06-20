@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
+import { MonitorModule } from './modules/monitor/monitor.module';
 import { SdkgenModule } from './modules/sdkgen/sdkgen.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { NetworkModule } from './modules/network/network.module';
@@ -30,6 +31,7 @@ import { ComposerModule } from './modules/composer/composer.module';
     AuthModule,
     PlaygroundModule,
     WorkspaceModule,
+    MonitorModule,
     SdkgenModule,
     ContractsModule,
     NetworkModule,
