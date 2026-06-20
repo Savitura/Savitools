@@ -37,6 +37,7 @@ import { ComposerModule } from './modules/composer/composer.module';
     SdkgenModule,
     ContractsModule,
     NetworkModule,
+    SimulatorModule,
     WebhookModule,
     ComposerModule,
 

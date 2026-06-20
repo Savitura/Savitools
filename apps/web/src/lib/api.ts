@@ -211,6 +211,87 @@ export async function deletePlaygroundApiKey(id: string) {
   });
 }
 
+/* ─── Simulator ──────────────────────────────────────────────────────────── */
+
+export type Direction = 'strict_send' | 'strict_receive';
+export type AssetType = 'native' | 'credit_alphanum4' | 'credit_alphanum12';
+export type NetworkChoice = 'mainnet' | 'testnet';
+
+export interface SimulatedAsset {
+  type: AssetType;
+  code?: string;
+  issuer?: string;
+  label: string;
+}
+
+export interface SimulatedPath {
+  source_asset: SimulatedAsset;
+  destination_asset: SimulatedAsset;
+  source_amount: string;
+  destination_amount: string;
+  path: SimulatedAsset[];
+  effective_rate: string;
+  estimated_fee: string;
+  recommended_slippage: number;
+  hops: number;
+}
+
+export interface FindPathsResponse {
+  paths: SimulatedPath[];
+  direction: Direction;
+}
+
+export interface FindPathsParams {
+  direction: Direction;
+  source_asset_type: AssetType;
+  source_asset_code?: string;
+  source_asset_issuer?: string;
+  amount: string;
+  destination_asset_type: AssetType;
+  destination_asset_code?: string;
+  destination_asset_issuer?: string;
+  network?: NetworkChoice;
+}
+
+export interface EstimateResult {
+  destination_min?: string;
+  send_max?: string;
+  source_amount: string;
+  destination_amount: string;
+  path: SimulatedAsset[];
+}
+
+export interface EstimateParams {
+  direction: Direction;
+  amount: string;
+  source_asset: { type: AssetType; code?: string; issuer?: string };
+  destination_asset: { type: AssetType; code?: string; issuer?: string };
+  path_assets?: Array<{ type: AssetType; code?: string; issuer?: string }>;
+  slippage_percent: number;
+  network?: NetworkChoice;
+}
+
+export async function findSimulatorPaths(params: FindPathsParams) {
+  const searchParams = new URLSearchParams();
+  searchParams.set('direction', params.direction);
+  searchParams.set('source_asset_type', params.source_asset_type);
+  searchParams.set('amount', params.amount);
+  searchParams.set('destination_asset_type', params.destination_asset_type);
+  if (params.source_asset_code) searchParams.set('source_asset_code', params.source_asset_code);
+  if (params.source_asset_issuer) searchParams.set('source_asset_issuer', params.source_asset_issuer);
+  if (params.destination_asset_code) searchParams.set('destination_asset_code', params.destination_asset_code);
+  if (params.destination_asset_issuer) searchParams.set('destination_asset_issuer', params.destination_asset_issuer);
+  if (params.network) searchParams.set('network', params.network);
+
+  return apiFetch<FindPathsResponse>(`/simulator/paths?${searchParams.toString()}`);
+}
+
+export async function estimateSlippage(params: EstimateParams) {
+  return apiFetch<EstimateResult>('/simulator/estimate', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
 /* ─── Wallet ─────────────────────────────────────────────────────────────── */
 
 export interface GenerateKeypairResult {
