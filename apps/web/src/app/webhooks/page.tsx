@@ -1,5 +1,5 @@
 import { SiteHeader } from '@/components/layout/site-header';
-import { WebhooksTool } from '@/components/tools/webhook-tool';
+import { WebhooksTool } from '@/components/tools/other-tools';
 import { ToolPageShell } from '@/components/tools/tool-page-shell';
 
 export default function WebhooksPage() {

@@ -146,7 +146,7 @@ export async function getContractInfo(contractId: string) {
   return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
 }
 
-/* ─── Playground ────────────────────────────────────────────────────────────────── */
+/* ─── Playground ─────────────────────────────────────────────────────────── */
 
 export type PlaygroundProvider = 'fluxa' | 'crowdpay';
 
@@ -211,76 +211,90 @@ export async function deletePlaygroundApiKey(id: string) {
   });
 }
 
-/* ─── Webhooks ──────────────────────────────────────────────────────────── */
+/* ─── Simulator ──────────────────────────────────────────────────────────── */
 
-export interface WebhookEndpointInfo {
-  id: string;
-  url: string;
-  events: string[];
-  secret: string;
-  createdAt: string;
+export interface PathHop {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
 }
 
-export interface WebhookDeliveryInfo {
-  id: string;
-  eventType: string;
-  payload: Record<string, unknown>;
-  signature: string;
-  responseStatus: number;
-  responseBody: string;
-  latencyMs: number;
-  createdAt: string;
+export interface SimulatedPath {
+  sourceAmount: string;
+  destinationAmount: string;
+  path: PathHop[];
+  pathLength: number;
+  exchangeRate: string;
 }
 
-export interface WebhookEventType {
-  type: string;
-  provider: string;
-  label: string;
-  description: string;
-  samplePayload: Record<string, unknown>;
+export interface SimulateStrictSendResult {
+  sourceAsset: string;
+  sourceAmount: string;
+  destAsset: string;
+  network: string;
+  mode: 'strict_send';
+  totalPathsFound: number;
+  paths: SimulatedPath[];
+  bestPath: SimulatedPath;
+  slippagePercent: string;
 }
 
-export interface FireEventResult {
-  eventType: string;
-  payload: Record<string, unknown>;
-  signature: string;
-  responseStatus: number;
-  responseBody: string;
-  latencyMs: number;
+export interface SimulateStrictReceiveResult {
+  sourceAsset: string;
+  destAsset: string;
+  destAmount: string;
+  network: string;
+  mode: 'strict_receive';
+  totalPathsFound: number;
+  paths: SimulatedPath[];
+  bestPath: SimulatedPath;
+  sourceAmountNeeded: string;
+  slippagePercent: string;
 }
 
-export async function registerWebhook(url: string, events: string[]) {
-  return apiFetch<WebhookEndpointInfo>('/webhooks', {
+export type SimulatePathResult = SimulateStrictSendResult | SimulateStrictReceiveResult;
+
+export interface SimulateFeeResult {
+  network: string;
+  operations: number;
+  baseFeeStroops: number;
+  totalFeeStroops: number;
+  totalFeeXlm: string;
+  feeChargedPercentiles: {
+    p10: string;
+    p50: string;
+    p90: string;
+    p99: string;
+  };
+  lastLedger: number;
+}
+
+export async function simulateStrictSend(dto: {
+  sourceAsset: string;
+  sourceAmount: string;
+  destAsset: string;
+  network: string;
+}) {
+  return apiFetch<SimulateStrictSendResult>('/simulator/path-send', {
     method: 'POST',
-    body: JSON.stringify({ url, events }),
+    body: JSON.stringify(dto),
   });
 }
 
-export async function listWebhooks() {
-  return apiFetch<WebhookEndpointInfo[]>('/webhooks');
-}
-
-export async function getWebhook(id: string) {
-  return apiFetch<WebhookEndpointInfo>(`/webhooks/${id}`);
-}
-
-export async function deleteWebhook(id: string) {
-  return apiFetch<{ success: boolean }>(`/webhooks/${id}`, {
-    method: 'DELETE',
-  });
-}
-
-export async function getWebhookEventTypes() {
-  return apiFetch<WebhookEventType[]>('/webhooks/events');
-}
-
-export async function fireWebhookEvent(endpointId: string, eventType: string) {
-  return apiFetch<FireEventResult>(`/webhooks/${endpointId}/fire`, {
+export async function simulateStrictReceive(dto: {
+  sourceAsset: string;
+  destAmount: string;
+  destAsset: string;
+  network: string;
+}) {
+  return apiFetch<SimulateStrictReceiveResult>('/simulator/path-receive', {
     method: 'POST',
-    body: JSON.stringify({ eventType }),
+    body: JSON.stringify(dto),
   });
 }
 
-export async function getWebhookDeliveries(endpointId: string) {
-  return apiFetch<WebhookDeliveryInfo[]>(`/webhooks/${endpointId}/deliveries`);
+export async function simulateFee(operations: number, network: string) {
+  return apiFetch<SimulateFeeResult>(
+    `/simulator/fee?operations=${operations}&network=${network}`,
+  );
 }
