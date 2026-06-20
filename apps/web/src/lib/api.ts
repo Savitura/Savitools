@@ -146,7 +146,7 @@ export async function getContractInfo(contractId: string) {
   return apiFetch<ContractInfo>(`/contracts/${contractId}/info`);
 }
 
-// ─── Playground ──────────────────────────────────────────────────────────────────
+/* ─── Playground ─────────────────────────────────────────────────────────── */
 
 export type PlaygroundProvider = 'fluxa' | 'crowdpay';
 
@@ -291,4 +291,155 @@ export async function estimateSlippage(params: EstimateParams) {
     method: 'POST',
     body: JSON.stringify(params),
   });
+}
+/* ─── Wallet ─────────────────────────────────────────────────────────────── */
+
+export interface GenerateKeypairResult {
+  publicKey: string;
+  secretKey: string;
+}
+
+export interface FundResult {
+  publicKey: string;
+  funded: boolean;
+  txHash: string | null;
+  startingBalance: string;
+}
+
+export interface Balance {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+  balance: string;
+  limit?: string;
+}
+
+export interface BalancesResult {
+  publicKey: string;
+  balances: Balance[];
+}
+
+export interface SendPaymentResult {
+  success: boolean;
+  txHash: string;
+  destination: string;
+  asset: string;
+  amount: string;
+}
+
+export async function generateKeypair() {
+  return apiFetch<GenerateKeypairResult>('/wallet/generate', {
+    method: 'POST',
+  });
+}
+
+export async function fundFromFriendbot(publicKey: string) {
+  return apiFetch<FundResult>('/wallet/fund', {
+    method: 'POST',
+    body: JSON.stringify({ publicKey }),
+  });
+}
+
+export async function getBalances(publicKey: string) {
+  return apiFetch<BalancesResult>(`/wallet/balances?publicKey=${encodeURIComponent(publicKey)}`);
+}
+
+export async function sendPayment(
+  sourceSecret: string,
+  destination: string,
+  asset: string,
+  amount: string,
+) {
+  return apiFetch<SendPaymentResult>('/wallet/payment', {
+    method: 'POST',
+    body: JSON.stringify({ sourceSecret, destination, asset, amount }),
+  });
+}
+
+/* ─── Simulator ──────────────────────────────────────────────────────────── */
+
+export interface PathHop {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+}
+
+export interface SimulatedPath {
+  sourceAmount: string;
+  destinationAmount: string;
+  path: PathHop[];
+  pathLength: number;
+  exchangeRate: string;
+}
+
+export interface SimulateStrictSendResult {
+  sourceAsset: string;
+  sourceAmount: string;
+  destAsset: string;
+  network: string;
+  mode: 'strict_send';
+  totalPathsFound: number;
+  paths: SimulatedPath[];
+  bestPath: SimulatedPath;
+  slippagePercent: string;
+}
+
+export interface SimulateStrictReceiveResult {
+  sourceAsset: string;
+  destAsset: string;
+  destAmount: string;
+  network: string;
+  mode: 'strict_receive';
+  totalPathsFound: number;
+  paths: SimulatedPath[];
+  bestPath: SimulatedPath;
+  sourceAmountNeeded: string;
+  slippagePercent: string;
+}
+
+export type SimulatePathResult = SimulateStrictSendResult | SimulateStrictReceiveResult;
+
+export interface SimulateFeeResult {
+  network: string;
+  operations: number;
+  baseFeeStroops: number;
+  totalFeeStroops: number;
+  totalFeeXlm: string;
+  feeChargedPercentiles: {
+    p10: string;
+    p50: string;
+    p90: string;
+    p99: string;
+  };
+  lastLedger: number;
+}
+
+export async function simulateStrictSend(dto: {
+  sourceAsset: string;
+  sourceAmount: string;
+  destAsset: string;
+  network: string;
+}) {
+  return apiFetch<SimulateStrictSendResult>('/simulator/path-send', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function simulateStrictReceive(dto: {
+  sourceAsset: string;
+  destAmount: string;
+  destAsset: string;
+  network: string;
+}) {
+  return apiFetch<SimulateStrictReceiveResult>('/simulator/path-receive', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function simulateFee(operations: number, network: string) {
+  return apiFetch<SimulateFeeResult>(
+    `/simulator/fee?operations=${operations}&network=${network}`,
+  );
 }
