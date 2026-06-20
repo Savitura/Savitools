@@ -292,6 +292,58 @@ export async function estimateSlippage(params: EstimateParams) {
     body: JSON.stringify(params),
   });
 }
+
+/* ─── Webhooks ──────────────────────────────────────────────────────────── */
+
+export interface WebhookTemplate {
+  provider: 'crowdpay' | 'fluxa';
+  eventType: string;
+  description: string;
+  schema: Record<string, string>;
+  samplePayload: Record<string, unknown>;
+}
+
+export interface WebhookSendRequest {
+  endpointUrl: string;
+  eventType: string;
+  payload?: Record<string, unknown>;
+  secret?: string;
+}
+
+export interface WebhookHistoryEntry {
+  id: string;
+  eventType: string;
+  endpointUrl: string;
+  payload: Record<string, unknown>;
+  requestHeaders: Record<string, string>;
+  statusCode: number | null;
+  responseHeaders: Record<string, string>;
+  responseBody: unknown;
+  latencyMs: number;
+  timestamp: number;
+  error?: string;
+}
+
+export async function fetchWebhookTemplates() {
+  return apiFetch<WebhookTemplate[]>('/webhooks/templates');
+}
+
+export async function sendWebhook(dto: WebhookSendRequest) {
+  return apiFetch<WebhookHistoryEntry>('/webhooks/send', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function fetchWebhookHistory() {
+  return apiFetch<WebhookHistoryEntry[]>('/webhooks/history');
+}
+
+export async function replayWebhook(id: string) {
+  return apiFetch<WebhookHistoryEntry>(`/webhooks/replay/${id}`, {
+    method: 'POST',
+  });
+}
 /* ─── Wallet ─────────────────────────────────────────────────────────────── */
 
 export interface GenerateKeypairResult {

@@ -1,16 +1,16 @@
 import { SiteHeader } from '@/components/layout/site-header';
-import { WebhooksTool } from '@/components/tools/other-tools';
 import { ToolPageShell } from '@/components/tools/tool-page-shell';
+import { WebhookTester } from '@/components/webhooks/webhook-tester';
 
 export default function WebhooksPage() {
   return (
     <>
       <SiteHeader />
       <ToolPageShell
-        title="Webhook Infrastructure"
-        description="Test CrowdPay and Fluxa webhook payloads against your endpoint."
+        title="Webhook Tester"
+        description="Send test CrowdPay and Fluxa webhook payloads to your endpoint, inspect responses, and replay deliveries."
       >
-        <WebhooksTool />
+        <WebhookTester />
       </ToolPageShell>
     </>
   );

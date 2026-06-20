@@ -43,6 +43,8 @@ import { ComposerModule } from './modules/composer/composer.module';
 
     // Feature modules — added as each is built
     // TransactionModule,
+    // WalletModule,
+    WebhookModule,
     WalletModule,
     // WebhookModule,
     SimulatorModule,
