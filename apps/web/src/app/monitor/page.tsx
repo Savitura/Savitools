@@ -1,5 +1,5 @@
 import { SiteHeader } from '@/components/layout/site-header';
-import { MonitorTool } from '@/components/tools/other-tools';
+import { MonitorDashboard } from '@/components/monitor/monitor-dashboard';
 import { ToolPageShell } from '@/components/tools/tool-page-shell';
 
 export default function MonitorPage() {
@@ -10,7 +10,7 @@ export default function MonitorPage() {
         title="Ledger Monitor"
         description="Watch Stellar addresses and contracts for live activity."
       >
-        <MonitorTool />
+        <MonitorDashboard />
       </ToolPageShell>
     </>
   );
