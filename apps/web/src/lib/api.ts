@@ -211,6 +211,70 @@ export async function deletePlaygroundApiKey(id: string) {
   });
 }
 
+/* ─── Wallet ─────────────────────────────────────────────────────────────── */
+
+export interface GenerateKeypairResult {
+  publicKey: string;
+  secretKey: string;
+}
+
+export interface FundResult {
+  publicKey: string;
+  funded: boolean;
+  txHash: string | null;
+  startingBalance: string;
+}
+
+export interface Balance {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+  balance: string;
+  limit?: string;
+}
+
+export interface BalancesResult {
+  publicKey: string;
+  balances: Balance[];
+}
+
+export interface SendPaymentResult {
+  success: boolean;
+  txHash: string;
+  destination: string;
+  asset: string;
+  amount: string;
+}
+
+export async function generateKeypair() {
+  return apiFetch<GenerateKeypairResult>('/wallet/generate', {
+    method: 'POST',
+  });
+}
+
+export async function fundFromFriendbot(publicKey: string) {
+  return apiFetch<FundResult>('/wallet/fund', {
+    method: 'POST',
+    body: JSON.stringify({ publicKey }),
+  });
+}
+
+export async function getBalances(publicKey: string) {
+  return apiFetch<BalancesResult>(`/wallet/balances?publicKey=${encodeURIComponent(publicKey)}`);
+}
+
+export async function sendPayment(
+  sourceSecret: string,
+  destination: string,
+  asset: string,
+  amount: string,
+) {
+  return apiFetch<SendPaymentResult>('/wallet/payment', {
+    method: 'POST',
+    body: JSON.stringify({ sourceSecret, destination, asset, amount }),
+  });
+}
+
 /* ─── Simulator ──────────────────────────────────────────────────────────── */
 
 export interface PathHop {
