@@ -8,6 +8,7 @@ import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { NetworkModule } from './modules/network/network.module';
+import { ComposerModule } from './modules/composer/composer.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { NetworkModule } from './modules/network/network.module';
     WorkspaceModule,
     ContractsModule,
     NetworkModule,
+    ComposerModule,
 
     // Feature modules — added as each is built
     // TransactionModule,
