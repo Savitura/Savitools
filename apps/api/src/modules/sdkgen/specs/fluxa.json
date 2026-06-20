@@ -1,0 +1,65 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Fluxa API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.fluxa.io"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "paths": {
+    "/v1/transfers": {
+      "post": {
+        "summary": "Create a new transfer",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from_wallet": {
+                    "type": "string",
+                    "example": "WALLET_ID"
+                  },
+                  "to_wallet": {
+                    "type": "string",
+                    "example": "WALLET_ID"
+                  },
+                  "asset": {
+                    "type": "string",
+                    "example": "USDC"
+                  },
+                  "amount": {
+                    "type": "string",
+                    "example": "10.00"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer created successfully"
+          }
+        }
+      }
+    }
+  }
+}

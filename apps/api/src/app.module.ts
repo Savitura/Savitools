@@ -6,9 +6,13 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { PlaygroundModule } from './modules/playground/playground.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
+import { MonitorModule } from './modules/monitor/monitor.module';
+import { SdkgenModule } from './modules/sdkgen/sdkgen.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { NetworkModule } from './modules/network/network.module';
 import { SimulatorModule } from './modules/simulator/simulator.module';
+import { WebhookModule } from './modules/webhook/webhook.module';
+import { ComposerModule } from './modules/composer/composer.module';
 
 @Module({
   imports: [
@@ -28,8 +32,12 @@ import { SimulatorModule } from './modules/simulator/simulator.module';
     AuthModule,
     PlaygroundModule,
     WorkspaceModule,
+    MonitorModule,
+    SdkgenModule,
     ContractsModule,
     NetworkModule,
+    WebhookModule,
+    ComposerModule,
 
     // Feature modules — added as each is built
     // TransactionModule,
