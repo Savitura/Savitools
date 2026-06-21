@@ -14,6 +14,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
 import { SimulatorModule } from './modules/simulator/simulator.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { ComposerModule } from './modules/composer/composer.module';
+import { InspectorModule } from './modules/inspector/inspector.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ComposerModule } from './modules/composer/composer.module';
     SimulatorModule,
     WebhookModule,
     ComposerModule,
+    InspectorModule,
 
     // Feature modules — added as each is built
     // TransactionModule,

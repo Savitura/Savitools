@@ -495,3 +495,76 @@ export async function simulateFee(operations: number, network: string) {
     `/simulator/fee?operations=${operations}&network=${network}`,
   );
 }
+
+/* ─── Inspector ──────────────────────────────────────────────────────────── */
+
+export interface DecodedEffect {
+  type: string;
+  account: string;
+  [key: string]: string | number | boolean | null;
+}
+
+export interface DecodedOperationResult {
+  index: number;
+  type: string;
+  label: string;
+  fields: Record<string, string | null>;
+  sourceAccount: string | null;
+  resultCode: string | null;
+  resultExplanation: string | null;
+  success: boolean;
+  effects: DecodedEffect[];
+}
+
+export interface ComposerPayload {
+  sourceAccount: string;
+  network: string;
+  memo?: string;
+  operations: Array<Record<string, unknown> & { type: string }>;
+}
+
+export interface TransactionBreakdown {
+  hash: string;
+  ledger: number;
+  createdAt: string;
+  sourceAccount: string;
+  sequenceNumber: string;
+  feeCharged: string;
+  maxFee: string;
+  memo: string | null;
+  memoType: string;
+  timeBounds: { minTime: string | null; maxTime: string | null } | null;
+  signatures: string[];
+  success: boolean;
+  resultCode: string;
+  resultExplanation: string;
+  operationCount: number;
+  operations: DecodedOperationResult[];
+  rawJson: Record<string, unknown> | null;
+  network: string;
+  composerPayload: ComposerPayload | null;
+}
+
+export interface TxSummary {
+  hash: string;
+  createdAt: string;
+  operationCount: number;
+  feeCharged: string;
+  success: boolean;
+  resultCode: string;
+}
+
+export async function inspectTransaction(hash: string, network: 'testnet' | 'mainnet' = 'testnet') {
+  return apiFetch<TransactionBreakdown>(`/inspector/tx/${encodeURIComponent(hash)}?network=${network}`);
+}
+
+export async function getAccountTransactions(publicKey: string, network: 'testnet' | 'mainnet' = 'testnet') {
+  return apiFetch<TxSummary[]>(`/inspector/account/${encodeURIComponent(publicKey)}/txs?network=${network}`);
+}
+
+export async function decodeXdr(xdr: string, network: 'testnet' | 'mainnet' = 'testnet') {
+  return apiFetch<TransactionBreakdown>('/inspector/decode-xdr', {
+    method: 'POST',
+    body: JSON.stringify({ xdr, network }),
+  });
+}
