@@ -8,7 +8,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiCookieAuth, ApiOperation, ApiTags, ApiResponse } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -35,6 +35,8 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Register with email and password' })
+  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid registration data or user already exists' })
   async register(
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -50,6 +52,8 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   @ApiOperation({ summary: 'Login with email and password' })
+  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -65,6 +69,8 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(200)
   @ApiOperation({ summary: 'Rotate refresh token and issue a new access token' })
+  @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -86,6 +92,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(200)
   @ApiOperation({ summary: 'Invalidate refresh token and clear auth cookies' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
   async logout(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -105,6 +112,8 @@ export class AuthController {
   @ApiOperation({
     summary: 'Exchange a Fluxa API key for a SaviTools session and link accounts',
   })
+  @ApiResponse({ status: 200, description: 'Fluxa authentication successful' })
+  @ApiResponse({ status: 400, description: 'Invalid Fluxa API key' })
   async fluxa(
     @Body() dto: FluxaDto,
     @Req() request: FastifyRequest & { user?: { id: string } },
@@ -129,6 +138,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Get the current authenticated user' })
+  @ApiResponse({ status: 200, description: 'User information retrieved' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
   async me(@CurrentUser() user: { id: string; email: string }) {
     const record = await this.authService.getUserById(user.id);
 
