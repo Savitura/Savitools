@@ -8,25 +8,41 @@ SaviTools uses [GrantFox](https://grantfox.xyz) to fund and coordinate open-sour
 
 ### Prerequisites
 
-- Node.js 20+
-- Docker (for local Postgres + Redis)
+- Node.js: 20+
+- npm: 10+
+- Docker: 24+
 
 ### Get running
 
-```bash
-git clone https://github.com/Savitura/Savitools.git
-cd Savitools
-npm install
-cp .env.example .env
-docker compose up -d     # starts Postgres + Redis
-npm run dev
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Savitura/Savitools.git
+   cd Savitools
+   ```
+2. Copy environment files and fill them out. See inline comments for required values:
+   ```bash
+   cp apps/api/.env.example apps/api/.env
+   cp apps/web/.env.example apps/web/.env
+   ```
+3. Start the entire local stack:
+   ```bash
+   make dev
+   ```
+4. Wait for `api` and `web` to become ready (check with `make logs`), then seed the database with test data:
+   ```bash
+   make seed
+   ```
 
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
 | API | http://localhost:3001/api |
 | Swagger docs | http://localhost:3001/api/docs |
+
+Other useful commands:
+- `make logs`: Tails logs for all running services
+- `make reset`: Tears down all containers and named volumes, then restarts clean
+- `make test`: Runs all test suites across the monorepo via Turborepo
 
 ---
 
@@ -43,10 +59,12 @@ Read the full issue body before writing code. Every issue has an acceptance crit
 
 ## Codebase Orientation
 
-SaviTools is a Turborepo monorepo with two apps:
+SaviTools is a Turborepo monorepo with two main directories:
 
-- `apps/api` — NestJS backend; one module per tool (e.g. `modules/transaction/`, `modules/wallet/`). Each module has a controller, service, and module file. Business logic lives in the service.
-- `apps/web` — Next.js 15 App Router frontend; one route folder per tool (e.g. `app/inspector/`, `app/sandbox/`).
+- `apps/` — Contains applications that run independently.
+  - `apps/api` — NestJS backend; one module per tool (e.g. `modules/transaction/`, `modules/wallet/`). Each module has a controller, service, and module file. Business logic lives in the service.
+  - `apps/web` — Next.js 15 App Router frontend; one route folder per tool (e.g. `app/inspector/`, `app/sandbox/`).
+- `packages/` — Contains shared libraries and configuration packages used across apps.
 
 Most issues touch one module in the API and one page in the web app. Read both the existing service stub and the page stub before making any changes — they usually have comments indicating what needs to be implemented.
 
@@ -122,10 +140,17 @@ Run `npm run build` to catch TypeScript errors before submitting.
 ## Running Tests
 
 ```bash
-npm test                    # all apps
+make test                   # all apps via Turborepo
+npm test                    # all apps via Turborepo
 cd apps/api && npm test     # API only
 cd apps/web && npm test     # frontend only
 ```
+
+The CI pipeline automatically checks:
+- Build success for both API and Web apps (`npm run build`)
+- All unit tests pass across all workspace packages (`npm test`)
+- ESLint checks pass with no warnings or errors (`npm run lint`)
+- Prettier formatting is correct (`npm run format`)
 
 ---
 
