@@ -1,13 +1,13 @@
 'use client';
 
 import { useNetwork } from '@/lib/network-context';
-import { ExternalLink, Loader2, SendHorizontal, Zap } from 'lucide-react';
+import { ExternalLink, Loader2, Lock, Zap } from 'lucide-react';
 
 interface ComposerToolbarProps {
   xdr: string | null;
   opCount: number;
   onSimulate: () => void;
-  onSubmit: () => void;
+  onSignSubmit: () => void;
   simulating: boolean;
   submitting: boolean;
   submitResult: { success: boolean; hash?: string; error?: string } | null;
@@ -17,7 +17,7 @@ export function ComposerToolbar({
   xdr,
   opCount,
   onSimulate,
-  onSubmit,
+  onSignSubmit,
   simulating,
   submitting,
   submitResult,
@@ -73,19 +73,19 @@ export function ComposerToolbar({
           Simulate
         </button>
 
-        {/* Submit */}
+        {/* Sign & Submit */}
         <button
-          id="submit-to-horizon-btn"
-          onClick={onSubmit}
+          id="sign-submit-btn"
+          onClick={onSignSubmit}
           disabled={!xdr || submitting}
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-foreground text-background hover:opacity-90 disabled:opacity-40 transition-all"
         >
           {submitting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <SendHorizontal className="h-3.5 w-3.5" />
+            <Lock className="h-3.5 w-3.5" />
           )}
-          Submit to Horizon
+          Sign &amp; Submit
         </button>
       </div>
 
