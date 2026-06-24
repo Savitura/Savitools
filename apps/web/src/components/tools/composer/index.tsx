@@ -6,7 +6,6 @@ import {
   OperationManifestEntry,
   simulateTransaction,
   SimulateTransactionResult,
-  submitToHorizon,
 } from '@/lib/composer-api';
 import { useNetwork } from '@/lib/network-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,6 +13,7 @@ import { ComposerToolbar } from './composer-toolbar';
 import { OperationForm } from './operation-form';
 import { OperationList } from './operation-list';
 import { OperationPalette } from './operation-palette';
+import { SignSubmitDialog } from './sign-submit-dialog';
 import { SimulateResult } from './simulate-result';
 import { XdrPreview } from './xdr-preview';
 
@@ -90,13 +90,14 @@ export function ComposerTool() {
   const [simLoading, setSimLoading] = useState(false);
   const [simError, setSimError] = useState<string | null>(null);
 
-  // Submit
+  // Sign & submit
+  const [showSignDialog, setShowSignDialog] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{
     success: boolean;
     hash?: string;
     error?: string;
   } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Load manifest once
@@ -186,13 +187,14 @@ export function ComposerTool() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!xdr) return;
-    setSubmitting(true);
-    setSubmitResult(null);
-    const result = await submitToHorizon(xdr, network);
-    setSubmitResult(result);
+  const handleSignSubmitSuccess = (hash: string) => {
     setSubmitting(false);
+    setSubmitResult({ success: true, hash });
+  };
+
+  const handleSignSubmitError = (message: string) => {
+    setSubmitting(false);
+    setSubmitResult({ success: false, error: message });
   };
 
   const selected = operations.find((o) => o.id === selectedId) ?? null;
@@ -208,7 +210,10 @@ export function ComposerTool() {
         xdr={xdr}
         opCount={operations.length}
         onSimulate={handleSimulate}
-        onSubmit={handleSubmit}
+        onSignSubmit={() => {
+          setSubmitResult(null);
+          setShowSignDialog(true);
+        }}
         simulating={simLoading}
         submitting={submitting}
         submitResult={submitResult}
@@ -280,6 +285,17 @@ export function ComposerTool() {
 
       {/* Simulate result */}
       <SimulateResult result={simResult} loading={simLoading} error={simError} />
+
+      {/* Sign & Submit dialog */}
+      {showSignDialog && xdr && (
+        <SignSubmitDialog
+          xdr={xdr}
+          network={network}
+          onClose={() => setShowSignDialog(false)}
+          onSuccess={handleSignSubmitSuccess}
+          onError={handleSignSubmitError}
+        />
+      )}
     </div>
   );
 }
