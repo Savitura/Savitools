@@ -1,0 +1,1357 @@
+# SaviTools API Reference
+
+Developer infrastructure for the Stellar ecosystem.
+
+## Base URLs
+
+| Environment | URL | Notes |
+|-------------|-----|-------|
+| **Mainnet** | `https://api.savitools.com/api` | Production Stellar network |
+| **Testnet** | `https://testnet-api.savitools.com/api` | Stellar testnet environment |
+| **Local Development** | `http://localhost:3001/api` | Development server (default) |
+
+## API Versioning
+
+The API uses URI-based versioning. All endpoints are prefixed with `/v1` (or the version number). The current default version is `v1`.
+
+Example: `GET /api/v1/health`
+
+## Authentication
+
+### Public vs Protected Endpoints
+
+- **Public endpoints**: No authentication required (e.g., `/wallet/generate`, `/simulator/paths`)
+- **Protected endpoints**: Require valid JWT authentication via HTTP-only cookies
+
+### Getting an API Key
+
+1. Register or login to create a session
+2. Use the issued JWT cookie for subsequent requests
+
+### Authentication Methods
+
+#### HTTP Cookie (Recommended)
+The API uses **HTTP-only cookies** to store JWT tokens automatically after authentication. When you call `POST /auth/login` or `POST /auth/register`, the response sets:
+- `access_token` cookie (15-minute expiration)
+- `refresh_token` cookie (7-day expiration)
+
+All subsequent requests automatically include these cookies. No header configuration needed.
+
+#### Header-Based Authentication (Optional)
+If cookies are disabled, use:
+```
+Authorization: Bearer {accessToken}
+```
+
+### Cookie Refresh
+
+To refresh an expired access token:
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  --cookie "refresh_token=YOUR_REFRESH_TOKEN"
+```
+
+## Endpoint Catalog
+
+### Health & Status
+
+#### GET `/health`
+
+Health check endpoint.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/health
+```
+
+**Response (200):**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### Authentication
+
+#### POST `/auth/register`
+
+Register a new user with email and password.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "SecurePassword123"
+  }'
+```
+
+**Response (201):**
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com",
+    "fluxaTenantId": null
+  }
+}
+```
+
+**Errors:**
+- `400`: User already exists or invalid email format
+
+---
+
+#### POST `/auth/login`
+
+Login with email and password.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "SecurePassword123"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com",
+    "fluxaTenantId": null
+  }
+}
+```
+
+**Cookies Set:**
+- `access_token` (15 min TTL)
+- `refresh_token` (7 day TTL)
+
+**Errors:**
+- `401`: Invalid email or password
+
+---
+
+#### POST `/auth/refresh`
+
+Rotate refresh token and issue a new access token.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/refresh \
+  --cookie "refresh_token=YOUR_REFRESH_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com"
+  }
+}
+```
+
+**Errors:**
+- `401`: Invalid or expired refresh token
+
+---
+
+#### POST `/auth/logout`
+
+Invalidate refresh token and clear auth cookies.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/logout
+```
+
+**Response (200):**
+```json
+{
+  "success": true
+}
+```
+
+---
+
+#### POST `/auth/fluxa`
+
+Exchange a Fluxa API key for a SaviTools session and link accounts.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/auth/fluxa \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fluxaApiKey": "your-fluxa-api-key"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com",
+    "fluxaTenantId": "fluxa-tenant-id"
+  }
+}
+```
+
+**Errors:**
+- `400`: Invalid Fluxa API key
+
+---
+
+#### GET `/auth/me`
+
+Get the current authenticated user.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/auth/me \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "user@example.com",
+    "fluxaTenantId": null
+  }
+}
+```
+
+**Errors:**
+- `401`: Not authenticated
+
+---
+
+### Wallet & Keypair Generation
+
+#### POST `/wallet/generate`
+
+Generate a new Stellar keypair (public key + secret).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/wallet/generate
+```
+
+**Response (201):**
+```json
+{
+  "publicKey": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C",
+  "secret": "SBUQ54DRQG5Q3QLQHJEZ5ODSLGE...TRUNCATED"
+}
+```
+
+---
+
+#### POST `/wallet/fund`
+
+Fund a testnet account via Friendbot (10 XLM).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/wallet/fund \
+  -H "Content-Type: application/json" \
+  -d '{
+    "publicKey": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "amount": "10.0000000",
+  "currency": "XLM",
+  "transactionHash": "6c1e1f6..."
+}
+```
+
+**Errors:**
+- `400`: Invalid public key or funding failed (rate-limited, etc.)
+
+---
+
+#### GET `/wallet/balances?publicKey=GBZR...`
+
+Get asset balances for a Stellar account.
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C"
+```
+
+**Response (200):**
+```json
+{
+  "balances": [
+    {
+      "asset_type": "native",
+      "balance": "9.9999800",
+      "asset_code": "XLM"
+    },
+    {
+      "asset_type": "credit_alphanum4",
+      "asset_code": "USDC",
+      "asset_issuer": "GA...",
+      "balance": "100.0000000",
+      "limit": "922337203685.4775807"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `400`: Invalid public key or account not found
+
+---
+
+#### POST `/wallet/payment`
+
+Send a payment from a sandbox wallet.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/wallet/payment \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceSecret": "SBUQ54DRQG5Q3QLQHJEZ5ODSLGE...",
+    "destination": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C",
+    "asset": "XLM",
+    "amount": "5.00"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "transactionHash": "6c1e1f6fe...",
+  "success": true,
+  "amount": "5.0000000",
+  "destination": "GBZR7..."
+}
+```
+
+**Errors:**
+- `400`: Invalid parameters or insufficient balance
+
+---
+
+### Simulator (Payment Paths & Fees)
+
+#### GET `/simulator/paths?direction=...&source_asset_*=...&destination_asset_*=...&amount=...&network=...`
+
+Find payment paths between two assets.
+
+**Query Parameters:**
+- `direction` (required): `strict_send` or `strict_receive`
+- `source_asset_type` (required): `native` | `credit_alphanum4` | `credit_alphanum12`
+- `source_asset_code` (optional): Asset code (e.g., `USDC`)
+- `source_asset_issuer` (optional): Asset issuer public key
+- `destination_asset_type` (required): Asset type for destination
+- `destination_asset_code` (optional): Destination asset code
+- `destination_asset_issuer` (optional): Destination asset issuer
+- `amount` (required): Amount to send/receive
+- `network` (optional, default `mainnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/simulator/paths?direction=strict_send&source_asset_type=native&destination_asset_type=credit_alphanum4&destination_asset_code=USDC&destination_asset_issuer=GA...&amount=100&network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "paths": [
+    {
+      "path": [
+        {
+          "asset_type": "native"
+        }
+      ],
+      "destination_amount": "99.5000000",
+      "source_amount": "100.0000000"
+    }
+  ],
+  "direction": "strict_send"
+}
+```
+
+**Errors:**
+- `400`: Invalid parameters or no paths found
+
+---
+
+#### POST `/simulator/estimate`
+
+Compute destination_min or send_max for a selected path with slippage.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/simulator/estimate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": [...],
+    "sendAmount": "100.0",
+    "slippagePercent": 1.5
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "sourceAmount": "100.0000000",
+  "destinationAmount": "98.5000000"
+}
+```
+
+**Errors:**
+- `400`: Invalid path or amount
+
+---
+
+#### POST `/simulator/path-send`
+
+Find paths for a strict send payment (you control the amount sent).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/simulator/path-send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceAsset": {...},
+    "destinationAsset": {...},
+    "sendAmount": "100.0",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "paths": [...],
+  "direction": "strict_send"
+}
+```
+
+---
+
+#### POST `/simulator/path-receive`
+
+Find paths for a strict receive payment (you control the amount received).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/simulator/path-receive \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceAsset": {...},
+    "destinationAsset": {...},
+    "receiveAmount": "100.0",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "paths": [...],
+  "direction": "strict_receive"
+}
+```
+
+---
+
+#### GET `/simulator/fee?operations=1&network=testnet`
+
+Estimate transaction fee based on current network fee stats.
+
+**Query Parameters:**
+- `operations` (optional, default `1`): Number of operations in the transaction
+- `network` (optional, default `testnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/simulator/fee?operations=3&network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "baseFee": 100,
+  "totalFee": 300,
+  "operations": 3,
+  "network": "testnet"
+}
+```
+
+---
+
+### Composer (Transaction Building)
+
+#### GET `/composer/operations`
+
+List all supported operation types with field schemas.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/composer/operations
+```
+
+**Response (200):**
+```json
+{
+  "operations": [
+    {
+      "type": "payment",
+      "description": "Send an asset to another account",
+      "fields": [
+        {
+          "name": "destination",
+          "type": "string",
+          "description": "Destination account public key",
+          "required": true
+        },
+        {
+          "name": "asset",
+          "type": "object",
+          "description": "Asset to send"
+        },
+        {
+          "name": "amount",
+          "type": "string",
+          "description": "Amount to send"
+        }
+      ]
+    },
+    {
+      "type": "path_payment_strict_send",
+      "description": "Send an asset via a specific path",
+      "fields": [...]
+    }
+  ]
+}
+```
+
+---
+
+#### POST `/composer/build`
+
+Build a multi-op transaction and return unsigned XDR envelope.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/composer/build \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceAccount": {
+      "publicKey": "GBZR7...",
+      "sequence": "1234567890"
+    },
+    "fee": "300",
+    "operations": [
+      {
+        "type": "payment",
+        "destination": "GBUQWP...",
+        "asset": "native",
+        "amount": "10.00"
+      }
+    ],
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "xdr": "AAAAAgAAAAB+Ht3sW...",
+  "hash": "5fa...",
+  "envelope_type": "ENVELOPE_TYPE_TX"
+}
+```
+
+**Errors:**
+- `400`: Invalid transaction parameters
+
+---
+
+#### POST `/composer/simulate`
+
+Dry-run an XDR transaction against Horizon; returns fee and result codes.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/composer/simulate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "xdr": "AAAAAgAAAAB+Ht3sW...",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "resultXdr": "...",
+  "fee": "300",
+  "resultCode": "txSUCCESS",
+  "operationResults": [
+    {
+      "code": "opSUCCESS"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `400`: Invalid XDR or simulation failed
+
+---
+
+### Transactions
+
+#### GET `/transactions/:hash`
+
+Decode and inspect a Stellar transaction by hash.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/transactions/5fa1f6d8a7c...
+```
+
+**Response (200):**
+```json
+{
+  "id": "5fa1f6d8a7c...",
+  "source_account": "GBZR7...",
+  "fee_charged": 300,
+  "successful": true,
+  "created_at": "2024-06-21T12:34:56Z",
+  "operations": [
+    {
+      "type": "payment",
+      "destination": "GBUQWP...",
+      "amount": "10.0000000",
+      "asset_type": "native"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `404`: Transaction not found
+
+---
+
+### Network
+
+#### GET `/network/status?network=mainnet`
+
+Get current Stellar network status and fees.
+
+**Query Parameters:**
+- `network` (optional, default `mainnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/network/status?network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "network": "testnet",
+  "baseFee": 100,
+  "baseReserve": 0.5,
+  "protocolVersion": 21,
+  "timestamp": "2024-06-21T12:34:56Z"
+}
+```
+
+---
+
+#### GET `/network/status/history?network=mainnet`
+
+Get last 60 minutes of network status history.
+
+**Query Parameters:**
+- `network` (optional, default `mainnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/network/status/history?network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "network": "testnet",
+  "history": [
+    {
+      "timestamp": "2024-06-21T11:34:56Z",
+      "baseFee": 100,
+      "baseReserve": 0.5
+    },
+    {
+      "timestamp": "2024-06-21T12:34:56Z",
+      "baseFee": 100,
+      "baseReserve": 0.5
+    }
+  ]
+}
+```
+
+---
+
+### Contracts (Soroban)
+
+#### POST `/contracts/deploy`
+
+Deploy a Soroban smart contract from a WASM file.
+
+**Request (multipart/form-data):**
+```bash
+curl -X POST http://localhost:3001/api/v1/contracts/deploy \
+  -F "file=@contract.wasm" \
+  -F "args=[\"arg1\",\"arg2\"]"
+```
+
+**Response (200):**
+```json
+{
+  "contractId": "CABC...",
+  "deployTransactionHash": "5fa1f6d...",
+  "wasmHash": "9e5551...",
+  "network": "testnet"
+}
+```
+
+**Errors:**
+- `400`: Invalid WASM file or deployment failed
+
+---
+
+#### POST `/contracts/:contractId/invoke`
+
+Invoke a contract function.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/contracts/CABC.../invoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "functionName": "transfer",
+    "args": ["GBU...", "100.00"]
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "result": "...",
+  "transactionHash": "5fa1f6d..."
+}
+```
+
+**Errors:**
+- `400`: Invalid contract ID or parameters
+
+---
+
+#### GET `/contracts/:contractId/info`
+
+Get contract metadata from the network.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/contracts/CABC.../info
+```
+
+**Response (200):**
+```json
+{
+  "contractId": "CABC...",
+  "wasmHash": "9e5551...",
+  "createdLedger": 12345,
+  "createdAt": "2024-06-21T12:34:56Z"
+}
+```
+
+**Errors:**
+- `404`: Contract not found
+
+---
+
+### Webhooks
+
+#### GET `/webhooks/templates`
+
+List all supported webhook event types with schemas and sample payloads.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/webhooks/templates
+```
+
+**Response (200):**
+```json
+{
+  "templates": [
+    {
+      "eventType": "transaction.submitted",
+      "description": "Emitted when a transaction is submitted",
+      "schema": {...},
+      "examplePayload": {...}
+    }
+  ]
+}
+```
+
+---
+
+#### POST `/webhooks/send`
+
+Send a webhook payload to a target endpoint.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/webhooks/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/webhook",
+    "eventType": "transaction.submitted",
+    "payload": {...}
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "attemptId": "webhook-attempt-123",
+  "statusCode": 200,
+  "responseTime": 250
+}
+```
+
+**Errors:**
+- `400`: Invalid webhook payload
+
+---
+
+#### GET `/webhooks/history`
+
+Get the last 50 webhook send attempts.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/webhooks/history
+```
+
+**Response (200):**
+```json
+{
+  "attempts": [
+    {
+      "id": "webhook-attempt-123",
+      "eventType": "transaction.submitted",
+      "url": "https://example.com/webhook",
+      "statusCode": 200,
+      "timestamp": "2024-06-21T12:34:56Z"
+    }
+  ]
+}
+```
+
+---
+
+#### POST `/webhooks/replay/:id`
+
+Replay a previous webhook send attempt.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/webhooks/replay/webhook-attempt-123
+```
+
+**Response (200):**
+```json
+{
+  "attemptId": "webhook-attempt-456",
+  "statusCode": 200,
+  "responseTime": 275
+}
+```
+
+**Errors:**
+- `404`: Webhook attempt not found
+
+---
+
+### Playground (API Proxy & Key Management)
+
+#### GET `/playground/spec/:provider`
+
+Fetch and cache an OpenAPI spec for a provider (requires authentication).
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/playground/spec/stripe \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "provider": "stripe",
+  "spec": {...}
+}
+```
+
+**Errors:**
+- `404`: Provider spec not found
+- `401`: Not authenticated
+
+---
+
+#### POST `/playground/proxy`
+
+Proxy a request to the target API with server-side auth (requires authentication).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/playground/proxy \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "provider": "stripe",
+    "method": "GET",
+    "path": "/v1/customers",
+    "params": {}
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "statusCode": 200,
+  "body": {...}
+}
+```
+
+---
+
+#### POST `/playground/keys`
+
+Save an encrypted API key (requires authentication).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/playground/keys \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "provider": "stripe",
+    "key": "sk_live_..."
+  }'
+```
+
+**Response (201):**
+```json
+{
+  "id": "key-123",
+  "provider": "stripe",
+  "keyMasked": "sk_live_...***"
+}
+```
+
+---
+
+#### GET `/playground/keys`
+
+List stored API keys (masked, requires authentication).
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/playground/keys \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "keys": [
+    {
+      "id": "key-123",
+      "provider": "stripe",
+      "keyMasked": "sk_live_...***"
+    }
+  ]
+}
+```
+
+---
+
+#### PUT `/playground/keys/:id`
+
+Update a stored API key (requires authentication).
+
+**Request:**
+```bash
+curl -X PUT http://localhost:3001/api/v1/playground/keys/key-123 \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "key": "sk_live_new..."
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "id": "key-123",
+  "keyMasked": "sk_live_...***"
+}
+```
+
+---
+
+#### DELETE `/playground/keys/:id`
+
+Delete a stored API key (requires authentication).
+
+**Request:**
+```bash
+curl -X DELETE http://localhost:3001/api/v1/playground/keys/key-123 \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (204):**
+No content
+
+---
+
+### Workspaces (User State Persistence)
+
+#### GET `/workspaces/:tool`
+
+Get persisted tool state for the current user (requires authentication).
+
+**Path Parameters:**
+- `tool`: `sandbox` | `inspector` | `webhooks` | `composer`
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/workspaces/composer \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "tool": "composer",
+  "data": {...}
+}
+```
+
+**Errors:**
+- `400`: Invalid tool name
+- `401`: Not authenticated
+
+---
+
+#### PUT `/workspaces/:tool`
+
+Save tool state for the current user (requires authentication).
+
+**Request:**
+```bash
+curl -X PUT http://localhost:3001/api/v1/workspaces/composer \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "data": {...}
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "tool": "composer",
+  "data": {...}
+}
+```
+
+---
+
+### Monitors (Account & Contract Watches)
+
+#### POST `/monitor/watches`
+
+Create a watch for an account or contract (requires authentication).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/monitor/watches \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "address": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C",
+    "type": "account",
+    "label": "My Account",
+    "network": "testnet"
+  }'
+```
+
+**Response (201):**
+```json
+{
+  "id": "watch-123",
+  "address": "GBZR7...",
+  "type": "account",
+  "label": "My Account"
+}
+```
+
+---
+
+#### GET `/monitor/watches`
+
+Get all watches for the current user (requires authentication).
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/monitor/watches \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "watches": [
+    {
+      "id": "watch-123",
+      "address": "GBZR7...",
+      "type": "account",
+      "label": "My Account"
+    }
+  ]
+}
+```
+
+---
+
+#### DELETE `/monitor/watches/:id`
+
+Delete a watch (requires authentication).
+
+**Request:**
+```bash
+curl -X DELETE http://localhost:3001/api/v1/monitor/watches/watch-123 \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (204):**
+No content
+
+---
+
+#### POST `/monitor/watches/:id/alerts`
+
+Create an alert for a watch (requires authentication).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
+  -H "Content-Type: application/json" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -d '{
+    "conditionType": "balance_threshold",
+    "threshold": "100.00",
+    "channel": "email",
+    "destination": "user@example.com"
+  }'
+```
+
+**Response (201):**
+```json
+{
+  "id": "alert-456",
+  "watchId": "watch-123",
+  "conditionType": "balance_threshold"
+}
+```
+
+---
+
+### SDK Generation
+
+#### POST `/sdkgen/generate`
+
+Generate SDK code from a provider spec.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sdkgen/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "spec": "fluxa",
+    "language": "typescript",
+    "endpoint": "https://api.example.com"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "code": "// Generated TypeScript SDK\nimport axios from 'axios';\n..."
+}
+```
+
+---
+
+## Error Reference
+
+### Common HTTP Status Codes
+
+| Code | Meaning | When It Occurs |
+|------|---------|----------------|
+| `200` | OK | Successful GET, POST, or PUT request |
+| `201` | Created | Successful resource creation (POST) |
+| `204` | No Content | Successful DELETE request |
+| `400` | Bad Request | Invalid request parameters or validation failed |
+| `401` | Unauthorized | Missing or invalid authentication token |
+| `404` | Not Found | Resource does not exist |
+| `422` | Unprocessable Entity | Semantic error in request (e.g., invalid WASM) |
+| `500` | Internal Server Error | Unexpected server error |
+
+### SaviTools-Specific Errors
+
+#### `400 Bad Request - Invalid Public Key`
+**Meaning:** The Stellar public key provided is malformed or invalid.
+**Suggested Resolution:** Verify the public key format (starts with `G`, 56 characters). Use `/wallet/generate` if unsure.
+
+#### `400 Bad Request - Insufficient Balance`
+**Meaning:** The source account doesn't have enough native asset to cover the transaction fee and amount.
+**Suggested Resolution:** Use `/wallet/fund` to add testnet funds, or send a smaller amount.
+
+#### `401 Unauthorized - Invalid Credentials`
+**Meaning:** Email/password combination is incorrect.
+**Suggested Resolution:** Double-check your email and password. Register a new account if needed.
+
+#### `401 Unauthorized - Expired Token`
+**Meaning:** Your access token has expired (default 15 minutes).
+**Suggested Resolution:** Call `POST /auth/refresh` with your refresh token to get a new access token.
+
+#### `404 Not Found - Transaction Not Found`
+**Meaning:** The specified transaction hash doesn't exist on the network.
+**Suggested Resolution:** Verify the transaction hash is correct and the network (mainnet/testnet) is correct.
+
+#### `422 Unprocessable Entity - Invalid WASM`
+**Meaning:** The uploaded file is not a valid Soroban WASM binary.
+**Suggested Resolution:** Ensure the file is a compiled `.wasm` file from a Soroban contract.
+
+### Stellar/Horizon Pass-Through Errors
+
+SaviTools proxies some errors directly from the Stellar Horizon API. These errors include:
+
+- **`op_no_trust`**: Destination account doesn't have a trustline for the asset
+- **`op_line_full`**: Destination account's limit for the asset is at max
+- **`op_underfunded`**: Source account doesn't have enough funds
+- **`tx_bad_seq`**: Transaction sequence number is incorrect
+- **`tx_bad_auth`**: Transaction hasn't been signed by the required signers
+
+**Example Horizon Error Response:**
+```json
+{
+  "type": "https://stellar.org/horizon-errors/transaction-failed",
+  "title": "Transaction Failed",
+  "status": 400,
+  "detail": "...",
+  "extras": {
+    "envelope_xdr": "...",
+    "result_xdr": "...",
+    "result_codes": {
+      "transaction": "tx_failed",
+      "operations": ["op_no_trust"]
+    }
+  }
+}
+```
+
+For a complete list, refer to the [Stellar Horizon API documentation](https://developers.stellar.org/api/errors/).
+
+---
+
+## Caching Behavior
+
+### Redis-Cached Endpoints
+
+| Endpoint | TTL | Purpose | Cache Key |
+|----------|-----|---------|-----------|
+| `GET /network/status` | 60s | Network fees & reserves | `network:status:{network}` |
+| `GET /network/status/history` | 300s | Historical fee data | `network:history:{network}` |
+| `GET /simulator/paths` | 120s | Payment path results | `paths:{source}:{dest}:{amount}` |
+| `GET /playground/spec/:provider` | 3600s | OpenAPI specs | `spec:cache:{provider}` |
+| `GET /webhooks/templates` | 86400s | Webhook schema definitions | `webhook:templates` |
+
+### Cache Busting
+
+In development, to clear all cached data:
+
+```bash
+# If you have Redis CLI access:
+redis-cli FLUSHDB
+
+# Or via the API (clear specific cache):
+DELETE /api/v1/admin/cache/network:status:mainnet
+```
+
+### Cache Headers
+
+Responses include standard HTTP cache headers:
+```
+Cache-Control: public, max-age=60
+ETag: "abc123..."
+Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
+```
+
+---
+
+## Rate Limiting
+
+**Current Status:** No rate limiting is enforced in development/testing. Production deployment will include:
+- 100 requests/minute per IP for public endpoints
+- 1000 requests/minute per user for authenticated endpoints
+- Custom limits for resource-intensive operations (e.g., `/composer/simulate`)
+
+---
+
+## CORS & Security
+
+- **CORS Origin:** Controlled by `WEB_ORIGIN` environment variable (default: `http://localhost:3000`)
+- **HTTPS:** Enforced in production; cookies marked with `Secure` flag
+- **CSRF Protection:** HTTP-only cookies prevent client-side token theft
+- **Input Validation:** All inputs are validated and sanitized server-side
+
+---
+
+## Support & Feedback
+
+- **API Status:** [Check Stellar Horizon Status](https://dashboard.stellar.org/)
+- **Bug Reports:** [GitHub Issues](https://github.com/GrantFox/Savitools/issues)
+- **Questions:** Refer to [Stellar Docs](https://developers.stellar.org/)

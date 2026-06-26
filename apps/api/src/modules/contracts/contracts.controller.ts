@@ -7,7 +7,7 @@ import {
   Req,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiConsumes } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiConsumes, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 import { ContractsService } from './contracts.service';
 import { InvokeContractDto } from './dto/invoke-contract.dto';
@@ -21,6 +21,8 @@ export class ContractsController {
   @Post('deploy')
   @ApiOperation({ summary: 'Deploy a Soroban smart contract from a WASM file' })
   @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 200, description: 'Contract deployed successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid WASM file or parameters' })
   async deploy(@Req() req: FastifyRequest) {
     const file = await req.file();
 
@@ -45,6 +47,9 @@ export class ContractsController {
 
   @Post(':contractId/invoke')
   @ApiOperation({ summary: 'Invoke a contract function' })
+  @ApiParam({ name: 'contractId', description: 'Contract ID' })
+  @ApiResponse({ status: 200, description: 'Contract function invoked successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid contract ID or parameters' })
   async invoke(
     @Param('contractId') contractId: string,
     @Body() dto: InvokeContractDto,
@@ -54,6 +59,9 @@ export class ContractsController {
 
   @Get(':contractId/info')
   @ApiOperation({ summary: 'Get contract metadata from the network' })
+  @ApiParam({ name: 'contractId', description: 'Contract ID' })
+  @ApiResponse({ status: 200, description: 'Contract information retrieved' })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
   async getInfo(@Param('contractId') contractId: string) {
     return this.contractsService.getInfo(contractId);
   }

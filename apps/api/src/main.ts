@@ -36,15 +36,19 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('SaviTools API')
-    .setDescription('Developer infrastructure for the Stellar ecosystem')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  // Only enable Swagger in development and staging environments
+  const nodeEnv = config.get<string>('NODE_ENV', 'development');
+  if (nodeEnv !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('SaviTools API')
+      .setDescription('Developer infrastructure for the Stellar ecosystem')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${prefix}/docs`, app, document);
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(`${prefix}/docs`, app, document);
+  }
 
   await app.listen(port, '0.0.0.0');
   console.log(`SaviTools API running on http://localhost:${port}/${prefix}`);

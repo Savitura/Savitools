@@ -169,6 +169,25 @@ SaviTools is a standalone product with its own users and branding, but it's purp
 
 ---
 
+## Documentation
+
+Complete guides and API reference for integrating with SaviTools:
+
+| Resource | Purpose |
+|----------|---------|
+| **[API Reference](docs/api-reference.md)** | Complete endpoint catalog with examples, parameters, and error codes |
+| **[Quickstart Guide](docs/quickstart.md)** | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes |
+| **[Swagger UI](/api/docs)** | Interactive API explorer (available in dev/staging; disabled in production) |
+
+### Quick Links
+
+- **Getting an API Key**: See [Quickstart → Step 1-2](docs/quickstart.md)
+- **Finding Payment Routes**: See [API Reference → Simulator](docs/api-reference.md#simulator-payment-paths--fees)
+- **Building Multi-Op Transactions**: See [API Reference → Composer](docs/api-reference.md#composer-transaction-building)
+- **Authentication & Security**: See [API Reference → Authentication](docs/api-reference.md#authentication)
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
