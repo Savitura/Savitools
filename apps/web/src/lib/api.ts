@@ -408,6 +408,67 @@ export async function sendPayment(
   });
 }
 
+/* ─── Sandbox ─────────────────────────────────────────────────────────────── */
+
+export interface SandboxAccountDetails {
+  publicKey: string;
+  sequenceNumber: string;
+  balances: Balance[];
+  signers: Array<{ publicKey: string; weight: number }>;
+  thresholds: {
+    lowThreshold: number;
+    medThreshold: number;
+    highThreshold: number;
+  };
+  flags: {
+    authRequired: boolean;
+    authRevocable: boolean;
+    authImmutable: boolean;
+  };
+}
+
+export interface SandboxFundResult {
+  publicKey: string;
+  funded: boolean;
+  txHash: string | null;
+  confirmationStatus: string;
+  startingBalance: string;
+}
+
+export interface SandboxPaymentResult {
+  success: boolean;
+  txHash: string;
+  feeCharged: number;
+  resultCode: string;
+  destination: string;
+  asset: string;
+  amount: string;
+}
+
+export async function sandboxFund(publicKey: string) {
+  return apiFetch<SandboxFundResult>('/sandbox/fund', {
+    method: 'POST',
+    body: JSON.stringify({ publicKey }),
+  });
+}
+
+export async function sandboxGetAccount(publicKey: string) {
+  return apiFetch<SandboxAccountDetails>(`/sandbox/account/${encodeURIComponent(publicKey)}`);
+}
+
+export async function sandboxSendPayment(
+  fromSecret: string,
+  toPublicKey: string,
+  asset: string,
+  amount: string,
+  memo?: string,
+) {
+  return apiFetch<SandboxPaymentResult>('/sandbox/payment', {
+    method: 'POST',
+    body: JSON.stringify({ fromSecret, toPublicKey, asset, amount, memo }),
+  });
+}
+
 /* ─── Simulator ──────────────────────────────────────────────────────────── */
 
 export interface PathHop {
