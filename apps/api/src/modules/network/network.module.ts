@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
 import { NetworkController } from "./network.controller";
 import { NetworkService } from "./network.service";
 import { MetricsModule } from "../metrics/metrics.module";
+import { NetworkSample } from "./entities/network-sample.entity";
 
 @Module({
-  imports: [MetricsModule],
+  imports: [MetricsModule, TypeOrmModule.forFeature([NetworkSample])],
   controllers: [NetworkController],
   providers: [NetworkService],
   exports: [NetworkService],

@@ -321,6 +321,70 @@ export type Direction = "strict_send" | "strict_receive";
 export type AssetType = "native" | "credit_alphanum4" | "credit_alphanum12";
 export type NetworkChoice = "mainnet" | "testnet";
 
+export interface NetworkStatusResult {
+  timestamp: number;
+  network: NetworkChoice;
+  passphrase: string;
+  ledger: {
+    sequence: number;
+    closeTime: string;
+    secondsSinceClose: number;
+    avgCloseTime: number;
+  };
+  fees: {
+    baseFee: { min: number; mode: number; max: number };
+    percentiles: { p10: number; p50: number; p90: number; p99: number };
+  };
+  latency: number;
+}
+
+export interface NetworkHistoryBucket {
+  timestamp: number;
+  sampledAt: string;
+  ok: boolean;
+  latencyMs: number | null;
+  sampleCount: number;
+  errorCount: number;
+}
+
+export interface NetworkHistorySummary {
+  uptimePercent: number;
+  p50LatencyMs: number | null;
+  p95LatencyMs: number | null;
+  outageCount: number;
+  sampleCount: number;
+}
+
+export interface NetworkHistoryResult {
+  network: NetworkChoice;
+  from: string;
+  to: string;
+  bucketSeconds: number;
+  summary: NetworkHistorySummary;
+  samples: NetworkHistoryBucket[];
+}
+
+export async function getNetworkStatus(network: NetworkChoice = "mainnet") {
+  return apiFetch<NetworkStatusResult>(`/network/status?network=${network}`);
+}
+
+export async function getNetworkHistory(
+  network: NetworkChoice = "mainnet",
+  windowMinutes = 60,
+) {
+  const to = new Date();
+  const from = new Date(to.getTime() - windowMinutes * 60 * 1000);
+  const params = new URLSearchParams({
+    network,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+
+  return apiFetch<NetworkHistoryResult>(
+    `/network/status/history?${params.toString()}`,
+  );
+}
+
 export interface SimulatedAsset {
   type: AssetType;
   code?: string;
