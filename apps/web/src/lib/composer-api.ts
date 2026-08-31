@@ -1,6 +1,7 @@
 import { apiFetch } from './api';
 
 // -------------------------------------------------------------------------------
+// Types mirroring the API DTOs
 // Types mirroring the API DORs
 // -------------------------------------------------------------------------------
 
@@ -59,12 +60,50 @@ export interface OperationManifestEntry {
   fields: OperationField[];
 }
 
+// Sequence types
 // -------------------------------------------------------------------------------
 // API wrappers
 // -------------------------------------------------------------------------------
 
+export interface SequenceSourceRef {
+  step: number;
+  field?: 'source' | 'destination';
+}
+
+export interface SequenceStepInput {
+  source: string | SequenceSourceRef;
+  operations: OperationInput[];
+  memo?: string;
+}
+
+export interface RunTransactionSequenceInput {
+  network?: 'testnet' | 'mainnet';
+  stopOnFailure: boolean;
+  steps: SequenceStepInput[];
+}
+
+export interface StepResult {
+  stepIndex: number;
+  sourceAccount: string;
+  status: 'success' | 'failed';
+  txHash: string | null;
+  nextSequence: number;
+  error?: string | null;
+  sequence?: number;
+  xdr?: string;
+}
+
+export interface SequenceRunResult {
+  id: string;
+  status: string;
+  results: StepResult[];
+}
+
+// -------------------------------------------------------------------------------
+ // API wrappers
+// -------------------------------------------------------------------------------
 export async function fetchOperations(): Promise<OperationManifestEntry[]> {
-  return apiFetch<OperationManifestEntry[]>('/composer/operations');
+  return apiFetch<OperationManifestEntry[]>'/composer/operations');
 }
 
 export async function buildTransaction(
@@ -106,6 +145,10 @@ export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet
   }
 }
 
+export async function runTransactionSequence(
+  input: RunTransactionSequenceInput,
+): Promise<SequenceRunResult> {
+  return apiFetch<SequenceRunResult>('/composer/sequence/run', {
 // ------------------------------------------------------------------------------
 // Named composer workspaces
 // ------------------------------------------------------------------------------
@@ -144,6 +187,8 @@ export function createComposerWorkspace(
   });
 }
 
+export async function fetchTransactionSequenceRuns(): Promise<SequenceRunResult[]> {
+  return apiFetch<SequenceRunResult[]>('/composer/sequence');
 export function getComposerWorkspace(
   id: string,
 ): Promise<ComposerWorkspace> {
