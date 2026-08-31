@@ -37,6 +37,7 @@ export class ContractsService {
   private readonly deployer: Keypair;
   private readonly networkPassphrase: string;
   private readonly wasmStore = new Map<string, { buffer: Buffer; metadata: WasmMetadata }>();
+  private readonly wasmUrlCache = new Map<string, string>();
   private readonly maxFileSize: number;
 
   constructor(
@@ -163,10 +164,130 @@ export class ContractsService {
     }
   }
 
+  async fetchWasmFromUrl(url: string): Promise<{ buffer: Buffer; metadata: WasmMetadata }> {
+    const normalizedUrl = this.resolveWasmUrl(url);
+    const cachedHash = this.wasmUrlCache.get(normalizedUrl);
+
+    if (cachedHash && this.wasmStore.has(cachedHash)) {
+      const cached = this.wasmStore.get(cachedHash)!;
+      return { buffer: cached.buffer, metadata: cached.metadata };
+    }
+
+    const configuredTimeout = this.configService.get<string>('WASM_URL_TIMEOUT_MS');
+    const timeoutMs = configuredTimeout ? parseInt(configuredTimeout, 10) || 30000 : 30000;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(normalizedUrl, {
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        throw new BadRequestException(
+          `Failed to download WASM from URL: HTTP ${response.status}`,
+        );
+      }
+
+      const contentLength = Number(response.headers.get('content-length') || '0');
+      if (contentLength > this.maxFileSize) {
+        throw new BadRequestException(
+          `WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`,
+        );
+      }
+
+      if (!response.body) {
+        throw new BadRequestException('Failed to download WASM from URL: empty response body');
+      }
+
+      const chunks: Buffer[] = [];
+      let totalSize = 0;
+
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        totalSize += chunk.byteLength;
+        if (totalSize > this.maxFileSize) {
+          controller.abort();
+          throw new BadRequestException(
+            `WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`,
+          );
+        }
+        chunks.push(Buffer.from(chunk));
+      }
+
+      const wasmBuffer = Buffer.concat(chunks);
+
+      if (
+        wasmBuffer.length < 8 ||
+        wasmBuffer.readUInt32LE(0) !== 0x6d736100 ||
+        wasmBuffer.readUInt32LE(4) !== 1
+      ) {
+        throw new BadRequestException('Invalid WASM format');
+      }
+
+      const contentHash = hash(wasmBuffer).toString('hex');
+      const metadata = await this.storeUploadedWasm({
+        wasmBuffer,
+        filename: path.basename(new URL(normalizedUrl).pathname) || 'contract.wasm',
+        source: 'url',
+      });
+
+      this.wasmUrlCache.set(normalizedUrl, contentHash);
+
+      return { buffer: wasmBuffer, metadata };
+    } catch (err: any) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+      if (err.name === 'AbortError' || err.code === 'ABORT_ERR') {
+        throw new BadRequestException('WASM download timed out');
+      }
+      throw new BadRequestException(`Failed to fetch WASM from URL: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private resolveWasmUrl(url: string): string {
+    if (url.startsWith('ipfs://')) {
+      const ipfsPath = url.slice('ipfs://'.length);
+      if (!ipfsPath) {
+        throw new BadRequestException('Invalid IPFS URL');
+      }
+      const gateway = this.configService.get<string>('IPFS_GATEWAY_URL', 'https://ipfs.io');
+      return `${gateway.replace(/\/$/, '')}/ipfs/${ipfsPath}`;
+    }
+
+    if (url.startsWith('ar://')) {
+      const arweaveId = url.slice('ar://'.length);
+      if (!arweaveId) {
+        throw new BadRequestException('Invalid Arweave URL');
+      }
+      const gateway = this.configService.get<string>('ARWEAVE_GATEWAY_URL', 'https://arweave.net');
+      return `${gateway.replace(/\/$/, '')}/${arweaveId}`;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new BadRequestException('Invalid WASM URL');
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new BadRequestException('Invalid WASM URL protocol');
+    }
+
+    return parsed.toString();
+  }
+
   async deploy(
-    wasmBuffer: Buffer,
+    wasmBuffer: Buffer | string,
     constructorArgs?: unknown[],
   ): Promise<{ contractId: string; wasmHash: string; txHash: string }> {
+    if (typeof wasmBuffer === 'string') {
+      wasmBuffer = (await this.fetchWasmFromUrl(wasmBuffer)).buffer;
+    }
     if (!wasmBuffer || wasmBuffer.length === 0) {
       throw new BadRequestException("WASM file is empty");
     }
