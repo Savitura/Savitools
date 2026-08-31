@@ -31,15 +31,19 @@ import { CreateGraphSnapshots1785600000000 } from './database/migrations/1785600
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
-    ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          ttl: config.get<number>('THROTTLE_TTL', 60000),
-          limit: config.get<number>('THROTTLE_LIMIT', 100),
-        },
-      ],
-    }),
+   ThrottlerModule.forRootAsync({
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => [
+    {
+      ttl: config.get<number>('THROTTLE_TTL', 60000),
+      limit: config.get<number>('THROTTLE_LIMIT', 100),
+      skipIf: (context) => {
+        const request = context.switchToHttp().getRequest();
+        return request.method === 'OPTIONS';
+      },
+    },
+  ],
+}),
 
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
