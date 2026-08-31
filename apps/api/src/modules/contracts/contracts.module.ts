@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { HttpModule } from "@nestjs/axios";
 import { AuthModule } from "../auth/auth.module";
 import { MetricsModule } from "../metrics/metrics.module";
 import { ContractsController } from "./contracts.controller";
@@ -7,7 +8,7 @@ import { EventsController } from "./events.controller";
 import { EventsService } from "./events.service";
 
 @Module({
-  imports: [AuthModule, MetricsModule],
+  imports: [AuthModule, MetricsModule, HttpModule],
   controllers: [ContractsController, EventsController],
   providers: [ContractsService, EventsService],
   exports: [ContractsService, EventsService],
