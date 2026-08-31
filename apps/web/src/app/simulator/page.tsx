@@ -13,6 +13,7 @@ export default function SimulatorPage() {
       <ToolPageShell
         title="Payment Simulator"
         description="Simulate path payments, preview routing, and estimate fees."
+        docsHref="/docs/simulator"
       >
         <div className="mb-6">
           <Link

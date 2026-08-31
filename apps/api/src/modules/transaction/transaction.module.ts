@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
-import { InspectorModule } from '../inspector/inspector.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { TransactionController } from './transaction.controller';
 import { TransactionService } from './transaction.service';
 import { GraphController } from './graph.controller';
 import { GraphService } from './graph.service';
+import { TransactionReplay } from './entities/transaction-replay.entity';
 
 @Module({
-  imports: [InspectorModule],
-  controllers: [TransactionController],
-  providers: [TransactionService],
+  imports: [ConfigModule, TypeOrmModule.forFeature([TransactionReplay])],
+  controllers: [TransactionController, GraphController],
+  providers: [TransactionService, GraphService],
   exports: [TransactionService],
 })
 export class TransactionModule {}

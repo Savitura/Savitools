@@ -1,5 +1,6 @@
 import { SandboxService } from './sandbox.service';
 import { BadRequestException } from '@nestjs/common';
+import * as StellarSdk from '@stellar/stellar-sdk';
 
 describe('SandboxService', () => {
   let service: SandboxService;
@@ -35,6 +36,7 @@ describe('SandboxService', () => {
 
   describe('fundFromFriendbot', () => {
     it('returns funding details on success', async () => {
+      jest.spyOn((service as any).server, 'loadAccount').mockRejectedValueOnce(new Error('not found'));
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ hash: 'tx-hash-123' }),
@@ -48,18 +50,54 @@ describe('SandboxService', () => {
       expect(result.startingBalance).toBe('10,000 XLM');
     });
 
+    it('handles already funded account gracefully via initial loadAccount check', async () => {
+      jest.spyOn((service as any).server, 'loadAccount').mockResolvedValueOnce({
+        balances: [{ asset_type: 'native', balance: '10000.0000000' }],
+      });
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy;
+
+      const result = await service.fundFromFriendbot('GTEST');
+
+      expect(result.funded).toBe(true);
+      expect(result.startingBalance).toBe('10000.0000000 XLM');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('handles already funded response from friendbot concurrently', async () => {
+      jest.spyOn((service as any).server, 'loadAccount')
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockResolvedValueOnce({
+          balances: [{ asset_type: 'native', balance: '10000.0000000' }],
+        });
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () => 'account already funded',
+      });
+
+      const result = await service.fundFromFriendbot('GTEST');
+
+      expect(result.funded).toBe(true);
+      expect(result.startingBalance).toBe('10000.0000000 XLM');
+    });
+
     it('throws on fetch failure', async () => {
+      jest.spyOn((service as any).server, 'loadAccount').mockRejectedValueOnce(new Error('not found'));
       global.fetch = jest.fn().mockRejectedValue(new Error('Timeout'));
 
       await expect(service.fundFromFriendbot('GTEST')).rejects.toThrow(BadRequestException);
     });
 
     it('throws on non-ok response', async () => {
+      jest.spyOn((service as any).server, 'loadAccount').mockRejectedValueOnce(new Error('not found'));
       global.fetch = jest.fn().mockResolvedValue({
         ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-        text: async () => 'Invalid address',
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: async () => 'Server Error',
       });
 
       await expect(service.fundFromFriendbot('GTEST')).rejects.toThrow(BadRequestException);

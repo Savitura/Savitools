@@ -1,30 +1,33 @@
-jest.mock('redis', () => {
-  const mockRedisClient = {
-    connect: jest.fn(),
-    quit: jest.fn(),
-    lPush: jest.fn(),
-    lTrim: jest.fn(),
-    lRange: jest.fn(),
-    on: jest.fn(),
-  };
-  return {
-    createClient: jest.fn(() => mockRedisClient),
-    __mockRedisClient: mockRedisClient,
-  };
-});
+import { BadRequestException } from "@nestjs/common";
+import { Between, LessThan } from "typeorm";
+import { NetworkSample } from "./entities/network-sample.entity";
+import { NetworkService } from "./network.service";
 
-import { NetworkService } from './network.service';
-const { __mockRedisClient: mockRedisClient } = require('redis');
-
-describe('NetworkService', () => {
+describe("NetworkService", () => {
   let service: NetworkService;
+  let repository: {
+    create: jest.Mock;
+    save: jest.Mock;
+    find: jest.Mock;
+    delete: jest.Mock;
+  };
 
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
-    service = new NetworkService({
-      get: jest.fn(() => 'redis://localhost:6379'),
-    } as any);
+    repository = {
+      create: jest.fn((sample) => sample),
+      save: jest.fn(async (sample) => sample),
+      find: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    service = new NetworkService(
+      {
+        get: jest.fn((key: string, fallback?: string) => fallback),
+      } as any,
+      repository as any,
+    );
   });
 
   afterEach(() => {
@@ -33,75 +36,184 @@ describe('NetworkService', () => {
     }
   });
 
-  describe('getHistory', () => {
-    it('returns reversed history from Redis', async () => {
-      (service as any).redisClient = mockRedisClient;
-      const entries = [
-        JSON.stringify({ timestamp: 3, network: 'testnet' }),
-        JSON.stringify({ timestamp: 2, network: 'testnet' }),
-        JSON.stringify({ timestamp: 1, network: 'testnet' }),
-      ];
-      mockRedisClient.lRange.mockResolvedValue(entries);
-
-      const result = await service.getHistory('testnet');
-
-      expect(result).toHaveLength(3);
-      expect(result[0].timestamp).toBe(1);
-      expect(result[2].timestamp).toBe(3);
-    });
-
-    it('returns empty array on error', async () => {
-      (service as any).redisClient = mockRedisClient;
-      mockRedisClient.lRange.mockRejectedValue(new Error('Redis down'));
-
-      const result = await service.getHistory('mainnet');
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe('onModuleInit', () => {
-    it('connects to Redis', async () => {
-      mockRedisClient.connect.mockResolvedValue(undefined);
-      mockRedisClient.lPush.mockResolvedValue(undefined);
-      mockRedisClient.lTrim.mockResolvedValue(undefined);
-
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          _embedded: {
-            records: [
-              { sequence: 1, closed_at: new Date().toISOString() },
-              { sequence: 0, closed_at: new Date(Date.now() - 5000).toISOString() },
-            ],
+  describe("pollAndStore", () => {
+    it("stores a successful sample for each network", async () => {
+      jest
+        .spyOn(service, "fetchCurrentStatus")
+        .mockImplementation(async (network) => ({
+          timestamp: Date.now(),
+          network,
+          passphrase: "passphrase",
+          ledger: {
+            sequence: 1,
+            closeTime: new Date().toISOString(),
+            secondsSinceClose: 1,
+            avgCloseTime: 5,
           },
-          fee_charged: { min: '100', mode: '100', max: '100', p10: '100', p50: '100', p90: '100', p99: '100' },
-          last_ledger: 1,
-          last_ledger_base_fee: '100',
-        }),
-      });
+          fees: {
+            baseFee: { min: 100, mode: 100, max: 100 },
+            percentiles: { p10: 100, p50: 100, p90: 100, p99: 100 },
+          },
+          latency: 25,
+        }));
 
-      await service.onModuleInit();
-      expect(mockRedisClient.connect).toHaveBeenCalled();
+      await service.pollAndStore();
+
+      expect(repository.save).toHaveBeenCalledTimes(2);
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ network: "mainnet", ok: true, error: null }),
+      );
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ network: "testnet", ok: true, error: null }),
+      );
+    });
+
+    it("stores a failed sample without blocking the other network", async () => {
+      jest
+        .spyOn(service, "fetchCurrentStatus")
+        .mockImplementation(async (network) => {
+          if (network === "mainnet") throw new Error("mainnet down");
+          return {
+            timestamp: Date.now(),
+            network,
+            passphrase: "passphrase",
+            ledger: {
+              sequence: 1,
+              closeTime: new Date().toISOString(),
+              secondsSinceClose: 1,
+              avgCloseTime: 5,
+            },
+            fees: {
+              baseFee: { min: 100, mode: 100, max: 100 },
+              percentiles: { p10: 100, p50: 100, p90: 100, p99: 100 },
+            },
+            latency: 25,
+          };
+        });
+
+      await service.pollAndStore();
+
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          network: "mainnet",
+          ok: false,
+          error: "mainnet down",
+        }),
+      );
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ network: "testnet", ok: true }),
+      );
+    });
+
+    it("does not queue overlapping sampler runs", async () => {
+      (service as any).pollInProgress = true;
+
+      await service.pollAndStore();
+
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(repository.delete).not.toHaveBeenCalled();
     });
   });
 
-  describe('onModuleDestroy', () => {
-    it('clears interval and quits Redis', async () => {
-      (service as any).redisClient = mockRedisClient;
-      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
-      (service as any).pollInterval = setInterval(() => {}, 60000);
+  describe("getHistory", () => {
+    it("returns 1-minute buckets with uptime and latency summary", async () => {
+      const samples: Partial<NetworkSample>[] = [
+        sample("testnet", "2026-08-31T10:00:10.000Z", true, 100),
+        sample("testnet", "2026-08-31T10:00:40.000Z", true, 200),
+        sample("testnet", "2026-08-31T10:01:05.000Z", false, null),
+        sample("testnet", "2026-08-31T10:02:05.000Z", true, 300),
+      ];
+      repository.find.mockResolvedValue(samples);
 
-      await service.onModuleDestroy();
+      const result = await service.getHistory(
+        "testnet",
+        "2026-08-31T10:00:00.000Z",
+        "2026-08-31T10:03:00.000Z",
+      );
 
-      expect(clearIntervalSpy).toHaveBeenCalled();
-      expect(mockRedisClient.quit).toHaveBeenCalled();
+      expect(repository.find).toHaveBeenCalledWith({
+        where: {
+          network: "testnet",
+          sampledAt: Between(
+            new Date("2026-08-31T10:00:00.000Z"),
+            new Date("2026-08-31T10:03:00.000Z"),
+          ),
+        },
+        order: { sampledAt: "ASC" },
+      });
+      expect(result.samples).toEqual([
+        expect.objectContaining({
+          sampledAt: "2026-08-31T10:00:00.000Z",
+          ok: true,
+          latencyMs: 150,
+          sampleCount: 2,
+          errorCount: 0,
+        }),
+        expect.objectContaining({
+          sampledAt: "2026-08-31T10:01:00.000Z",
+          ok: false,
+          latencyMs: null,
+          sampleCount: 1,
+          errorCount: 1,
+        }),
+        expect.objectContaining({
+          sampledAt: "2026-08-31T10:02:00.000Z",
+          ok: true,
+          latencyMs: 300,
+          sampleCount: 1,
+          errorCount: 0,
+        }),
+      ]);
+      expect(result.summary).toEqual({
+        uptimePercent: 66.67,
+        p50LatencyMs: 150,
+        p95LatencyMs: 300,
+        outageCount: 1,
+        sampleCount: 4,
+      });
     });
 
-    it('handles missing redisClient gracefully', async () => {
-      (service as any).redisClient = undefined;
-      (service as any).pollInterval = undefined;
+    it("validates malformed and inverted date ranges", async () => {
+      await expect(
+        service.getHistory("mainnet", "not-a-date", undefined),
+      ).rejects.toBeInstanceOf(BadRequestException);
 
-      await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+      await expect(
+        service.getHistory(
+          "mainnet",
+          "2026-08-31T10:05:00.000Z",
+          "2026-08-31T10:00:00.000Z",
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("pruneRetention", () => {
+    it("deletes samples older than 90 days", async () => {
+      await service.pruneRetention(new Date("2026-08-31T12:00:00.000Z"));
+
+      expect(repository.delete).toHaveBeenCalledWith({
+        sampledAt: LessThan(new Date("2026-06-02T12:00:00.000Z")),
+      });
     });
   });
 });
+
+function sample(
+  network: "mainnet" | "testnet",
+  sampledAt: string,
+  ok: boolean,
+  latencyMs: number | null,
+): Partial<NetworkSample> {
+  return {
+    network,
+    sampledAt: new Date(sampledAt),
+    ok,
+    latencyMs,
+    horizonBaseUrl:
+      network === "mainnet"
+        ? "https://horizon.stellar.org"
+        : "https://horizon-testnet.stellar.org",
+    error: ok ? null : "timeout",
+  };
+}

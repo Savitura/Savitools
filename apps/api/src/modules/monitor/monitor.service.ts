@@ -15,6 +15,11 @@ import { Watch } from './entities/watch.entity';
 import { AlertRuleDto, CreateWatchDto } from './dto/create-watch.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { RegisterWebhookDto } from './dto/register-webhook.dto';
+import {
+  EXPORT_CHUNK_SIZE,
+  EXPORT_MAX_ROWS,
+  SearchEventsQueryDto,
+} from './dto/search-events.dto';
 import { MonitorQueueService } from './monitor-queue.service';
 import {
   AlertRuleDefinition,
@@ -173,6 +178,140 @@ export class MonitorService implements OnApplicationBootstrap {
     await this.alertEventRepository.save(alert);
     await this.queue.enqueue(alert.id, true);
     return alert;
+  }
+
+  /**
+   * Search watch events across the current user's watches with the same
+   * filters used by the CSV export endpoint (see Savitura/Savitools#147).
+   */
+  async searchEvents(
+    userId: string,
+    query: SearchEventsQueryDto,
+  ): Promise<{ items: WatchEvent[]; page: number; limit: number; total: number }> {
+    const qb = this.watchEventRepository
+      .createQueryBuilder('event')
+      .innerJoin('event.watch', 'watch')
+      .where('watch.user_id = :userId', { userId })
+      .orderBy('event.occurred_at', 'DESC');
+
+    if (query.watchId) {
+      qb.andWhere('event.watch_id = :watchId', { watchId: query.watchId });
+    }
+    if (query.eventType) {
+      qb.andWhere('event.event_type = :eventType', { eventType: query.eventType });
+    }
+    if (query.from) {
+      qb.andWhere('event.occurred_at >= :from', { from: new Date(query.from) });
+    }
+    if (query.to) {
+      qb.andWhere('event.occurred_at <= :to', { to: new Date(query.to) });
+    }
+    if (query.q?.trim()) {
+      qb.andWhere(
+        `(event.paging_token ILIKE :q OR event.payload::text ILIKE :q OR event.source ILIKE :q)`,
+        { q: `%${query.q.trim()}%` },
+      );
+    }
+
+    const [items, total] = await qb
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit)
+      .getManyAndCount();
+
+    return { items, page: query.page, limit: query.limit, total };
+  }
+
+  /**
+   * Stream matching events to a CSV callback in bounded chunks so large result
+   * sets never load fully into memory (see Savitura/Savitools#147).
+   *
+   * @param onRow  called once per event with the CSV row values
+   * @param onEnd  called after the last row with the total row count written
+   */
+  async streamSearchEventsCsv(
+    userId: string,
+    query: SearchEventsQueryDto,
+    onRow: (values: (string | number | null)[]) => Promise<void> | void,
+    onEnd: (total: number) => Promise<void> | void,
+  ): Promise<void> {
+    const pageSize = EXPORT_CHUNK_SIZE;
+    // Respect the caller's limit, but never exceed the export maximum.
+    const maxRows = Math.min(query.limit ?? EXPORT_MAX_ROWS, EXPORT_MAX_ROWS);
+    let page = 1;
+    let written = 0;
+
+    // Export accepts the same filters as the search endpoint; paginate
+    // internally so the caller never has to manage cursors.
+    while (written < maxRows) {
+      const remaining = maxRows - written;
+      const take = Math.min(pageSize, remaining);
+      const pageQuery: SearchEventsQueryDto = {
+        ...query,
+        page,
+        limit: take,
+      };
+      const { items } = await this.searchEvents(userId, pageQuery);
+      if (items.length === 0) break;
+
+      for (const event of items) {
+        await onRow(this.eventToCsvRow(event));
+        written += 1;
+      }
+      if (items.length < take) break;
+      page += 1;
+    }
+
+    await onEnd(written);
+  }
+
+  /** CSV row values for a watch event, matching the UI feed display. */
+  private eventToCsvRow(event: WatchEvent): (string | number | null)[] {
+    const payload = event.payload ?? {};
+    const amount =
+      typeof payload.amount === 'string' || typeof payload.amount === 'number'
+        ? String(payload.amount)
+        : null;
+    const asset =
+      payload.asset_type === 'native'
+        ? 'XLM'
+        : typeof payload.asset_code === 'string'
+          ? payload.asset_code
+          : typeof payload.asset === 'string'
+            ? payload.asset
+            : null;
+    const from =
+      typeof payload.from === 'string'
+        ? payload.from
+        : typeof payload.source_account === 'string'
+          ? payload.source_account
+          : null;
+    const to =
+      typeof payload.to === 'string'
+        ? payload.to
+        : typeof payload.account === 'string'
+          ? payload.account
+          : null;
+    const txHash =
+      typeof payload.transaction_hash === 'string'
+        ? payload.transaction_hash
+        : typeof payload.hash === 'string'
+          ? payload.hash
+          : typeof payload.transactionHash === 'string'
+            ? payload.transactionHash
+            : null;
+
+    return [
+      event.eventType,
+      event.occurredAt.toISOString(),
+      amount,
+      asset,
+      from,
+      to,
+      txHash,
+      event.pagingToken,
+      event.watchId,
+      JSON.stringify(payload),
+    ];
   }
 
   async registerWebhook(

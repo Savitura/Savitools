@@ -1,25 +1,28 @@
-import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import * as StellarSdk from '@stellar/stellar-sdk';
-import { Repository } from 'typeorm';
-import { Watch } from './entities/watch.entity';
-import { EventIngestionService } from './event-ingestion.service';
-import { horizonServer, rpcServer } from './horizon';
+import { Injectable, Logger, OnApplicationShutdown } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import * as StellarSdk from "@stellar/stellar-sdk";
+import { Repository } from "typeorm";
+import { Watch } from "./entities/watch.entity";
+import { EventIngestionService } from "./event-ingestion.service";
+import { horizonServer, rpcServer } from "./horizon";
 import {
   EventSource,
   NormalizedMonitorEvent,
   StellarNetwork,
   StreamMode,
   StreamStatus,
-} from './monitor.types';
-import { WatchRegistry } from './watch-registry.service';
-import { MonitorGateway } from './monitor.gateway';
+} from "./monitor.types";
+import { WatchRegistry } from "./watch-registry.service";
+import { MonitorGateway } from "./monitor.gateway";
 
-const MAX_SSE_CONNECTIONS = 50;
-const RECONNECT_DELAY_MS = 2_000;
-const FALLBACK_POLL_INTERVAL_MS = 30_000;
-const CONTRACT_POLL_INTERVAL_MS = 2_000;
+export const MAX_SSE_CONNECTIONS = 50;
+export const INITIAL_RECONNECT_DELAY_MS = 1_000;
+export const MAX_RECONNECT_DELAY_MS = 60_000;
+export const RECONNECT_BACKOFF_FACTOR = 2;
+export const RECONNECT_JITTER_RATIO = 0.2;
+export const FALLBACK_POLL_INTERVAL_MS = 30_000;
+export const CONTRACT_POLL_INTERVAL_MS = 2_000;
 
 interface StreamGroup {
   key: string;
@@ -27,6 +30,7 @@ interface StreamGroup {
   stopped: boolean;
   closers: Partial<Record<EventSource, () => void>>;
   reconnectTimers: Partial<Record<EventSource, ReturnType<typeof setTimeout>>>;
+  reconnectAttempts: Partial<Record<EventSource, number>>;
   pollTimer?: ReturnType<typeof setInterval>;
   polling: boolean;
   chains: Partial<Record<EventSource, Promise<void>>>;
@@ -64,7 +68,7 @@ export class StreamManager implements OnApplicationShutdown {
       return;
     }
 
-    if (watch.type === 'contract') {
+    if (watch.type === "contract") {
       await this.startPolling(key, CONTRACT_POLL_INTERVAL_MS);
       return;
     }
@@ -74,16 +78,16 @@ export class StreamManager implements OnApplicationShutdown {
       return;
     }
 
-    const group = this.createGroup(key, 'sse');
+    const group = this.createGroup(key, "sse");
     this.groups.set(key, group);
     this.activeSseConnections += 2;
-    await this.setStatus(key, 'sse', 'streaming', null);
-    const sources = ['transaction', 'payment'] as const;
+    await this.setStatus(key, "sse", "streaming", null);
+    const sources = ["transaction", "payment"] as const;
     const results = await Promise.allSettled(
       sources.map((source) => this.openAccountStream(group, source)),
     );
     for (const [index, result] of results.entries()) {
-      if (result.status === 'rejected') {
+      if (result.status === "rejected") {
         await this.reconnect(
           group,
           sources[index],
@@ -106,12 +110,14 @@ export class StreamManager implements OnApplicationShutdown {
         clearTimeout(timer);
       }
     });
+    group.reconnectTimers = {};
+    group.reconnectAttempts = {};
     if (group.pollTimer) {
       clearInterval(group.pollTimer);
     }
 
     this.groups.delete(key);
-    if (group.mode === 'sse') {
+    if (group.mode === "sse") {
       this.activeSseConnections -= 2;
       void this.promotePollingGroup().catch((error: unknown) => {
         this.logger.error(
@@ -129,6 +135,20 @@ export class StreamManager implements OnApplicationShutdown {
     }
   }
 
+  calculateReconnectDelay(
+    attempts: number,
+    jitterFactor = Math.random(),
+  ): number {
+    const exponentialDelay =
+      INITIAL_RECONNECT_DELAY_MS *
+      Math.pow(RECONNECT_BACKOFF_FACTOR, Math.max(0, attempts));
+    const cappedDelay = Math.min(MAX_RECONNECT_DELAY_MS, exponentialDelay);
+    const jitter = Math.floor(
+      jitterFactor * Math.min(1000, cappedDelay * RECONNECT_JITTER_RATIO),
+    );
+    return Math.min(MAX_RECONNECT_DELAY_MS, cappedDelay + jitter);
+  }
+
   private createGroup(key: string, mode: StreamMode): StreamGroup {
     return {
       key,
@@ -136,15 +156,16 @@ export class StreamManager implements OnApplicationShutdown {
       stopped: false,
       closers: {},
       reconnectTimers: {},
+      reconnectAttempts: {},
       chains: {},
       polling: false,
     };
   }
 
   private async startPolling(key: string, intervalMs: number): Promise<void> {
-    const group = this.createGroup(key, 'poll');
+    const group = this.createGroup(key, "poll");
     this.groups.set(key, group);
-    await this.setStatus(key, 'poll', 'polling', null);
+    await this.setStatus(key, "poll", "polling", null);
 
     await this.poll(group);
     if (group.stopped) {
@@ -166,17 +187,17 @@ export class StreamManager implements OnApplicationShutdown {
     group.polling = true;
 
     try {
-      if (watch.type === 'contract') {
+      if (watch.type === "contract") {
         await this.pollContract(group, watch);
       } else {
-        await this.pollAccount(group, watch, 'transaction');
-        await this.pollAccount(group, watch, 'payment');
+        await this.pollAccount(group, watch, "transaction");
+        await this.pollAccount(group, watch, "payment");
       }
-      await this.setStatus(group.key, 'poll', 'polling', null);
+      await this.setStatus(group.key, "poll", "polling", null);
     } catch (error) {
       const message = this.errorMessage(error);
       this.logger.error(`Polling failed for ${group.key}: ${message}`);
-      await this.setStatus(group.key, 'poll', 'error', message);
+      await this.setStatus(group.key, "poll", "error", message);
     } finally {
       group.polling = false;
     }
@@ -184,7 +205,7 @@ export class StreamManager implements OnApplicationShutdown {
 
   private async openAccountStream(
     group: StreamGroup,
-    source: 'transaction' | 'payment',
+    source: "transaction" | "payment",
   ): Promise<void> {
     const watch = this.registry.get(group.key)[0];
     if (!watch || group.stopped) {
@@ -194,12 +215,13 @@ export class StreamManager implements OnApplicationShutdown {
     const cursor = await this.ensureAccountCursor(group.key, watch, source);
     const server = this.horizonServer(watch.network);
     const builder =
-      source === 'transaction'
+      source === "transaction"
         ? server.transactions().forAccount(watch.publicKey).includeFailed(true)
         : server.payments().forAccount(watch.publicKey).includeFailed(true);
 
     group.closers[source] = builder.cursor(cursor).stream({
       onmessage: (record) => {
+        group.reconnectAttempts[source] = 0;
         this.enqueue(group, source, async () => {
           const event = this.normalizeHorizonEvent(source, record);
           await this.ingestion.ingest(group.key, event);
@@ -219,7 +241,7 @@ export class StreamManager implements OnApplicationShutdown {
 
   private async reconnect(
     group: StreamGroup,
-    source: 'transaction' | 'payment',
+    source: "transaction" | "payment",
     message: string,
   ): Promise<void> {
     if (group.stopped || group.reconnectTimers[source]) {
@@ -228,7 +250,11 @@ export class StreamManager implements OnApplicationShutdown {
 
     group.closers[source]?.();
     delete group.closers[source];
-    await this.setStatus(group.key, 'sse', 'error', message);
+    await this.setStatus(group.key, "sse", "error", message);
+
+    const attempts = group.reconnectAttempts[source] ?? 0;
+    const delay = this.calculateReconnectDelay(attempts);
+    group.reconnectAttempts[source] = attempts + 1;
 
     group.reconnectTimers[source] = setTimeout(() => {
       delete group.reconnectTimers[source];
@@ -237,24 +263,24 @@ export class StreamManager implements OnApplicationShutdown {
         .catch(async (error: unknown) => {
           await this.reconnect(group, source, this.errorMessage(error));
         });
-    }, RECONNECT_DELAY_MS);
+    }, delay);
   }
 
   private async pollAccount(
     group: StreamGroup,
     watch: Watch,
-    source: 'transaction' | 'payment',
+    source: "transaction" | "payment",
   ): Promise<void> {
     const cursor = await this.ensureAccountCursor(group.key, watch, source);
     const server = this.horizonServer(watch.network);
     const page =
-      source === 'transaction'
+      source === "transaction"
         ? await server
             .transactions()
             .forAccount(watch.publicKey)
             .includeFailed(true)
             .cursor(cursor)
-            .order('asc')
+            .order("asc")
             .limit(200)
             .call()
         : await server
@@ -262,7 +288,7 @@ export class StreamManager implements OnApplicationShutdown {
             .forAccount(watch.publicKey)
             .includeFailed(true)
             .cursor(cursor)
-            .order('asc')
+            .order("asc")
             .limit(200)
             .call();
 
@@ -281,7 +307,7 @@ export class StreamManager implements OnApplicationShutdown {
   private async pollContract(group: StreamGroup, watch: Watch): Promise<void> {
     const server = this.rpcServer(watch.network);
     const request: StellarSdk.rpc.Server.GetEventsRequest = {
-      filters: [{ type: 'contract', contractIds: [watch.publicKey] }],
+      filters: [{ type: "contract", contractIds: [watch.publicKey] }],
       limit: 200,
     };
 
@@ -302,7 +328,7 @@ export class StreamManager implements OnApplicationShutdown {
 
     await this.ingestion.updateCursor(
       group.key,
-      'contract',
+      "contract",
       response.cursor,
       response.latestLedger,
     );
@@ -311,11 +337,11 @@ export class StreamManager implements OnApplicationShutdown {
   private async ensureAccountCursor(
     key: string,
     watch: Watch,
-    source: 'transaction' | 'payment',
+    source: "transaction" | "payment",
   ): Promise<string> {
     const watches = this.registry.get(key);
     const cursorField =
-      source === 'transaction' ? 'transactionCursor' : 'paymentCursor';
+      source === "transaction" ? "transactionCursor" : "paymentCursor";
     const cursors = watches
       .map((entry) => entry[cursorField])
       .filter((cursor): cursor is string => Boolean(cursor));
@@ -328,22 +354,22 @@ export class StreamManager implements OnApplicationShutdown {
 
     const server = this.horizonServer(watch.network);
     const page =
-      source === 'transaction'
+      source === "transaction"
         ? await server
             .transactions()
             .forAccount(watch.publicKey)
             .includeFailed(true)
-            .order('desc')
+            .order("desc")
             .limit(1)
             .call()
         : await server
             .payments()
             .forAccount(watch.publicKey)
             .includeFailed(true)
-            .order('desc')
+            .order("desc")
             .limit(1)
             .call();
-    const cursor = page.records[0]?.paging_token ?? '0';
+    const cursor = page.records[0]?.paging_token ?? "0";
     await this.ingestion.updateCursor(key, source, cursor);
     return cursor;
   }
@@ -357,12 +383,12 @@ export class StreamManager implements OnApplicationShutdown {
     group.chains[source] = previous.then(task).catch(async (error: unknown) => {
       const message = this.errorMessage(error);
       this.logger.error(`Event processing failed for ${group.key}: ${message}`);
-      await this.setStatus(group.key, group.mode, 'error', message);
+      await this.setStatus(group.key, group.mode, "error", message);
     });
   }
 
   private normalizeHorizonEvent(
-    source: 'transaction' | 'payment',
+    source: "transaction" | "payment",
     record: unknown,
   ): NormalizedMonitorEvent {
     const value = record as Record<string, unknown>;
@@ -370,23 +396,23 @@ export class StreamManager implements OnApplicationShutdown {
     const assetCode = this.optionalString(value.asset_code);
     const assetIssuer = this.optionalString(value.asset_issuer);
     const asset =
-      assetType === 'native'
-        ? 'XLM'
+      assetType === "native"
+        ? "XLM"
         : assetCode
-          ? `${assetCode}${assetIssuer ? `:${assetIssuer}` : ''}`
+          ? `${assetCode}${assetIssuer ? `:${assetIssuer}` : ""}`
           : undefined;
     const sourceAssetType = this.optionalString(value.source_asset_type);
     const sourceAssetCode = this.optionalString(value.source_asset_code);
     const sourceAssetIssuer = this.optionalString(value.source_asset_issuer);
     const sourceAsset =
-      sourceAssetType === 'native'
-        ? 'XLM'
+      sourceAssetType === "native"
+        ? "XLM"
         : sourceAssetCode
-          ? `${sourceAssetCode}${sourceAssetIssuer ? `:${sourceAssetIssuer}` : ''}`
+          ? `${sourceAssetCode}${sourceAssetIssuer ? `:${sourceAssetIssuer}` : ""}`
           : undefined;
 
     return {
-      pagingToken: this.requiredString(value.paging_token, 'paging_token'),
+      pagingToken: this.requiredString(value.paging_token, "paging_token"),
       source,
       eventType: source,
       ledger: this.optionalNumber(value.ledger_attr ?? value.ledger),
@@ -401,7 +427,7 @@ export class StreamManager implements OnApplicationShutdown {
       from: this.optionalString(value.from ?? value.source_account),
       to: this.optionalString(value.to ?? value.account),
       successful:
-        source === 'transaction' && typeof value.successful === 'boolean'
+        source === "transaction" && typeof value.successful === "boolean"
           ? value.successful
           : undefined,
       transactionHash: this.optionalString(
@@ -423,14 +449,14 @@ export class StreamManager implements OnApplicationShutdown {
       inSuccessfulContractCall: record.inSuccessfulContractCall,
       transactionHash: record.txHash,
       contractId: record.contractId?.toString(),
-      topic: record.topic.map((topic) => topic.toXDR('base64')),
-      value: record.value.toXDR('base64'),
+      topic: record.topic.map((topic) => topic.toXDR("base64")),
+      value: record.value.toXDR("base64"),
     };
 
     return {
       pagingToken: record.pagingToken,
-      source: 'contract',
-      eventType: 'contract',
+      source: "contract",
+      eventType: "contract",
       ledger: record.ledger,
       occurredAt: record.ledgerClosedAt,
       successful: record.inSuccessfulContractCall,
@@ -468,7 +494,7 @@ export class StreamManager implements OnApplicationShutdown {
       watch.streamMode = mode;
       watch.status = status;
       watch.lastError = error;
-      this.gateway.emitToUser(watch.userId, 'watch_status', {
+      this.gateway.emitToUser(watch.userId, "watch_status", {
         watchId: watch.id,
         streamMode: mode,
         status,
@@ -479,7 +505,7 @@ export class StreamManager implements OnApplicationShutdown {
 
   private async markStreamingIfReady(group: StreamGroup): Promise<void> {
     if (group.closers.transaction && group.closers.payment) {
-      await this.setStatus(group.key, 'sse', 'streaming', null);
+      await this.setStatus(group.key, "sse", "streaming", null);
     }
   }
 
@@ -493,7 +519,7 @@ export class StreamManager implements OnApplicationShutdown {
 
     const candidate = Array.from(this.groups.values()).find((group) => {
       const watch = this.registry.get(group.key)[0];
-      return group.mode === 'poll' && watch?.type === 'account';
+      return group.mode === "poll" && watch?.type === "account";
     });
     if (!candidate) {
       return;
@@ -514,20 +540,20 @@ export class StreamManager implements OnApplicationShutdown {
   private jsonRecord(value: Record<string, unknown>): Record<string, unknown> {
     return JSON.parse(
       JSON.stringify(value, (_key, entry: unknown) =>
-        typeof entry === 'bigint' ? entry.toString() : entry,
+        typeof entry === "bigint" ? entry.toString() : entry,
       ),
     ) as Record<string, unknown>;
   }
 
   private requiredString(value: unknown, field: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
+    if (typeof value !== "string" && typeof value !== "number") {
       throw new Error(`Horizon event is missing ${field}`);
     }
     return String(value);
   }
 
   private optionalString(value: unknown): string | undefined {
-    return typeof value === 'string' || typeof value === 'number'
+    return typeof value === "string" || typeof value === "number"
       ? String(value)
       : undefined;
   }

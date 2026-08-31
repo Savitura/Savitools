@@ -4,6 +4,10 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth-context';
 import { NetworkProvider } from '@/lib/network-context';
 import { SiteHeader } from '@/components/site-header';
+import {
+  CommandPaletteProvider,
+  CommandPaletteDialog,
+} from '@/components/command-palette';
 import './globals.css';
 
 const geistSans = Geist({
@@ -32,8 +36,11 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthProvider>
           <NetworkProvider>
-            <SiteHeader />
-            {children}
+            <CommandPaletteProvider>
+              <SiteHeader />
+              {children}
+              <CommandPaletteDialog />
+            </CommandPaletteProvider>
           </NetworkProvider>
         </AuthProvider>
         <QuickstartWidget />
@@ -41,3 +48,4 @@ export default function RootLayout({
     </html>
   );
 }
+

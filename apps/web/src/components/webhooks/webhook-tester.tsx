@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { addRecentItem } from '@/lib/recent-items';
+import { useCommandPalette, ShortcutBadge } from '@/components/command-palette';
 import {
   Send,
   RotateCcw,
@@ -11,10 +13,14 @@ import {
   XCircle,
   ChevronDown,
   AlertTriangle,
+  Plus,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchWebhookTemplates,
+  saveWebhookTemplate,
   sendWebhook,
   fetchWebhookHistory,
   replayWebhook,
@@ -39,7 +45,7 @@ function formatTime(ts: number): string {
   });
 }
 
-function getStatusColor(status: number | null): string {
+function getStatusColor(status?: number | null): string {
   if (!status) return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
   if (status >= 200 && status < 300)
     return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
@@ -50,40 +56,6 @@ function getStatusColor(status: number | null): string {
   return 'bg-red-500/15 text-red-400 border-red-500/30';
 }
 
-function buildCurl(entry: {
-  endpointUrl: string;
-  payload: Record<string, unknown>;
-  requestHeaders: Record<string, string>;
-}): string {
-  const parts: string[] = ['curl', '-s', '-X', 'POST', `'${entry.endpointUrl}'`];
-
-  for (const [key, value] of Object.entries(entry.requestHeaders)) {
-    parts.push(`-H '${key}: ${value}'`);
-  }
-
-  parts.push(`-d '${JSON.stringify(entry.payload).replace(/'/g, "'\\''")}'`);
-
-  return parts.join(' \\\n  ');
-}
-
-function buildLiveCurl(
-  endpointUrl: string,
-  payload: string,
-  secret: string,
-  signature: string,
-): string {
-  const parts: string[] = ['curl', '-s', '-X', 'POST', `'${endpointUrl}'`];
-
-  parts.push("-H 'Content-Type: application/json'");
-
-  if (secret) {
-    parts.push(`-H 'X-SaviTools-Signature: sha256=${signature}'`);
-  }
-
-  parts.push(`-d '${payload.replace(/'/g, "'\\''")}'`);
-
-  return parts.join(' \\\n  ');
-}
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -114,21 +86,33 @@ export function WebhookTester() {
   const [templates, setTemplates] = useState<WebhookTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
-
+  const { registerContextActions } = useCommandPalette();
   const [endpointUrl, setEndpointUrl] = useState('');
+  const [method, setMethod] = useState<'POST' | 'PUT' | 'PATCH' | 'GET'>('POST');
   const [selectedEventType, setSelectedEventType] = useState('');
   const [payloadEditor, setPayloadEditor] = useState('');
   const [payloadValid, setPayloadValid] = useState(true);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   const [secret, setSecret] = useState('');
   const [signature, setSignature] = useState('');
 
+  const [customHeaders, setCustomHeaders] = useState<Array<{ name: string; value: string }>>([]);
+  const [repeatCount, setRepeatCount] = useState<number>(1);
+  const [repeatIntervalMs, setRepeatIntervalMs] = useState<number>(0);
+
   const [sending, setSending] = useState(false);
+  const [resultsList, setResultsList] = useState<WebhookHistoryEntry[]>([]);
   const [result, setResult] = useState<WebhookHistoryEntry | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<WebhookHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+
+  const [saveTemplateModal, setSaveTemplateModal] = useState(false);
+  const [templateNameInput, setTemplateNameInput] = useState('');
+  const [templateDescInput, setTemplateDescInput] = useState('');
+  const [templateSavedMsg, setTemplateSavedMsg] = useState(false);
 
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -158,42 +142,73 @@ export function WebhookTester() {
     try {
       const data = await fetchWebhookHistory();
       setHistory(data);
+      if (data.length > 0 && !result) {
+        setResult(data[0]);
+      }
     } catch {
       // silently fail on history load
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [result]);
 
   useEffect(() => {
     void loadTemplates();
     void loadHistory();
   }, [loadTemplates, loadHistory]);
 
+  // Validate JSON payload and common webhook structure schema
   useEffect(() => {
-    if (!secret) {
+    if (!payloadEditor.trim()) {
+      setPayloadValid(true);
+      setSchemaError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(payloadEditor);
+      setPayloadValid(true);
+
+      // Check common webhook schema validations (e.g. event type or data/payload fields)
+      if (typeof parsed !== 'object' || parsed === null) {
+        setSchemaError('Payload must be a JSON object');
+      } else {
+        setSchemaError(null);
+      }
+    } catch (err) {
+      setPayloadValid(false);
+      setSchemaError(err instanceof Error ? err.message : 'Invalid JSON syntax');
+    }
+  }, [payloadEditor]);
+
+  useEffect(() => {
+    if (!secret || !payloadValid) {
       setSignature('');
       return;
     }
     try {
       const payloadBytes = new TextEncoder().encode(payloadEditor);
       const keyBytes = new TextEncoder().encode(secret);
-      crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+      crypto.subtle
+        .importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
         .then((key) => crypto.subtle.sign('HMAC', key, payloadBytes))
         .then((sig) => {
           const hex = Array.from(new Uint8Array(sig))
             .map((b) => b.toString(16).padStart(2, '0'))
             .join('');
           setSignature(hex);
-        });
+        })
+        .catch(() => setSignature(''));
     } catch {
       setSignature('');
     }
-  }, [secret, payloadEditor]);
+  }, [secret, payloadEditor, payloadValid]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setEventDropdownOpen(false);
       }
     }
@@ -201,477 +216,602 @@ export function WebhookTester() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handlePayloadChange = (value: string) => {
-    setPayloadEditor(value);
-    try {
-      JSON.parse(value);
-      setPayloadValid(true);
-    } catch {
-      setPayloadValid(false);
-    }
-  };
-
-  const handleEventTypeSelect = (eventType: string) => {
-    setSelectedEventType(eventType);
+  const handleEventTypeSelect = (template: WebhookTemplate) => {
+    setSelectedEventType(template.eventType);
+    setPayloadEditor(JSON.stringify(template.samplePayload, null, 2));
     setEventDropdownOpen(false);
-    const template = templates.find((t) => t.eventType === eventType);
-    if (template) {
-      const newPayload = JSON.stringify(template.samplePayload, null, 2);
-      setPayloadEditor(newPayload);
-      setPayloadValid(true);
-    }
   };
 
-  const handleSend = async () => {
-    if (!endpointUrl || !selectedEventType || !payloadValid) return;
-
-    let parsedPayload: Record<string, unknown> | undefined;
-    try {
-      parsedPayload = JSON.parse(payloadEditor);
-    } catch {
-      setSendError('Payload is not valid JSON');
+  const handleSend = useCallback(async () => {
+    if (!endpointUrl) {
+      setSendError('Please enter a target endpoint URL');
+      return;
+    }
+    if (!payloadValid) {
+      setSendError('Please fix JSON payload syntax errors before sending');
       return;
     }
 
     setSending(true);
     setSendError(null);
-    setResult(null);
 
     try {
-      const entry = await sendWebhook({
+      let parsedPayload: Record<string, unknown> | undefined;
+      if (payloadEditor.trim()) {
+        parsedPayload = JSON.parse(payloadEditor);
+      }
+
+      const headersObj: Record<string, string> = {};
+      for (const h of customHeaders) {
+        if (h.name.trim() && h.value.trim()) {
+          headersObj[h.name.trim()] = h.value.trim();
+        }
+      }
+
+      const response = await sendWebhook({
         endpointUrl,
-        eventType: selectedEventType,
+        eventType: selectedEventType || 'custom.event',
         payload: parsedPayload,
         secret: secret || undefined,
+        method,
+        headers: Object.keys(headersObj).length > 0 ? headersObj : undefined,
+        repeatCount,
+        repeatIntervalMs,
       });
-      setResult(entry);
-      setHistory((prev) => [entry, ...prev].slice(0, 50));
 
-      setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
+      const lastEntry = Array.isArray(response) ? response[response.length - 1] : response;
+      if (Array.isArray(response)) {
+        setResultsList(response);
+        setResult(lastEntry);
+      } else {
+        setResultsList([response]);
+        setResult(response);
+      }
+
+      if (lastEntry) {
+        addRecentItem({
+          category: 'webhooks',
+          title: `Webhook: ${selectedEventType || 'custom.event'}`,
+          subtitle: `${endpointUrl} · ${lastEntry.responseStatus ? `HTTP ${lastEntry.responseStatus}` : 'Sent'}`,
+          href: '/webhooks',
+        });
+      }
+
+      await loadHistory();
+      resultRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Failed to send webhook');
     } finally {
       setSending(false);
     }
-  };
+  }, [
+    endpointUrl,
+    payloadValid,
+    payloadEditor,
+    customHeaders,
+    selectedEventType,
+    secret,
+    method,
+    repeatCount,
+    repeatIntervalMs,
+    loadHistory,
+  ]);
 
-  const handleReplay = async (id: string) => {
-    setSending(true);
-    setSendError(null);
-    setResult(null);
+  useEffect(() => {
+    const unregister = registerContextActions({
+      actionLabel: 'Send Webhook Test',
+      runAction: () => {
+        if (endpointUrl && payloadValid && !sending) {
+          void handleSend();
+        }
+      },
+    });
+    return unregister;
+  }, [endpointUrl, payloadValid, sending, registerContextActions, handleSend]);
 
+  const handleSaveTemplate = async () => {
+    if (!templateNameInput.trim()) return;
     try {
-      const entry = await replayWebhook(id);
-      setResult(entry);
-      setHistory((prev) => [entry, ...prev].slice(0, 50));
-      setSelectedHistoryId(entry.id);
-
+      const parsed = payloadValid ? JSON.parse(payloadEditor) : {};
+      const newTpl: WebhookTemplate = {
+        provider: 'crowdpay',
+        eventType: templateNameInput.trim(),
+        description: templateDescInput.trim() || 'Custom saved template',
+        schema: { payload: 'Custom schema' },
+        samplePayload: parsed,
+      };
+      await saveWebhookTemplate(newTpl);
+      await loadTemplates();
+      setTemplateSavedMsg(true);
       setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
+        setTemplateSavedMsg(false);
+        setSaveTemplateModal(false);
+        setTemplateNameInput('');
+        setTemplateDescInput('');
+      }, 1500);
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Replay failed');
-    } finally {
-      setSending(false);
+      alert(err instanceof Error ? err.message : 'Failed to save template');
     }
   };
 
-  const selectedTemplate = templates.find((t) => t.eventType === selectedEventType);
-  const selectedHistoryEntry = history.find((h) => h.id === selectedHistoryId);
-  const displayEntry = selectedHistoryEntry ?? result;
-
-  if (templatesLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-sm text-muted-foreground">Loading webhook templates…</p>
-      </div>
-    );
-  }
-
-  if (templatesError && templates.length === 0) {
-    return (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-6 text-center">
-        <AlertTriangle className="h-5 w-5 text-red-400 mx-auto mb-2" />
-        <p className="text-sm text-red-400">{templatesError}</p>
-        <button
-          type="button"
-          onClick={() => void loadTemplates()}
-          className="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+  const handleReplay = async (historyId: string) => {
+    try {
+      const res = await replayWebhook(historyId);
+      setResult(res);
+      setEndpointUrl(res.endpointUrl);
+      setSelectedEventType(res.eventType);
+      setPayloadEditor(formatJson(res.payload));
+      setMethod((res.method as any) || 'POST');
+      await loadHistory();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to replay webhook');
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Endpoint URL + Secret */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-            Endpoint URL
-          </label>
-          <input
-            type="url"
-            value={endpointUrl}
-            onChange={(e) => setEndpointUrl(e.target.value)}
-            placeholder="https://example.com/webhooks/crowdpay"
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
-          />
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left Configuration Panel */}
+      <div className="lg:col-span-7 space-y-6">
+        {/* Target URL & Method */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Send className="h-4 w-4 text-primary" /> Target & Method
+          </h3>
+          <div className="flex gap-2">
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value as any)}
+              className="rounded-md border border-input bg-background px-3 py-2 text-xs font-bold uppercase"
+            >
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="GET">GET</option>
+            </select>
+            <input
+              type="url"
+              value={endpointUrl}
+              onChange={(e) => setEndpointUrl(e.target.value)}
+              placeholder="https://your-server.com/webhook-handler"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-            Signing Secret
-            <span className="text-muted-foreground/60 ml-1">(optional)</span>
-          </label>
-          <input
-            type="text"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder="whsec_..."
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
-          />
-          {signature && (
-            <p className="mt-1 text-[11px] font-mono text-muted-foreground truncate">
-              sha256={signature}
-            </p>
-          )}
-        </div>
-      </div>
 
-      {/* Event Type Selector */}
-      <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-          Event Type
-        </label>
-        <div className="relative" ref={dropdownRef}>
-          <button
-            type="button"
-            onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
-            className="w-full flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-left"
-          >
-            <span className="truncate">
-              {selectedTemplate
-                ? `${selectedTemplate.eventType}`
-                : 'Select an event type'}
-            </span>
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
-          </button>
+        {/* Event Template Selector & Payload Editor */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" /> Payload & Templates
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSaveTemplateModal(true)}
+                className="flex items-center gap-1 text-xs rounded border border-border px-2.5 py-1 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Save className="h-3 w-3" /> Save as Template
+              </button>
+            </div>
+          </div>
 
-          {eventDropdownOpen && (
-            <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-background shadow-lg max-h-64 overflow-auto">
-              {templates.map((t) => (
-                <button
-                  key={t.eventType}
-                  type="button"
-                  onClick={() => handleEventTypeSelect(t.eventType)}
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors',
-                    t.eventType === selectedEventType && 'bg-muted/50',
-                  )}
-                >
-                  <span className="font-mono text-foreground">{t.eventType}</span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">
-                    {t.provider}
+          {/* Template Dropdown */}
+          <div className="relative">
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Load Sample Template
+            </label>
+            <button
+              type="button"
+              onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
+              className="w-full flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-xs font-mono text-left"
+            >
+              <span>{selectedEventType || 'Select webhook template...'}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+
+            {eventDropdownOpen && (
+              <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-60 overflow-y-auto">
+                {templates.map((tpl) => (
+                  <button
+                    key={`${tpl.provider}-${tpl.eventType}`}
+                    type="button"
+                    onClick={() => handleEventTypeSelect(tpl)}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 transition-colors border-b border-border/50 last:border-0"
+                  >
+                    <div className="font-medium font-mono text-foreground">
+                      [{tpl.provider.toUpperCase()}] {tpl.eventType}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {tpl.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Raw JSON Editor */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Payload Body (JSON)
+              </label>
+              <div className="flex items-center gap-2">
+                {!payloadValid && (
+                  <span className="text-[11px] text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> Invalid JSON
                   </span>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {t.description}
-                  </p>
+                )}
+                {schemaError && payloadValid && (
+                  <span className="text-[11px] text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> {schemaError}
+                  </span>
+                )}
+                {payloadValid && !schemaError && (
+                  <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" /> Valid JSON
+                  </span>
+                )}
+              </div>
+            </div>
+            <textarea
+              value={payloadEditor}
+              onChange={(e) => setPayloadEditor(e.target.value)}
+              rows={10}
+              className={cn(
+                'w-full rounded-md border bg-background p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1',
+                !payloadValid
+                  ? 'border-red-500/50 focus:ring-red-500'
+                  : 'border-input focus:ring-primary',
+              )}
+              placeholder="{&#10;  &quot;event&quot;: &quot;custom.event&quot;,&#10;  &quot;data&quot;: {}&#10;}"
+            />
+          </div>
+        </div>
+
+        {/* Headers & Signature */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Clock className="h-4 w-4 text-primary" /> Headers & Signature Verification
+          </h3>
+          
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Webhook Signing Secret (HMAC-SHA256)
+              </label>
+              <input
+                type="password"
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                placeholder="Enter shared secret to auto-generate X-Webhook-Signature"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+              />
+              {signature && (
+                <p className="text-[11px] font-mono text-muted-foreground mt-1 truncate">
+                  Computed Signature: <span className="text-foreground">sha256={signature}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Custom Headers
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCustomHeaders([...customHeaders, { name: '', value: '' }])}
+                  className="flex items-center gap-1 text-[11px] text-primary hover:underline"
+                >
+                  <Plus className="h-3 w-3" /> Add Header
                 </button>
+              </div>
+              {customHeaders.map((header, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={header.name}
+                    onChange={(e) => {
+                      const updated = [...customHeaders];
+                      updated[idx].name = e.target.value;
+                      setCustomHeaders(updated);
+                    }}
+                    placeholder="Header-Name"
+                    className="w-1/3 rounded border border-input bg-background px-2 py-1 text-xs font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={header.value}
+                    onChange={(e) => {
+                      const updated = [...customHeaders];
+                      updated[idx].value = e.target.value;
+                      setCustomHeaders(updated);
+                    }}
+                    placeholder="Header Value"
+                    className="flex-1 rounded border border-input bg-background px-2 py-1 text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCustomHeaders(customHeaders.filter((_, i) => i !== idx))}
+                    className="text-muted-foreground hover:text-red-400 p-1"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               ))}
             </div>
-          )}
+          </div>
         </div>
-        {selectedTemplate && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {selectedTemplate.description}
-          </p>
+
+        {/* Loop / Load Testing */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <RotateCcw className="h-4 w-4 text-primary" /> Repeat / Load Test
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Repeat Count
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={repeatCount}
+                onChange={(e) => setRepeatCount(parseInt(e.target.value) || 1)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Interval (ms)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={10000}
+                step={100}
+                value={repeatIntervalMs}
+                onChange={(e) => setRepeatIntervalMs(parseInt(e.target.value) || 0)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Send Action */}
+        {sendError && (
+          <div className="rounded-md bg-red-500/15 border border-red-500/30 p-3 text-xs text-red-400 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{sendError}</span>
+          </div>
         )}
-      </div>
 
-      {/* Payload Editor */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium text-muted-foreground">
-            Payload
-          </label>
-          {!payloadValid && (
-            <span className="text-[11px] text-red-400 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              Invalid JSON
-            </span>
-          )}
-        </div>
-        <textarea
-          value={payloadEditor}
-          onChange={(e) => handlePayloadChange(e.target.value)}
-          spellCheck={false}
-          className={cn(
-            'w-full rounded-md border bg-background px-3 py-2 text-xs font-mono leading-relaxed resize-y min-h-[200px]',
-            payloadValid ? 'border-border' : 'border-red-500/50',
-          )}
-        />
-      </div>
-
-      {/* Send + Curl */}
-      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => void handleSend()}
-          disabled={sending || !endpointUrl || !selectedEventType || !payloadValid}
-          className={cn(
-            'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
-            sending || !endpointUrl || !selectedEventType || !payloadValid
-              ? 'bg-muted text-muted-foreground cursor-not-allowed'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90',
-          )}
+          disabled={sending || !endpointUrl || !payloadValid}
+          title="Send Webhook (Cmd+Enter)"
+          className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
-          <Send className="h-4 w-4" />
-          {sending ? 'Sending…' : 'Send'}
+          {sending ? (
+            <span className="animate-pulse">Sending webhook...</span>
+          ) : (
+            <>
+              <Send className="h-4 w-4" /> Send Webhook {repeatCount > 1 ? `(${repeatCount}x)` : ''}
+              <ShortcutBadge shortcut="Cmd+Enter" className="hidden sm:inline-flex bg-primary-foreground/20 text-primary-foreground border-transparent text-[9px]" />
+            </>
+          )}
         </button>
-
-        {endpointUrl && payloadEditor && payloadValid && (
-          <CopyButton
-            text={buildLiveCurl(endpointUrl, payloadEditor, secret, signature)}
-            label="Copy as cURL"
-          />
-        )}
       </div>
 
-      {/* Send Error */}
-      {sendError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
-          <div className="flex items-center gap-2 text-sm text-red-400">
-            <XCircle className="h-4 w-4" />
-            {sendError}
+      {/* Right Response & History Panel */}
+      <div className="lg:col-span-5 space-y-6" ref={resultRef}>
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">
+              Response Inspector
+            </h3>
+            {result && (
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded border px-2 py-0.5 text-xs font-bold font-mono',
+                    getStatusColor(result.responseStatus),
+                  )}
+                >
+                  {result.responseStatus ?? 'ERR'}
+                </span>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {result.latencyMs}ms
+                </span>
+              </div>
+            )}
+          </div>
+
+          {result ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-muted-foreground border-b border-border pb-2">
+                <span className="font-mono">{result.endpointUrl}</span>
+                <span>{formatTime(result.timestamp)}</span>
+              </div>
+
+              {/* Response Headers */}
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1">
+                  Response Headers
+                </h4>
+                <pre className="rounded border border-border bg-muted/30 p-2 text-[11px] font-mono overflow-x-auto max-h-32">
+                  {formatJson(result.responseHeaders)}
+                </pre>
+              </div>
+
+              {/* Response Body */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-xs font-medium text-muted-foreground">
+                    Response Body
+                  </h4>
+                  <CopyButton text={result.responseBody} label="Copy Body" />
+                </div>
+                <pre className="rounded border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto max-h-64">
+                  {formatJson(result.responseBody)}
+                </pre>
+              </div>
+
+              {/* Request cURL */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-xs font-medium text-muted-foreground">
+                    Request cURL
+                  </h4>
+                  <CopyButton
+                    text={`curl -s -X ${result.method || 'POST'} '${result.endpointUrl}' \
+  ${Object.entries(result.requestHeaders)
+    .map(([k, v]) => `-H '${k}: ${v}'`)
+    .join(' \
+  ')} \
+  -d '${JSON.stringify(result.payload).replace(/'/g, "'\\''")}'`}
+                    label="Copy cURL"
+                  />
+                </div>
+                <pre className="rounded border border-border bg-muted/30 p-3 text-[11px] font-mono overflow-x-auto max-h-40">
+                  {`curl -s -X ${result.method || 'POST'} '${result.endpointUrl}' \
+  ${Object.entries(result.requestHeaders)
+    .map(([k, v]) => `-H '${k}: ${v}'`)
+    .join(' \
+  ')} \
+  -d '${JSON.stringify(result.payload).replace(/'/g, "'\\''")}'`}
+                </pre>
+              </div>
+            </div>
+          ) : (
+            <div className="py-16 text-center text-xs text-muted-foreground">
+              No webhook sent yet. Configure and fire a payload to inspect the response.
+            </div>
+          )}
+        </div>
+
+        {/* Recent Webhook History */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-foreground">
+            Webhook History & Replay
+          </h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {history.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                No history available
+              </p>
+            ) : (
+              history.map((item) => (
+                <div
+                  key={item.id}
+                  className={cn(
+                    'flex items-center justify-between rounded border p-2.5 text-xs transition-colors',
+                    result?.id === item.id
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-muted-foreground/50',
+                  )}
+                >
+                  <div
+                    className="flex-1 cursor-pointer truncate mr-2"
+                    onClick={() => {
+                      setResult(item);
+                      setEndpointUrl(item.endpointUrl);
+                      setSelectedEventType(item.eventType);
+                      setPayloadEditor(formatJson(item.payload));
+                      setMethod((item.method as any) || 'POST');
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'px-1.5 py-0.5 rounded text-[10px] font-bold font-mono',
+                          getStatusColor(item.responseStatus),
+                        )}
+                      >
+                        {item.responseStatus ?? 'ERR'}
+                      </span>
+                      <span className="font-mono font-medium truncate">
+                        {item.eventType}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      {item.endpointUrl}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleReplay(item.id)}
+                    title="Replay webhook"
+                    className="rounded border border-border p-1.5 text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
-      )}
-
-      {/* Result Panel */}
-      <div ref={resultRef}>
-        {displayEntry ? (
-          <div className="rounded-lg border border-border overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/30">
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-bold',
-                  getStatusColor(displayEntry.statusCode),
-                )}
-              >
-                {displayEntry.statusCode &&
-                displayEntry.statusCode >= 200 &&
-                displayEntry.statusCode < 300 ? (
-                  <CheckCircle className="h-3 w-3" />
-                ) : (
-                  <XCircle className="h-3 w-3" />
-                )}
-                {displayEntry.error ? 'ERR' : displayEntry.statusCode}
-              </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                {displayEntry.endpointUrl}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {displayEntry.latencyMs}ms
-              </span>
-              <div className="ml-auto">
-                <CopyButton text={buildCurl(displayEntry)} label="Copy as cURL" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
-              {/* Request */}
-              <div className="p-4">
-                <p className="text-[11px] font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-                  Request
-                </p>
-                <div className="space-y-2">
-                  <div className="text-xs font-mono">
-                    <span className="text-muted-foreground">POST</span>{' '}
-                    <span className="text-foreground break-all">
-                      {displayEntry.endpointUrl}
-                    </span>
-                  </div>
-                  <div className="text-xs">
-                    <p className="text-muted-foreground mb-1">Headers</p>
-                    <div className="rounded bg-muted/30 p-2 font-mono space-y-0.5">
-                      {Object.entries(displayEntry.requestHeaders).map(
-                        ([key, value]) => (
-                          <div key={key} className="flex gap-2">
-                            <span className="text-foreground shrink-0">{key}:</span>
-                            <span className="text-muted-foreground break-all">
-                              {value}
-                            </span>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-xs">
-                    <p className="text-muted-foreground mb-1">Body</p>
-                    <pre className="rounded bg-muted/30 p-2 font-mono text-muted-foreground overflow-auto max-h-60 whitespace-pre-wrap break-all">
-                      {formatJson(displayEntry.payload)}
-                    </pre>
-                  </div>
-                </div>
-              </div>
-
-              {/* Response */}
-              <div className="p-4">
-                <p className="text-[11px] font-medium text-muted-foreground mb-2 uppercase tracking-wider">
-                  Response
-                </p>
-                {displayEntry.error ? (
-                  <div className="rounded bg-red-500/5 border border-red-500/20 p-3">
-                    <p className="text-xs text-red-400 font-mono">
-                      {displayEntry.error}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded border px-2 py-0.5 font-bold',
-                          getStatusColor(displayEntry.statusCode),
-                        )}
-                      >
-                        {displayEntry.statusCode}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {displayEntry.latencyMs}ms
-                      </span>
-                    </div>
-                    <div className="text-xs">
-                      <p className="text-muted-foreground mb-1">Headers</p>
-                      <div className="rounded bg-muted/30 p-2 font-mono space-y-0.5 max-h-32 overflow-auto">
-                        {Object.entries(displayEntry.responseHeaders).length >
-                        0 ? (
-                          Object.entries(displayEntry.responseHeaders).map(
-                            ([key, value]) => (
-                              <div key={key} className="flex gap-2">
-                                <span className="text-foreground shrink-0">
-                                  {key}:
-                                </span>
-                                <span className="text-muted-foreground break-all">
-                                  {value}
-                                </span>
-                              </div>
-                            ),
-                          )
-                        ) : (
-                          <span className="text-muted-foreground">
-                            No headers
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-xs">
-                      <p className="text-muted-foreground mb-1">Body</p>
-                      <pre className="rounded bg-muted/30 p-2 font-mono text-muted-foreground overflow-auto max-h-60 whitespace-pre-wrap break-all">
-                        {formatJson(displayEntry.responseBody)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed border-border bg-muted/20 py-12 text-center">
-            <Clock className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              Send a webhook to see the result
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* History */}
-      {history.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border bg-muted/30">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-              Request History
-            </p>
-          </div>
-          <div className="overflow-auto max-h-64">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-muted/20">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">
-                    Time
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">
-                    Event
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">
-                    Endpoint
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
-                    Status
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
-                    Latency
-                  </th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((entry) => (
-                  <tr
-                    key={entry.id}
-                    onClick={() => setSelectedHistoryId(entry.id)}
-                    className={cn(
-                      'border-b border-border last:border-0 cursor-pointer hover:bg-muted/30 transition-colors',
-                      selectedHistoryId === entry.id && 'bg-muted/40',
-                    )}
+      {/* Save Template Modal */}
+      {saveTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 space-y-4 shadow-xl">
+            <h3 className="text-base font-semibold text-foreground">
+              Save Payload as Template
+            </h3>
+            {templateSavedMsg ? (
+              <div className="p-4 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs text-center font-medium">
+                Template successfully saved!
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Event Type / Template Name
+                  </label>
+                  <input
+                    type="text"
+                    value={templateNameInput}
+                    onChange={(e) => setTemplateNameInput(e.target.value)}
+                    placeholder="e.g. custom.stellar.payment"
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    value={templateDescInput}
+                    onChange={(e) => setTemplateDescInput(e.target.value)}
+                    placeholder="Describe what this webhook represents"
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-xs"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSaveTemplateModal(false)}
+                    className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
-                      {formatTime(entry.timestamp)}
-                    </td>
-                    <td className="px-3 py-2 font-mono whitespace-nowrap">
-                      {entry.eventType}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-muted-foreground truncate max-w-[200px]">
-                      {entry.endpointUrl}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold',
-                          getStatusColor(entry.statusCode),
-                        )}
-                      >
-                        {entry.error ? 'ERR' : entry.statusCode}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground whitespace-nowrap">
-                      {entry.latencyMs}ms
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleReplay(entry.id);
-                        }}
-                        disabled={sending}
-                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-muted-foreground/50 transition-colors disabled:opacity-50"
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        Replay
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveTemplate}
+                    disabled={!templateNameInput.trim()}
+                    className="rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Save Template
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

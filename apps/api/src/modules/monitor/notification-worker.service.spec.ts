@@ -1,22 +1,28 @@
-import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'crypto';
-import { Repository } from 'typeorm';
-import { User } from '../auth/entities/user.entity';
-import { AlertEvent } from './entities/alert-event.entity';
-import { MonitorWebhook } from './entities/monitor-webhook.entity';
-import { Watch } from './entities/watch.entity';
-import { MonitorGateway } from './monitor.gateway';
-import { NotificationWorkerService } from './notification-worker.service';
+import { ConfigService } from "@nestjs/config";
+import { createHmac } from "crypto";
+import { Repository } from "typeorm";
+import { User } from "../auth/entities/user.entity";
+import { AlertEvent } from "./entities/alert-event.entity";
+import { MonitorWebhook } from "./entities/monitor-webhook.entity";
+import { Watch } from "./entities/watch.entity";
+import { MonitorGateway } from "./monitor.gateway";
+import { NotificationWorkerService } from "./notification-worker.service";
 
-describe('NotificationWorkerService', () => {
+describe("NotificationWorkerService", () => {
+  beforeEach(() => {
+    jest
+      .spyOn(require("dns/promises"), "lookup")
+      .mockResolvedValue([{ address: "93.184.216.34" }]);
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it('sends the full event payload with a valid webhook HMAC', async () => {
-    const secret = 'test-secret-at-least-sixteen';
+  it("sends the full event payload with a valid webhook HMAC", async () => {
+    const secret = "test-secret-at-least-sixteen";
     const webhook = {
-      url: 'https://example.com/stellar',
+      url: "https://example.com/stellar",
       secret,
       enabled: true,
     } as MonitorWebhook;
@@ -31,14 +37,14 @@ describe('NotificationWorkerService', () => {
     } as unknown as Repository<MonitorWebhook>;
     const worker = createWorker(webhookRepository);
     const response = { ok: true, status: 200 } as Response;
-    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(response);
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue(response);
     const alert = alertEvent();
 
     await (
       worker as unknown as {
         sendWebhook: (event: AlertEvent, userId: string) => Promise<void>;
       }
-    ).sendWebhook(alert, 'user-one');
+    ).sendWebhook(alert, "user-one");
 
     const body = JSON.stringify({
       id: alert.id,
@@ -46,66 +52,89 @@ describe('NotificationWorkerService', () => {
       ruleId: alert.ruleId,
       event: alert.payload,
     });
-    const signature = createHmac('sha256', secret).update(body).digest('hex');
+    const signature = createHmac("sha256", secret).update(body).digest("hex");
     expect(fetchMock).toHaveBeenCalledWith(
       new URL(webhook.url),
       expect.objectContaining({
         body,
         headers: expect.objectContaining({
-          'X-SaviTools-Signature': `sha256=${signature}`,
+          "X-SaviTools-Signature": `sha256=${signature}`,
         }),
       }),
     );
   });
 
-  it('rejects a webhook that resolves to a private address', async () => {
+  it("rejects a webhook that resolves to a private address", async () => {
     const webhookRepository = {
       createQueryBuilder: jest.fn().mockReturnValue({
         addSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({ url: 'https://internal.example/hook', secret: 'test-secret-at-least-sixteen' }),
+        getOne: jest.fn().mockResolvedValue({
+          url: "https://internal.example/hook",
+          secret: "test-secret-at-least-sixteen",
+        }),
       }),
     } as unknown as Repository<MonitorWebhook>;
     const worker = createWorker(webhookRepository);
-    const fetchMock = jest.spyOn(global, 'fetch');
-    jest.spyOn(require('dns/promises'), 'lookup').mockResolvedValue([{ address: '127.0.0.1' }]);
+    const fetchMock = jest.spyOn(global, "fetch");
+    jest
+      .spyOn(require("dns/promises"), "lookup")
+      .mockResolvedValue([{ address: "127.0.0.1" }]);
 
-    await expect((worker as any).sendWebhook(alertEvent(), 'user-one')).rejects.toThrow();
+    await expect(
+      (worker as any).sendWebhook(alertEvent(), "user-one"),
+    ).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('revalidates redirect destinations before delivery', async () => {
+  it("revalidates redirect destinations before delivery", async () => {
     const webhookRepository = {
       createQueryBuilder: jest.fn().mockReturnValue({
         addSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({ url: 'https://example.com/hook', secret: 'test-secret-at-least-sixteen' }),
+        getOne: jest.fn().mockResolvedValue({
+          url: "https://example.com/hook",
+          secret: "test-secret-at-least-sixteen",
+        }),
       }),
     } as unknown as Repository<MonitorWebhook>;
     const worker = createWorker(webhookRepository);
-    jest.spyOn(require('dns/promises'), 'lookup').mockResolvedValue([{ address: '93.184.216.34' }]);
-    jest.spyOn(global, 'fetch')
-      .mockResolvedValueOnce({ status: 302, ok: false, headers: new Headers({ location: 'https://example.com/next' }) } as Response)
-      .mockResolvedValueOnce({ status: 200, ok: true, headers: new Headers() } as Response);
+    jest
+      .spyOn(require("dns/promises"), "lookup")
+      .mockResolvedValue([{ address: "93.184.216.34" }]);
+    jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce({
+        status: 302,
+        ok: false,
+        headers: new Headers({ location: "https://example.com/next" }),
+      } as Response)
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        headers: new Headers(),
+      } as Response);
 
-    await expect((worker as any).sendWebhook(alertEvent(), 'user-one')).resolves.toBeUndefined();
+    await expect(
+      (worker as any).sendWebhook(alertEvent(), "user-one"),
+    ).resolves.toBeUndefined();
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('includes the full event payload in email notifications', async () => {
+  it("includes the full event payload in email notifications", async () => {
     const worker = createWorker({} as Repository<MonitorWebhook>);
     const send = jest
       .fn()
-      .mockResolvedValue({ data: { id: 'email-one' }, error: null });
+      .mockResolvedValue({ data: { id: "email-one" }, error: null });
     (
       worker as unknown as {
         resend: { emails: { send: typeof send } };
       }
     ).resend = { emails: { send } };
     const alert = alertEvent();
-    const user = { email: 'owner@example.com' } as User;
+    const user = { email: "owner@example.com" } as User;
 
     await (
       worker as unknown as {
@@ -127,7 +156,7 @@ function createWorker(
 ): NotificationWorkerService {
   const config = {
     get: jest.fn((key: string, fallback?: string) =>
-      key === 'RESEND_FROM_EMAIL' ? 'alerts@example.com' : fallback,
+      key === "RESEND_FROM_EMAIL" ? "alerts@example.com" : fallback,
     ),
   } as unknown as ConfigService;
   return new NotificationWorkerService(
@@ -141,19 +170,19 @@ function createWorker(
 
 function alertEvent(): AlertEvent {
   return {
-    id: 'alert-one',
-    watchId: 'watch-one',
-    ruleId: 'rule-one',
+    id: "alert-one",
+    watchId: "watch-one",
+    ruleId: "rule-one",
     payload: {
-      paging_token: '123',
-      amount: '55.0000000',
-      asset_type: 'native',
-      from: 'GSENDER',
-      to: 'GRECEIVER',
+      paging_token: "123",
+      amount: "55.0000000",
+      asset_type: "native",
+      from: "GSENDER",
+      to: "GRECEIVER",
     },
     watch: {
-      publicKey: 'GACCOUNT',
-      label: 'Treasury',
+      publicKey: "GACCOUNT",
+      label: "Treasury",
     } as Watch,
   } as unknown as AlertEvent;
 }

@@ -1,7 +1,17 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as StellarSdk from '@stellar/stellar-sdk';
-import { createClient, RedisClientType } from 'redis';
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+  Optional,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import * as StellarSdk from "@stellar/stellar-sdk";
+import { Between, LessThan, Repository } from "typeorm";
+import { MetricsService } from "../metrics/metrics.service";
+import { NetworkSample } from "./entities/network-sample.entity";
 
 export interface NetworkStatus {
   timestamp: number;
@@ -29,69 +39,83 @@ export interface NetworkStatus {
   latency: number;
 }
 
+export interface NetworkHistoryBucket {
+  timestamp: number;
+  sampledAt: string;
+  ok: boolean;
+  latencyMs: number | null;
+  sampleCount: number;
+  errorCount: number;
+}
+
+export interface NetworkHistorySummary {
+  uptimePercent: number;
+  p50LatencyMs: number | null;
+  p95LatencyMs: number | null;
+  outageCount: number;
+  sampleCount: number;
+}
+
+export interface NetworkHistoryResponse {
+  network: "mainnet" | "testnet";
+  from: string;
+  to: string;
+  bucketSeconds: number;
+  summary: NetworkHistorySummary;
+  samples: NetworkHistoryBucket[];
+}
+
 @Injectable()
 export class NetworkService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NetworkService.name);
-  private redisClient: RedisClientType;
   private pollInterval: NodeJS.Timeout;
-
-  private readonly servers = {
-    mainnet: new StellarSdk.Horizon.Server('https://horizon.stellar.org'),
-    testnet: new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org'),
-  };
+  private pollInProgress = false;
 
   private readonly passphrases = {
     mainnet: StellarSdk.Networks.PUBLIC,
     testnet: StellarSdk.Networks.TESTNET,
   };
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    @InjectRepository(NetworkSample)
+    private readonly sampleRepository: Repository<NetworkSample>,
+    @Optional() private readonly metricsService?: MetricsService,
+  ) {
+    this.metricsService?.setHorizonConnections("mainnet", 1);
+    this.metricsService?.setHorizonConnections("testnet", 1);
+  }
 
   async onModuleInit() {
-    const redisUrl = this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
-    this.redisClient = createClient({ url: redisUrl });
-    
-    this.redisClient.on('error', (err) => this.logger.error('Redis Client Error', err));
-    
-    try {
-      await this.redisClient.connect();
-      this.logger.log('Connected to Redis for Network status polling');
-      
-      // Initial poll
-      await this.pollAndStore();
-      
-      // Poll every 60 seconds
-      this.pollInterval = setInterval(() => this.pollAndStore(), 60000);
-    } catch (err) {
-      this.logger.error('Failed to connect to Redis', err);
-    }
+    await this.pollAndStore();
+
+    this.pollInterval = setInterval(() => this.pollAndStore(), 60000);
   }
 
   async onModuleDestroy() {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
     }
-    if (this.redisClient) {
-      await this.redisClient.quit();
-    }
   }
 
-  async fetchCurrentStatus(network: 'mainnet' | 'testnet'): Promise<NetworkStatus> {
-    const server = this.servers[network];
+  async fetchCurrentStatus(
+    network: "mainnet" | "testnet",
+  ): Promise<NetworkStatus> {
+    const server = new StellarSdk.Horizon.Server(this.horizonUrl(network));
     const start = Date.now();
-    
+
     try {
       const [latestLedgersPage, feeStats] = await Promise.all([
-        server.ledgers().order('desc').limit(10).call(),
-        server.feeStats()
+        server.ledgers().order("desc").limit(10).call(),
+        server.feeStats(),
       ]);
-      
+
       const latency = Date.now() - start;
       const ledgers = latestLedgersPage.records;
       const latestLedger = ledgers[0];
       const closeTime = new Date(latestLedger.closed_at).getTime();
       const secondsSinceClose = Math.floor((Date.now() - closeTime) / 1000);
-      
+
       // Calculate average close time over last 10 ledgers
       let avgCloseTime = 0;
       if (ledgers.length > 1) {
@@ -121,7 +145,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
             p50: parseInt(feeStats.fee_charged.p50),
             p90: parseInt(feeStats.fee_charged.p90),
             p99: parseInt(feeStats.fee_charged.p99),
-          }
+          },
         },
         latency,
       };
@@ -132,31 +156,208 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   }
 
   async pollAndStore() {
+    if (this.pollInProgress) {
+      this.logger.warn(
+        "Skipping network status poll because one is still running",
+      );
+      return;
+    }
+
+    this.pollInProgress = true;
     try {
-      for (const network of ['mainnet', 'testnet'] as const) {
-        const status = await this.fetchCurrentStatus(network);
-        const redisKey = `network_history:${network}`;
-        
-        // Add to the front of the list
-        await this.redisClient.lPush(redisKey, JSON.stringify(status));
-        
-        // Keep only the last 60 entries
-        await this.redisClient.lTrim(redisKey, 0, 59);
-      }
+      await Promise.allSettled(
+        (["mainnet", "testnet"] as const).map((network) =>
+          this.sampleNetwork(network),
+        ),
+      );
+      await this.pruneRetention();
     } catch (error) {
-      this.logger.error('Error during pollAndStore', error);
+      this.logger.error("Error during network status polling", error);
+    } finally {
+      this.pollInProgress = false;
     }
   }
 
-  async getHistory(network: 'mainnet' | 'testnet'): Promise<NetworkStatus[]> {
+  async getHistory(
+    network: "mainnet" | "testnet",
+    from?: string,
+    to?: string,
+  ): Promise<NetworkHistoryResponse> {
+    const range = this.parseHistoryRange(from, to);
+    const samples = await this.sampleRepository.find({
+      where: {
+        network,
+        sampledAt: Between(range.from, range.to),
+      },
+      order: { sampledAt: "ASC" },
+    });
+
+    const buckets = this.bucketSamples(samples);
+
+    return {
+      network,
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+      bucketSeconds: 60,
+      summary: this.summarizeBuckets(buckets),
+      samples: buckets,
+    };
+  }
+
+  async pruneRetention(now = new Date()) {
+    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    await this.sampleRepository.delete({ sampledAt: LessThan(cutoff) });
+  }
+
+  private async sampleNetwork(network: "mainnet" | "testnet") {
+    const horizonBaseUrl = this.horizonUrl(network);
+    const startedAt = Date.now();
+
     try {
-      const redisKey = `network_history:${network}`;
-      const results = await this.redisClient.lRange(redisKey, 0, -1);
-      // Data was prepended (latest first), reverse it so it's oldest to newest for charts
-      return results.map((r) => JSON.parse(r)).reverse();
+      await this.fetchCurrentStatus(network);
+      await this.sampleRepository.save(
+        this.sampleRepository.create({
+          network,
+          horizonBaseUrl,
+          ok: true,
+          latencyMs: Date.now() - startedAt,
+          error: null,
+          sampledAt: new Date(),
+        }),
+      );
     } catch (error) {
-      this.logger.error(`Error fetching history for ${network}`, error);
-      return [];
+      await this.sampleRepository.save(
+        this.sampleRepository.create({
+          network,
+          horizonBaseUrl,
+          ok: false,
+          latencyMs: Date.now() - startedAt,
+          error: this.errorMessage(error),
+          sampledAt: new Date(),
+        }),
+      );
+      this.logger.warn(
+        `Stored failed network status sample for ${network}: ${this.errorMessage(error)}`,
+      );
     }
+  }
+
+  private horizonUrl(network: "mainnet" | "testnet") {
+    return network === "mainnet"
+      ? this.configService.get<string>(
+          "STELLAR_HORIZON_MAINNET_URL",
+          "https://horizon.stellar.org",
+        )
+      : this.configService.get<string>(
+          "STELLAR_HORIZON_URL",
+          "https://horizon-testnet.stellar.org",
+        );
+  }
+
+  private parseHistoryRange(from?: string, to?: string) {
+    const now = new Date();
+    const parsedTo = to ? new Date(to) : now;
+    const parsedFrom = from
+      ? new Date(from)
+      : new Date(parsedTo.getTime() - 60 * 60 * 1000);
+
+    if (
+      Number.isNaN(parsedFrom.getTime()) ||
+      Number.isNaN(parsedTo.getTime())
+    ) {
+      throw new BadRequestException("from and to must be valid ISO dates");
+    }
+
+    if (parsedFrom > parsedTo) {
+      throw new BadRequestException("from must be before to");
+    }
+
+    if (parsedTo.getTime() - parsedFrom.getTime() > 90 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException("history range cannot exceed 90 days");
+    }
+
+    return { from: parsedFrom, to: parsedTo };
+  }
+
+  private bucketSamples(samples: NetworkSample[]): NetworkHistoryBucket[] {
+    const grouped = new Map<number, NetworkSample[]>();
+
+    for (const sample of samples) {
+      const bucket = Math.floor(sample.sampledAt.getTime() / 60000) * 60000;
+      grouped.set(bucket, [...(grouped.get(bucket) ?? []), sample]);
+    }
+
+    return [...grouped.entries()].map(([timestamp, bucketSamples]) => {
+      const okCount = bucketSamples.filter((sample) => sample.ok).length;
+      const latencySamples = bucketSamples
+        .map((sample) => sample.latencyMs)
+        .filter((latency): latency is number => latency !== null);
+      const avgLatency =
+        latencySamples.length > 0
+          ? Math.round(
+              latencySamples.reduce((sum, latency) => sum + latency, 0) /
+                latencySamples.length,
+            )
+          : null;
+
+      return {
+        timestamp,
+        sampledAt: new Date(timestamp).toISOString(),
+        ok: okCount >= bucketSamples.length / 2,
+        latencyMs: avgLatency,
+        sampleCount: bucketSamples.length,
+        errorCount: bucketSamples.length - okCount,
+      };
+    });
+  }
+
+  private summarizeBuckets(
+    buckets: NetworkHistoryBucket[],
+  ): NetworkHistorySummary {
+    if (buckets.length === 0) {
+      return {
+        uptimePercent: 0,
+        p50LatencyMs: null,
+        p95LatencyMs: null,
+        outageCount: 0,
+        sampleCount: 0,
+      };
+    }
+
+    const upBuckets = buckets.filter((bucket) => bucket.ok).length;
+    const latencies = buckets
+      .map((bucket) => bucket.latencyMs)
+      .filter((latency): latency is number => latency !== null)
+      .sort((a, b) => a - b);
+
+    return {
+      uptimePercent: Number(((upBuckets / buckets.length) * 100).toFixed(2)),
+      p50LatencyMs: this.percentile(latencies, 0.5),
+      p95LatencyMs: this.percentile(latencies, 0.95),
+      outageCount: this.countOutages(buckets),
+      sampleCount: buckets.reduce((sum, bucket) => sum + bucket.sampleCount, 0),
+    };
+  }
+
+  private percentile(values: number[], percentile: number) {
+    if (values.length === 0) return null;
+    const index = Math.ceil(values.length * percentile) - 1;
+    return values[Math.max(0, Math.min(index, values.length - 1))];
+  }
+
+  private countOutages(buckets: NetworkHistoryBucket[]) {
+    let outages = 0;
+    let wasDown = false;
+
+    for (const bucket of buckets) {
+      if (!bucket.ok && !wasDown) outages += 1;
+      wasDown = !bucket.ok;
+    }
+
+    return outages;
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
   }
 }

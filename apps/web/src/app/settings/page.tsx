@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { useUserPreferences } from '@/lib/preferences';
+import { ShortcutBadge } from '@/components/command-palette';
 import {
   beginFluxaOAuth,
   ConnectedAccount,
@@ -16,6 +18,7 @@ import {
   VaultKey,
   VaultKeyProvider,
 } from '@/lib/api';
+
 
 // ─── Connected Accounts ───────────────────────────────────────────────────────
 
@@ -359,6 +362,78 @@ function SessionsSection() {
   );
 }
 
+// ─── Keyboard & Navigation Preferences ────────────────────────────────────────
+
+function KeyboardNavigationSection() {
+  const { preferences, updatePreferences } = useUserPreferences();
+
+  return (
+    <section className="border border-border rounded-lg p-5 space-y-4">
+      <div>
+        <h2 className="text-sm font-medium">Keyboard &amp; Navigation</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Configure keyboard-driven navigation, command palette triggers, and quick workstation shortcuts.
+        </p>
+      </div>
+
+      <div className="border-t border-border pt-4 space-y-4">
+        {/* Master toggle */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">Enable Command Palette &amp; Shortcuts</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Allow <ShortcutBadge shortcut="Cmd+K" /> to open the command palette and enable workstation shortcuts.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={preferences.keyboardShortcutsEnabled}
+            onClick={() =>
+              updatePreferences({
+                keyboardShortcutsEnabled: !preferences.keyboardShortcutsEnabled,
+              })
+            }
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+              preferences.keyboardShortcutsEnabled ? 'bg-violet-600' : 'bg-muted'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                preferences.keyboardShortcutsEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Shortcuts overview */}
+        <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2 text-xs">
+          <p className="font-medium text-foreground/80">Available Workstation Shortcuts</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground pt-1">
+            <div className="flex items-center justify-between p-1.5 rounded bg-background/50 border border-border/40">
+              <span>Open command palette</span>
+              <ShortcutBadge shortcut="Cmd+K" />
+            </div>
+            <div className="flex items-center justify-between p-1.5 rounded bg-background/50 border border-border/40">
+              <span>Run current tool action</span>
+              <ShortcutBadge shortcut="Cmd+Enter" />
+            </div>
+            <div className="flex items-center justify-between p-1.5 rounded bg-background/50 border border-border/40">
+              <span>Copy selected transaction hash</span>
+              <ShortcutBadge shortcut="Cmd+C" />
+            </div>
+            <div className="flex items-center justify-between p-1.5 rounded bg-background/50 border border-border/40">
+              <span>Navigate palette list</span>
+              <ShortcutBadge shortcut="↑↓ ↵" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -390,9 +465,11 @@ export default function SettingsPage() {
         </p>
       </section>
 
+      <KeyboardNavigationSection />
       <ConnectedAccountsSection />
       <VaultSection />
       <SessionsSection />
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 'use client';
 
 import { useNetwork } from '@/lib/network-context';
+import { ShortcutBadge } from '@/components/command-palette';
 import { ExternalLink, Loader2, Lock, Zap } from 'lucide-react';
 
 interface ComposerToolbarProps {
@@ -63,6 +64,7 @@ export function ComposerToolbar({
           id="simulate-btn"
           onClick={onSimulate}
           disabled={!xdr || simulating}
+          title="Simulate Transaction (Cmd+Enter)"
           className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 disabled:opacity-40 transition-all"
         >
           {simulating ? (
@@ -71,7 +73,9 @@ export function ComposerToolbar({
             <Zap className="h-3.5 w-3.5" />
           )}
           Simulate
+          <ShortcutBadge shortcut="Cmd+Enter" className="hidden sm:inline-flex bg-violet-500/20 text-violet-300 border-violet-500/30 text-[9px]" />
         </button>
+
 
         {/* Sign & Submit */}
         <button

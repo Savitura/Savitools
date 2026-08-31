@@ -44,6 +44,23 @@ export class SandboxService {
   }
 
   async fundFromFriendbot(publicKey: string) {
+    try {
+      const account = await this.server.loadAccount(publicKey);
+      if (account) {
+        this.logger.log(`Account ${publicKey} is already funded on testnet.`);
+        const xlmBalance = account.balances.find((b: any) => b.asset_type === 'native');
+        return {
+          publicKey,
+          funded: true,
+          txHash: null,
+          confirmationStatus: 'success',
+          startingBalance: xlmBalance ? `${xlmBalance.balance} XLM` : '10,000 XLM',
+        };
+      }
+    } catch {
+      // Account does not exist yet; proceed with friendbot funding request
+    }
+
     const url = `${this.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`;
 
     let response: Response;
@@ -58,6 +75,26 @@ export class SandboxService {
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       this.logger.error(`Friendbot error for ${publicKey}: ${response.status} ${body}`);
+      
+      // Handle case where account became funded concurrently
+      if (body.includes('account already funded') || body.includes('op_already_exists') || response.status === 400) {
+        try {
+          const account = await this.server.loadAccount(publicKey);
+          if (account) {
+            const xlmBalance = account.balances.find((b: any) => b.asset_type === 'native');
+            return {
+              publicKey,
+              funded: true,
+              txHash: null,
+              confirmationStatus: 'success',
+              startingBalance: xlmBalance ? `${xlmBalance.balance} XLM` : '10,000 XLM',
+            };
+          }
+        } catch {
+          // ignore and throw original error if loadAccount fails
+        }
+      }
+
       throw new BadRequestException(
         `Friendbot funding failed (${response.status}): ${body || response.statusText}`,
       );

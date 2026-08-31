@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ContractsService } from './contracts.service';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import * as crypto from 'crypto';
 
 describe('ContractsService', () => {
   let service: ContractsService;
@@ -42,6 +43,86 @@ describe('ContractsService', () => {
     };
   };
 
+  describe('storeUploadedWasm', () => {
+    it('stores valid WASM and returns metadata', async () => {
+      const { service } = await createModule();
+      const buffer = Buffer.from('wasm-content');
+      const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      const result = await service.storeUploadedWasm({
+        wasmBuffer: buffer,
+        filename: 'test.wasm',
+        checksum: sha256,
+        source: 'file',
+      });
+
+      expect(result.sha256).toBe(sha256);
+      expect(result.filename).toBe('test.wasm');
+      expect(result.source).toBe('file');
+      expect(result.wasmId).toBeDefined();
+      expect(result.contentHash).toBeDefined();
+    });
+
+    it('verifies SHA-256 checksum successfully', async () => {
+      const { service } = await createModule();
+      const buffer = Buffer.from('hello-wasm');
+      const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      const result = await service.storeUploadedWasm({
+        wasmBuffer: buffer,
+        filename: 'test.wasm',
+        checksum: sha256,
+      });
+
+      expect(result.sha256).toBe(sha256);
+    });
+
+    it('throws UnprocessableEntityException on mismatched checksum', async () => {
+      const { service } = await createModule();
+      const buffer = Buffer.from('hello-wasm');
+      const wrongSha256 = crypto.createHash('sha256').update(Buffer.from('wrong')).digest('hex');
+
+      await expect(
+        service.storeUploadedWasm({
+          wasmBuffer: buffer,
+          filename: 'test.wasm',
+          checksum: wrongSha256,
+        }),
+      ).rejects.toThrow(UnprocessableEntityException);
+    });
+
+    it('deduplicates uploads with the same content hash', async () => {
+      const { service } = await createModule();
+      const buffer = Buffer.from('duplicate-wasm');
+
+      const res1 = await service.storeUploadedWasm({
+        wasmBuffer: buffer,
+        filename: 'test1.wasm',
+      });
+
+      const res2 = await service.storeUploadedWasm({
+        wasmBuffer: buffer,
+        filename: 'test2.wasm',
+      });
+
+      expect(res1.wasmId).toBe(res2.wasmId);
+      expect(res1.contentHash).toBe(res2.contentHash);
+    });
+
+    it('rejects oversize files', async () => {
+      const { service } = await createModule();
+      (service as any).maxFileSize = 10; // 10 bytes limit
+      const buffer = Buffer.alloc(20, 0);
+
+      await expect(
+        service.storeUploadedWasm({
+          wasmBuffer: buffer,
+          filename: 'large.wasm',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('getInfo', () => {
     it('throws BadRequestException for invalid contract ID', async () => {
       const { service } = await createModule();
@@ -52,7 +133,6 @@ describe('ContractsService', () => {
       const { service, configService } = await createModule('testnet');
       const validContractId = StrKey.encodeContract(Buffer.alloc(32));
 
-      // Mock rpcServer.getContractWasmByContractId
       jest.spyOn((service as any).rpcServer, 'getContractWasmByContractId').mockResolvedValue(Buffer.from('wasm-data'));
 
       const result = await service.getInfo(validContractId);
@@ -130,7 +210,6 @@ describe('ContractsService', () => {
 
       jest.spyOn((service as any).rpcServer, 'getAccount').mockRejectedValue(new Error('network unreachable'));
 
-      // Reaching the network call (and failing there) proves the allowlist check passed.
       await expect(service.invoke(validContractId, 'transfer', [])).rejects.toThrow(
         'network unreachable',
       );

@@ -2,6 +2,7 @@
 
 import {
   decodeXdr,
+  downloadCsv,
   getAccountTransactions,
   inspectTransaction,
   type TransactionBreakdown,
@@ -11,6 +12,8 @@ import { useNetwork } from '@/lib/network-context';
 import { markStepComplete } from '@/lib/onboarding';
 import { EXAMPLE_TX_HASH } from '@/lib/examples';
 import { useExampleOnboarding } from '@/hooks/use-example-onboarding';
+import { addRecentItem } from '@/lib/recent-items';
+import { useCommandPalette, ShortcutBadge } from '@/components/command-palette';
 import {
   AlertTriangle,
   CheckCircle,
@@ -18,6 +21,7 @@ import {
   ChevronUp,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   Loader2,
   Search,
@@ -82,7 +86,7 @@ function CopyButton({ text, id, copied, copy }: { text: string; id: string; copi
       type="button"
       onClick={() => copy(text, id)}
       className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
-      title="Copy"
+      title={id === 'hash' ? 'Copy transaction hash (Cmd+C)' : 'Copy'}
     >
       {copied === id ? <CheckCircle className="h-3 w-3 text-green-400 inline" /> : <Copy className="h-3 w-3 inline" />}
     </button>
@@ -184,6 +188,23 @@ function TxBreakdown({ data, onInspectInComposer }: {
 }) {
   const { copied, copy } = useCopy();
   const [rawOpen, setRawOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadCsv(
+        `/inspector/tx/${encodeURIComponent(data.hash)}/export?network=${data.network}`,
+        `transaction-${data.hash.slice(0, 12)}.csv`,
+      );
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const horizonUrl = data.network === 'mainnet'
     ? `https://horizon.stellar.org/transactions/${data.hash}`
@@ -215,6 +236,20 @@ function TxBreakdown({ data, onInspectInComposer }: {
                 Inspect in Composer
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={exporting}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border hover:border-foreground/30 transition-colors disabled:opacity-40"
+              title="Download this transaction breakdown as CSV"
+            >
+              {exporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
             {data.ledger > 0 && (
               <a
                 href={horizonUrl}
@@ -244,16 +279,19 @@ function TxBreakdown({ data, onInspectInComposer }: {
             </>
           )}
         </div>
+        {exportError && (
+          <p className="text-xs text-red-500 mt-3">Export failed: {exportError}</p>
+        )}
       </div>
 
       {/* Operations */}
       <div>
-        <h3 className="text-sm font-medium mb-3">
-          Operations <span className="text-muted-foreground font-normal">({data.operationCount})</span>
-        </h3>
+        <h2 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wider">
+          Operations ({data.operations.length})
+        </h2>
         <div className="space-y-3">
-          {data.operations.map((op) => (
-            <OperationCard key={op.index} op={op} index={op.index} copied={copied} copy={copy} />
+          {data.operations.map((op, i) => (
+            <OperationCard key={i} op={op} index={i} copied={copied} copy={copy} />
           ))}
         </div>
       </div>
@@ -280,42 +318,42 @@ function TxBreakdown({ data, onInspectInComposer }: {
   );
 }
 
-// ─── Account timeline view ────────────────────────────────────────────────
+// ─── Account transactions timeline view ───────────────────────────────────
 
 function AccountTimeline({ txs, onSelect }: { txs: TxSummary[]; onSelect: (hash: string) => void }) {
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border bg-muted/20">
-        <h3 className="text-sm font-medium">Recent Transactions <span className="text-muted-foreground font-normal">({txs.length})</span></h3>
-      </div>
-      <div className="divide-y divide-border">
+    <div className="space-y-2">
+      <h2 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wider">
+        Recent Transactions ({txs.length})
+      </h2>
+      <div className="rounded-lg border border-border bg-background divide-y divide-border">
         {txs.map((tx) => (
-          <button
+          <div
             key={tx.hash}
-            type="button"
             onClick={() => onSelect(tx.hash)}
-            className="w-full flex items-center gap-4 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
+            className="p-4 flex items-center justify-between gap-4 hover:bg-muted/30 cursor-pointer transition-colors"
           >
-            <div className="shrink-0">
-              {tx.success
-                ? <CheckCircle className="h-4 w-4 text-green-400" />
-                : <XCircle className="h-4 w-4 text-red-400" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-mono text-xs text-foreground truncate">{tx.hash}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {new Date(tx.createdAt).toLocaleString()} · {tx.operationCount} op{tx.operationCount !== 1 ? 's' : ''} · {tx.feeCharged ? `${(parseInt(tx.feeCharged) / 1e7).toFixed(5)} XLM fee` : ''}
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-medium text-foreground truncate">
+                  {shortKey(tx.hash)}
+                </span>
+                <Badge success={tx.success} />
               </div>
+              <p className="text-xs text-muted-foreground">
+                {tx.operationCount} op{tx.operationCount !== 1 ? 's' : ''} · {new Date(tx.createdAt).toLocaleString()} {tx.feeCharged ? `· ${(parseInt(tx.feeCharged) / 1e7).toFixed(5)} XLM fee` : ''}
+              </p>
             </div>
-            {!tx.success && (
-              <span className="shrink-0 font-mono text-xs text-red-400">{tx.resultCode}</span>
-            )}
-          </button>
+            <span className="text-xs text-muted-foreground hover:text-foreground shrink-0">
+              Inspect →
+            </span>
+          </div>
         ))}
       </div>
     </div>
   );
 }
+
 
 // ─── Main component ───────────────────────────────────────────────────────
 
@@ -323,6 +361,7 @@ export function InspectorTool() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { network } = useNetwork();
+  const { registerContextActions } = useCommandPalette();
 
   const initialInput = searchParams.get('hash') ?? searchParams.get('address') ?? searchParams.get('xdr') ?? '';
 
@@ -335,13 +374,7 @@ export function InspectorTool() {
 
   useExampleOnboarding('inspect');
 
-  // Submit on mount if there's an initial value
-  useEffect(() => {
-    if (initialInput) void runInspect(initialInput);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const runInspect = async (value: string) => {
+  const runInspect = useCallback(async (value: string) => {
     const v = value.trim();
     if (!v) return;
 
@@ -357,14 +390,32 @@ export function InspectorTool() {
         const data = await inspectTransaction(v, network);
         setTxData(data);
         markStepComplete('inspect');
+        addRecentItem({
+          category: 'inspector',
+          title: `Tx: ${shortKey(data.hash)}`,
+          subtitle: `${data.operations.length} op(s) · ${data.network}`,
+          href: `/inspector?hash=${data.hash}`,
+        });
       } else if (type === 'address') {
         const txs = await getAccountTransactions(v, network);
         setAccountTxs(txs);
         markStepComplete('inspect');
+        addRecentItem({
+          category: 'inspector',
+          title: `Account: ${shortKey(v)}`,
+          subtitle: `${txs.length} tx(s) · ${network}`,
+          href: `/inspector?address=${v}`,
+        });
       } else if (type === 'xdr') {
         const data = await decodeXdr(v, network);
         setTxData(data);
         markStepComplete('inspect');
+        addRecentItem({
+          category: 'inspector',
+          title: `XDR Envelope`,
+          subtitle: `${data.operations.length} op(s) · ${network}`,
+          href: `/inspector?xdr=${encodeURIComponent(v.slice(0, 120))}`,
+        });
       } else {
         setError('Unrecognised input. Paste a 64-char hex transaction hash, a Stellar public key (G…), or a base64 XDR string.');
       }
@@ -373,7 +424,37 @@ export function InspectorTool() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [network]);
+
+  // Submit on mount if there's an initial value
+  useEffect(() => {
+    if (initialInput) void runInspect(initialInput);
+  }, [initialInput, runInspect]);
+
+  // Register contextual shortcuts for Cmd+Enter and Cmd+C
+  useEffect(() => {
+    const unregister = registerContextActions({
+      actionLabel: 'Inspect Transaction / Address',
+      runAction: () => {
+        if (input.trim() && !loading) {
+          void runInspect(input);
+        }
+      },
+      copyTxHash: () => {
+        const hashToCopy =
+          txData?.hash ||
+          (detectInputType(input.trim()) === 'hash' ? input.trim() : null);
+        if (hashToCopy) {
+          void navigator.clipboard.writeText(hashToCopy);
+          return true;
+        }
+        return false;
+      },
+      txHash: txData?.hash,
+    });
+
+    return unregister;
+  }, [input, loading, registerContextActions, runInspect, txData?.hash]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -424,9 +505,14 @@ export function InspectorTool() {
         <button
           type="submit"
           disabled={!input.trim() || loading}
+          title="Inspect (Cmd+Enter)"
           className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground disabled:opacity-40 flex items-center gap-2"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Inspect'}
+          <ShortcutBadge
+            shortcut="Cmd+Enter"
+            className="hidden sm:inline-flex bg-primary-foreground/20 text-primary-foreground border-transparent text-[9px]"
+          />
         </button>
       </form>
 

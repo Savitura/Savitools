@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsObject, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { IsObject, IsOptional, IsString, IsUrl, MinLength, IsIn, IsInt, Min, Max } from 'class-validator';
 
 export class SendWebhookDto {
   @ApiProperty({ example: 'https://example.com/webhooks/crowdpay', description: 'Target endpoint URL' })
@@ -21,4 +21,28 @@ export class SendWebhookDto {
   @IsOptional()
   @IsString()
   secret?: string;
+
+  @ApiPropertyOptional({ description: 'HTTP method', enum: ['GET', 'POST', 'PUT', 'PATCH'], default: 'POST' })
+  @IsOptional()
+  @IsIn(['GET', 'POST', 'PUT', 'PATCH'])
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
+
+  @ApiPropertyOptional({ description: 'Custom headers' })
+  @IsOptional()
+  @IsObject()
+  headers?: Record<string, string>;
+
+  @ApiPropertyOptional({ description: 'Repeat count for load testing', default: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  repeatCount?: number;
+
+  @ApiPropertyOptional({ description: 'Interval in milliseconds between repeats', default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  repeatIntervalMs?: number;
 }

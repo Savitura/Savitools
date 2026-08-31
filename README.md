@@ -1,6 +1,6 @@
 # SaviTools
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 **A developer workstation for building on Stellar.**
 
@@ -12,18 +12,18 @@ SaviTools is a standalone product in the [Savitura](https://savitura.com) ecosys
 
 ## Tools
 
-| Tool | What it does | Status |
-|---|---|---|
-| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR into a human-readable breakdown | In progress |
-| **Wallet Sandbox** | Generate testnet keypairs, fund via Friendbot, send test payments | In progress |
-| **Transaction Composer** | Visual builder for multi-operation Stellar transactions; sign and submit without code | In progress |
-| **Payment Simulator** | Find path payment routes between assets; preview hops, rates, and fees | In progress |
-| **Webhook Tester** | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response | In progress |
-| **Ledger Monitor** | Watch a Stellar address or contract for live activity; set threshold alerts | Planned |
-| **API Playground** | Interactive request builder for Fluxa and CrowdPay APIs | Planned |
-| **Contract Deploy Helper** | Upload and deploy Soroban WASM files to testnet from the browser | Planned |
-| **SDK Generator** | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints | Planned |
-| **Network Status** | Live Stellar network health: ledger close time, fee tracker, Horizon latency | Planned |
+| Tool                       | What it does                                                                          | Status      |
+| -------------------------- | ------------------------------------------------------------------------------------- | ----------- |
+| **Transaction Inspector**  | Decode any tx hash, Stellar address, or raw XDR into a human-readable breakdown       | In progress |
+| **Wallet Sandbox**         | Generate testnet keypairs, fund via Friendbot, send test payments                     | In progress |
+| **Transaction Composer**   | Visual builder for multi-operation Stellar transactions; sign and submit without code | In progress |
+| **Payment Simulator**      | Find path payment routes between assets; preview hops, rates, and fees                | In progress |
+| **Webhook Tester**         | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response  | In progress |
+| **Ledger Monitor**         | Watch a Stellar address or contract for live activity; set threshold alerts           | Planned     |
+| **API Playground**         | Interactive request builder for Fluxa and CrowdPay APIs                               | Planned     |
+| **Contract Deploy Helper** | Upload and deploy Soroban WASM files to testnet from the browser                      | Planned     |
+| **SDK Generator**          | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | Planned     |
+| **Network Status**         | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | Planned     |
 
 ---
 
@@ -108,23 +108,24 @@ npm install
 cp .env.example .env
 ```
 
-| Variable | Description | Default / Example |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:password@localhost:5432/savitools` |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `STELLAR_NETWORK` | Stellar network (`testnet` or `public`) | `testnet` |
-| `STELLAR_HORIZON_URL` | Horizon API URL | `https://horizon-testnet.stellar.org` |
-| `STELLAR_RPC_URL` | Soroban RPC URL | `https://soroban-rpc-testnet.stellar.org` |
-| `DEPLOYER_SECRET_KEY` | Private key to deploy smart contracts (needs funding) | (Required for deployer tool) |
-| `WEB_ORIGIN` | Allowed origin for API and WebSocket CORS | `http://localhost:3000` |
-| `THROTTLE_TTL` | Rate limiting sliding window size in milliseconds | `60000` (1 minute) |
-| `THROTTLE_LIMIT` | Max requests allowed in the rate limit window | `100` |
-| `WEBHOOK_SIGNING_SECRET` | HMAC secret to sign test webhook payloads | `your-signing-secret-here` |
-| `NEXT_PUBLIC_API_URL` | Frontend → API URL | `http://localhost:3001/api` |
+| Variable                 | Description                                           | Default / Example                                         |
+| ------------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL connection string                          | `postgresql://postgres:password@localhost:5432/savitools` |
+| `REDIS_URL`              | Redis connection string                               | `redis://localhost:6379`                                  |
+| `STELLAR_NETWORK`        | Stellar network (`testnet` or `public`)               | `testnet`                                                 |
+| `STELLAR_HORIZON_URL`    | Horizon API URL                                       | `https://horizon-testnet.stellar.org`                     |
+| `STELLAR_RPC_URL`        | Soroban RPC URL                                       | `https://soroban-rpc-testnet.stellar.org`                 |
+| `DEPLOYER_SECRET_KEY`    | Private key to deploy smart contracts (needs funding) | (Required for deployer tool)                              |
+| `WEB_ORIGIN`             | Allowed origin for API and WebSocket CORS             | `http://localhost:3000`                                   |
+| `THROTTLE_TTL`           | Rate limiting sliding window size in milliseconds     | `60000` (1 minute)                                        |
+| `THROTTLE_LIMIT`         | Max requests allowed in the rate limit window         | `100`                                                     |
+| `WEBHOOK_SIGNING_SECRET` | HMAC secret to sign test webhook payloads             | `your-signing-secret-here`                                |
+| `NEXT_PUBLIC_API_URL`    | Frontend → API URL                                    | `http://localhost:3001/api`                               |
 
 ### Security & Rate Limiting
 
 SaviTools protects its REST APIs and WebSocket connections by restricting allowed origins and rate limiting requests:
+
 - **CORS Protection**: The WebSocket gateway and HTTP endpoints restrict incoming connections using `WEB_ORIGIN` (defaulting to `http://localhost:3000`). Make sure this is set to your frontend origin in staging/production deployments.
 - **Rate Limiting**: SaviTools implements global rate limiting using `@nestjs/throttler`. By default, it allows a maximum of `100` requests within a `60000` ms (1 minute) sliding window per IP address. When exceeded, the API returns a `429 Too Many Requests` response.
   - Rate limits can be configured in your environment using `THROTTLE_LIMIT` (number of requests) and `THROTTLE_TTL` (time-to-live window in milliseconds).
@@ -141,10 +142,10 @@ docker compose up -d     # Postgres + Redis
 npm run dev
 ```
 
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:3000 |
-| API | http://localhost:3001/api |
+| Service      | URL                            |
+| ------------ | ------------------------------ |
+| Frontend     | http://localhost:3000          |
+| API          | http://localhost:3001/api      |
 | Swagger docs | http://localhost:3001/api/docs |
 
 ### 5. Run individual apps
@@ -178,6 +179,7 @@ SaviTools is a standalone product with its own users and branding, but it's purp
 - Connect your Fluxa account in settings to use your real API keys inside SaviTools tools
 
 **Other Savitura projects:**
+
 - [Fluxa](https://github.com/Savitura/Fluxa) — payment infrastructure API
 - [CrowdPay](https://github.com/Savitura/crowdpay) — crowdfunding platform
 
@@ -187,12 +189,12 @@ SaviTools is a standalone product with its own users and branding, but it's purp
 
 Complete guides and API reference for integrating with SaviTools:
 
-| Resource | Purpose |
-|----------|---------|
-| **[API Reference](docs/api-reference.md)** | Complete endpoint catalog with examples, parameters, and error codes |
-| **[Quickstart Guide](docs/quickstart.md)** | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes |
-| **[Ledger Monitor Load Test](docs/ledger-monitor-load-test.md)** | Recorded result from the one-hour, 50-connection SSE load test |
-| **[Swagger UI](/api/docs)** | Interactive API explorer (available in dev/staging; disabled in production) |
+| Resource                                                         | Purpose                                                                     |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **[API Reference](docs/api-reference.md)**                       | Complete endpoint catalog with examples, parameters, and error codes        |
+| **[Quickstart Guide](docs/quickstart.md)**                       | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes |
+| **[Ledger Monitor Load Test](docs/ledger-monitor-load-test.md)** | Recorded result from the one-hour, 50-connection SSE load test              |
+| **[Swagger UI](/api/docs)**                                      | Interactive API explorer (available in dev/staging; disabled in production) |
 
 ### Quick Links
 
@@ -211,3 +213,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT
+
+## Observability
+
+The API includes a Prometheus-compatible `GET /metrics` endpoint with HTTP, Soroban RPC, contract invocation, Horizon, Redis, and Node.js runtime metrics. See [API metrics](docs/metrics.md) for access control, Prometheus scrape configuration, and the Grafana dashboard import template.

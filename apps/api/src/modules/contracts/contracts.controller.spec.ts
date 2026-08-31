@@ -14,13 +14,25 @@ const OTHER_EMAIL = 'nobody@example.com';
 describe('ContractsController', () => {
   let app: NestFastifyApplication;
   let jwtService: JwtService;
-  let contractsService: jest.Mocked<Pick<ContractsService, 'deploy' | 'invoke' | 'getInfo'>>;
+  let contractsService: jest.Mocked<Pick<ContractsService, 'deploy' | 'deployConfigured' | 'uploadWasmOnly' | 'invoke' | 'getInfo'>>;
 
   beforeAll(async () => {
     contractsService = {
       deploy: jest.fn().mockResolvedValue({ contractId: 'C123', wasmHash: 'abc', txHash: 'tx' }),
+      deployConfigured: jest.fn().mockResolvedValue({ contractId: 'C123', wasmHash: 'abc', txHash: 'tx' }),
+      uploadWasmOnly: jest.fn().mockResolvedValue({ wasmHash: 'abc', size: 10 }),
       invoke: jest.fn().mockResolvedValue({ result: null, txHash: 'tx' }),
       getInfo: jest.fn(),
+      storeUploadedWasm: jest.fn().mockResolvedValue({
+        wasmId: 'wasm_123',
+        contentHash: 'abc',
+        filename: 'contract.wasm',
+        size: 10,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        uploadedAt: new Date().toISOString(),
+        source: 'file',
+      }),
+      fetchWasmFromGit: jest.fn().mockResolvedValue(Buffer.from('wasm-bytes')),
     };
 
     const configValues: Record<string, string> = {
@@ -85,6 +97,64 @@ describe('ContractsController', () => {
 
       expect(response.statusCode).toBe(403);
       expect(contractsService.deploy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /contracts/deploy/wizard', () => {
+    it('rejects out of order execution if step 1 is skipped', async () => {
+      const response = await app.getHttpAdapter().getInstance().inject({
+        method: 'POST',
+        url: '/contracts/deploy/wizard',
+        headers: { authorization: `Bearer ${tokenFor(ALLOWED_EMAIL)}` },
+        payload: { step: 2, stepToken: 'fake-token' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('successfully completes wizard steps sequentially', async () => {
+      // Valid WASM binary with magic header (0x0061736d little endian = 0x6d736100)
+      const validWasm = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+      const wasmBase64 = validWasm.toString('base64');
+
+      // Step 1
+      const step1Res = await app.getHttpAdapter().getInstance().inject({
+        method: 'POST',
+        url: '/contracts/deploy/wizard',
+        headers: { authorization: `Bearer ${tokenFor(ALLOWED_EMAIL)}` },
+        payload: { step: 1, wasmBase64 },
+      });
+
+      expect(step1Res.statusCode).toBe(200);
+      const step1Json = step1Res.json();
+      expect(step1Json.stepToken).toBeDefined();
+      const token = step1Json.stepToken;
+
+      // Step 2
+      const step2Res = await app.getHttpAdapter().getInstance().inject({
+        method: 'POST',
+        url: '/contracts/deploy/wizard',
+        headers: { authorization: `Bearer ${tokenFor(ALLOWED_EMAIL)}` },
+        payload: { step: 2, stepToken: token, args: '[]' },
+      });
+
+      expect(step2Res.statusCode).toBe(200);
+      const step2Json = step2Res.json();
+      expect(step2Json.stepToken).toBeDefined();
+      const token2 = step2Json.stepToken;
+
+      // Step 3
+      const step3Res = await app.getHttpAdapter().getInstance().inject({
+        method: 'POST',
+        url: '/contracts/deploy/wizard',
+        headers: { authorization: `Bearer ${tokenFor(ALLOWED_EMAIL)}` },
+        payload: { step: 3, stepToken: token2 },
+      });
+
+      expect(step3Res.statusCode).toBe(200);
+      const step3Json = step3Res.json();
+      expect(step3Json.contractAddress).toBe('C123');
+      expect(step3Json.txHash).toBe('tx');
     });
   });
 

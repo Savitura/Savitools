@@ -10,6 +10,7 @@ export default function MonitorPage() {
       <ToolPageShell
         title="Ledger Monitor"
         description="Watch Stellar addresses and contracts for live activity."
+        docsHref="/docs/monitor"
       >
         <ErrorBoundary toolName="Monitor">
           <MonitorDashboard />

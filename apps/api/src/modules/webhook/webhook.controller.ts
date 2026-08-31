@@ -1,52 +1,43 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags, ApiResponse } from '@nestjs/swagger';
-import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { WebhookService } from './webhook.service';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { WebhookService, WebhookHistoryEntry } from './webhook.service';
 import { SendWebhookDto } from './dto/send-webhook.dto';
+import { WebhookTemplate } from './webhook-templates';
 
-@ApiTags('webhooks')
-@Controller('webhooks')
+@ApiTags('webhook')
+@Controller('webhook')
 export class WebhookController {
   constructor(private readonly webhookService: WebhookService) {}
 
   @Get('templates')
-  @ApiOperation({ summary: 'List all supported webhook event types with schemas and sample payloads' })
-  @ApiResponse({ status: 200, description: 'Webhook templates retrieved' })
-  getTemplates() {
+  @ApiOperation({ summary: 'Get available webhook templates and sample payloads' })
+  @ApiResponse({ status: 200, description: 'List of webhook templates' })
+  getTemplates(): WebhookTemplate[] {
     return this.webhookService.getTemplates();
   }
 
+  @Post('templates')
+  @ApiOperation({ summary: 'Save or update a webhook template' })
+  saveTemplate(@Body() template: WebhookTemplate): WebhookTemplate {
+    return this.webhookService.saveTemplate(template);
+  }
+
   @Post('send')
-  @ApiCookieAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Send a webhook payload to a target endpoint' })
-  @ApiResponse({ status: 200, description: 'Webhook sent successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid webhook payload' })
-  @ApiResponse({ status: 401, description: 'Authentication required' })
-  async send(@CurrentUser() user: AuthUser, @Body() dto: SendWebhookDto) {
-    return this.webhookService.sendWebhook(user.id, dto);
+  @ApiOperation({ summary: 'Send a webhook to a target endpoint' })
+  @ApiResponse({ status: 201, description: 'Webhook sent successfully' })
+  async sendWebhook(@Body() dto: SendWebhookDto): Promise<WebhookHistoryEntry | WebhookHistoryEntry[]> {
+    return this.webhookService.sendWebhook(dto);
   }
 
   @Get('history')
-  @ApiCookieAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "Get the current user's last 50 webhook send attempts" })
-  @ApiResponse({ status: 200, description: 'Webhook history retrieved' })
-  @ApiResponse({ status: 401, description: 'Authentication required' })
-  async getHistory(@CurrentUser() user: AuthUser) {
-    return this.webhookService.getHistory(user.id);
+  @ApiOperation({ summary: 'Get recent webhook execution history' })
+  getHistory(): WebhookHistoryEntry[] {
+    return this.webhookService.getHistory();
   }
 
   @Post('replay/:id')
-  @ApiCookieAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Replay a previous webhook send attempt' })
-  @ApiParam({ name: 'id', description: 'Webhook attempt ID' })
-  @ApiResponse({ status: 200, description: 'Webhook replayed successfully' })
-  @ApiResponse({ status: 401, description: 'Authentication required' })
-  @ApiResponse({ status: 404, description: 'Webhook attempt not found' })
-  async replay(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.webhookService.replay(id, user.id);
+  @ApiOperation({ summary: 'Replay a previous webhook from history' })
+  async replayWebhook(@Param('id') id: string): Promise<WebhookHistoryEntry> {
+    return this.webhookService.replayWebhook(id);
   }
 }
