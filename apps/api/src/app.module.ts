@@ -26,6 +26,7 @@ import { CreateLedgerMonitor1752926400000 } from "./database/migrations/17529264
 import { AddMonitorStateAlerts1785312000000 } from "./database/migrations/1785312000000-add-monitor-state-alerts";
 import { AddAuthEnhancements1785398400000 } from "./database/migrations/1785398400000-add-auth-enhancements";
 import { CreateGraphSnapshots1785600000000 } from "./database/migrations/1785600000000-create-graph-snapshots";
+import { CreateNetworkSamples1785786400000 } from "./database/migrations/1785786400000-create-network-samples";
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ ThrottlerModule.forRootAsync({
           AddMonitorStateAlerts1785312000000,
           AddAuthEnhancements1785398400000,
           CreateGraphSnapshots1785600000000,
+          CreateNetworkSamples1785786400000,
         ],
         migrationsRun: config.get<string>("RUN_MIGRATIONS") === "true",
         logging: config.get<string>("NODE_ENV") === "development",

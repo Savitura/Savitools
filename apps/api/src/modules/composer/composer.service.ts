@@ -161,6 +161,36 @@ interface CachedSimulation {
   expiresAt: number;
 }
 
+interface TransactionSequenceStep {
+  build: BuildTransactionDto;
+  dependsOn?: number;
+}
+
+interface RunTransactionSequenceDto {
+  network?: 'testnet' | 'mainnet';
+  signerSecret: string;
+  transactions: TransactionSequenceStep[];
+  stopOnFailure?: boolean;
+}
+
+interface TransactionSequenceStepResult {
+  index: number;
+  hash: string | null;
+  status: 'succeeded' | 'failed' | 'skipped';
+  resultCodes: unknown;
+  nextSequenceNumber: string;
+}
+
+interface TransactionSequenceRunRecord {
+  id: string;
+  network: 'testnet' | 'mainnet';
+  stopOnFailure: boolean;
+  startedAt: string;
+  endedAt?: string;
+  status: 'running' | 'succeeded' | 'failed' | 'partial';
+  steps: TransactionSequenceStepResult[];
+}
+
 @Injectable()
 export class ComposerService {
   private readonly logger = new Logger(ComposerService.name);
@@ -336,6 +366,8 @@ export class ComposerService {
     mainnet: StellarSdk.Networks.PUBLIC,
     testnet: StellarSdk.Networks.TESTNET,
   };
+
+  private readonly sequenceHistory: TransactionSequenceRunRecord[] = [];
 
   async buildTransaction(dto: BuildTransactionDto) {
     try {
@@ -706,6 +738,157 @@ export class ComposerService {
         });
       default:
         throw new BadRequestException(`Unknown operation type: ${(dto as any).type}`);
+    }
+  }
+
+  async runTransactionSequence(dto: RunTransactionSequenceDto) {
+    const network = (dto.network || 'testnet') as 'testnet' | 'mainnet';
+    const server = this.servers[network];
+    const passphrase = this.passphrases[network];
+
+    if (!dto.transactions || dto.transactions.length === 0) {
+      throw new BadRequestException('Transaction sequence must contain at least one transaction');
+    }
+
+    this.validateSequenceDependencies(dto.transactions);
+
+    const keypair = StellarSdk.Keypair.fromSecret(dto.signerSecret);
+    const account = await server.loadAccount(keypair.publicKey());
+
+    const record: TransactionSequenceRunRecord = {
+      id: `seq_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+      network,
+      stopOnFailure: dto.stopOnFailure !== false,
+      startedAt: new Date().toISOString(),
+      status: 'running',
+      steps: [],
+    };
+
+    this.sequenceHistory.unshift(record);
+
+    for (let index = 0; index < dto.transactions.length; index++) {
+      const stepResult: TransactionSequenceStepResult = {
+        index,
+        hash: null,
+        status: 'failed',
+        resultCodes: null,
+        nextSequenceNumber: (BigInt(account.sequenceNumber()) + 1n).toString(),
+      };
+
+      try {
+        const step = this.resolveStepReferences(dto.transactions, index, record.steps);
+        const transaction = this.buildSequenceTransaction(step, account, keypair, passphrase);
+        const submitted = await server.submitTransaction(transaction);
+        stepResult.status = 'succeeded';
+        stepResult.hash = submitted.hash;
+      } catch (error: any) {
+        stepResult.status = 'failed';
+        stepResult.resultCodes =
+          error?.response?.data?.extras?.result_codes?.transaction ||
+          error?.message ||
+          String(error);
+
+        if (dto.stopOnFailure !== false) {
+          record.steps.push(stepResult);
+          record.status = record.steps.some((s) => s.status === 'succeeded') ? 'partial' : 'failed';
+          record.endedAt = new Date().toISOString();
+          return record;
+        }
+      }
+
+      stepResult.nextSequenceNumber = (BigInt(account.sequenceNumber()) + 1n).toString();
+      record.steps.push(stepResult);
+    }
+
+    record.status = record.steps.every((s) => s.status === 'succeeded') ? 'succeeded' : 'partial';
+    record.endedAt = new Date().toISOString();
+    return record;
+  }
+
+  getSequenceHistory(): TransactionSequenceRunRecord[] {
+    return this.sequenceHistory;
+  }
+
+  private buildSequenceTransaction(
+    step: TransactionSequenceStep,
+    account: StellarSdk.Account,
+    keypair: StellarSdk.Keypair,
+    passphrase: string,
+  ): StellarSdk.Transaction {
+    const builder = new StellarSdk.TransactionBuilder(account, {
+      fee: step.build.fee || StellarSdk.BASE_FEE,
+      networkPassphrase: passphrase,
+    });
+
+    if (step.build.timeBounds) {
+      builder.setTimeBounds(step.build.timeBounds);
+    } else {
+      builder.setTimeout(30);
+    }
+
+    for (const op of step.build.operations) {
+      builder.addOperation(this.mapOperation(op));
+    }
+
+    const transaction = builder.build();
+    transaction.sign(keypair);
+    return transaction;
+  }
+
+  private validateSequenceDependencies(steps: TransactionSequenceStep[]) {
+    for (let index = 0; index < steps.length; index++) {
+      const dep = steps[index].dependsOn;
+      if (dep !== undefined && dep !== null) {
+        if (typeof dep !== 'number' || !Number.isInteger(dep) || dep < 0 || dep >= index) {
+          throw new BadRequestException(
+            `Step ${index} has invalid dependency reference: ${dep}`,
+          );
+        }
+      }
+
+      if (steps[index].build) {
+        const raw = JSON.stringify(steps[index].build);
+        const matches = raw.match(/\{steps\.(\d+)\.(hash|nextSequenceNumber)\}/g) || [];
+        for (const match of matches) {
+          const refIndex = Number(match.match(/\{steps\.(\d+)\./)?.[1]);
+          if (!Number.isInteger(refIndex) || refIndex < 0 || refIndex >= index) {
+            throw new BadRequestException(
+              `Step ${index} has invalid dependency reference: ${match}`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  private resolveStepReferences(
+    steps: TransactionSequenceStep[],
+    index: number,
+    results: TransactionSequenceStepResult[],
+  ): TransactionSequenceStep {
+    const step = steps[index];
+    if (!step.build) {
+      return step;
+    }
+
+    const raw = JSON.stringify(step.build);
+    const resolved = raw.replace(
+      /\{steps\.(\d+)\.(hash|nextSequenceNumber)\}/g,
+      (match, stepIndex: string, field: string) => {
+        const result = results[Number(stepIndex)];
+        if (!result || result.status !== 'succeeded') {
+          throw new BadRequestException(
+            `Step ${index} references step ${stepIndex} which has not succeeded`,
+          );
+        }
+        return String((result as any)[field] ?? '');
+      },
+    );
+
+    try {
+      return { ...step, build: JSON.parse(resolved) };
+    } catch (error: any) {
+      throw new BadRequestException(`Failed to resolve step ${index} references: ${error.message}`);
     }
   }
 }

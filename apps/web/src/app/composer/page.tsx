@@ -1,5 +1,6 @@
 import { SiteHeader } from '@/components/layout/site-header';
 import { ComposerTool } from '@/components/tools/other-tools';
+import { ComposerManager } from '@/components/tools/composer-manager';
 import { ToolPageShell } from '@/components/tools/tool-page-shell';
 import { ErrorBoundary } from '@/components/tools/error-boundary';
 
@@ -13,7 +14,7 @@ export default function ComposerPage() {
         docsHref="/docs/composer"
       >
         <ErrorBoundary toolName="Composer">
-          <ComposerTool />
+          <ComposerManager />
         </ErrorBoundary>
       </ToolPageShell>
     </>
