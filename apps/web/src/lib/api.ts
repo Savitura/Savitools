@@ -385,6 +385,101 @@ export async function getNetworkHistory(
   );
 }
 
+export interface NetworkProfile {
+  id: string;
+  ownerId: string;
+  name: string;
+  horizonUrl: string;
+  networkPassphrase: string;
+  friendbotUrl?: string | null;
+  isDefault: boolean;
+}
+
+export interface NetworkProfileInput {
+  name: string;
+  horizonUrl: string;
+  networkPassphrase: string;
+  friendbotUrl?: string | null;
+  isDefault?: boolean;
+}
+
+export type NetworkProfileExport = NetworkProfileInput;
+
+export interface NetworkPassphraseVerificationResult {
+  horizonUrl: string;
+  networkPassphrase: string;
+  expectedPassphrase?: string;
+  match: boolean;
+}
+
+export async function listNetworkProfiles() {
+  return apiFetch<NetworkProfile[]>("/network/profiles");
+}
+
+export async function createNetworkProfile(input: NetworkProfileInput) {
+  return apiFetch<NetworkProfile>("/network/profiles", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateNetworkProfile(
+  id: string,
+  input: Partial<NetworkProfileInput>,
+) {
+  return apiFetch<NetworkProfile>(
+    `/network/profiles/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteNetworkProfile(id: string) {
+  return apiFetch<{ success: boolean }>(
+    `/network/profiles/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function setDefaultNetworkProfile(id: string) {
+  return apiFetch<NetworkProfile>(
+    `/network/profiles/${encodeURIComponent(id)}/default`,
+    {
+      method: "PUT",
+    },
+  );
+}
+
+export async function verifyNetworkPassphrase(
+  horizonUrl: string,
+  expectedPassphrase?: string,
+) {
+  return apiFetch<NetworkPassphraseVerificationResult>(
+    "/network/profiles/verify",
+    {
+      method: "POST",
+      body: JSON.stringify({ horizonUrl, expectedPassphrase }),
+    },
+  );
+}
+
+export async function exportNetworkProfile(id: string) {
+  return apiFetch<NetworkProfileExport>(
+    `/network/profiles/${encodeURIComponent(id)}/export`,
+  );
+}
+
+export async function importNetworkProfile(profile: NetworkProfileExport) {
+  return apiFetch<NetworkProfile>("/network/profiles/import", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
 export interface SimulatedAsset {
   type: AssetType;
   code?: string;

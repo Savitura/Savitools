@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, ChangeEvent, FormEvent } from "react";
 import {
   Area,
   CartesianGrid,
@@ -20,15 +20,32 @@ import {
   ShieldCheck,
   Siren,
   Zap,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
+  Download,
+  KeyRound,
+  AlertTriangle,
+  CheckCircle2,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
 import {
   getNetworkHistory,
   getNetworkStatus,
+  getNetworkProfiles,
+  createNetworkProfile,
+  updateNetworkProfile,
+  deleteNetworkProfile,
+  importNetworkProfile,
+  exportNetworkProfile,
+  verifyNetworkPassphrase,
   NetworkChoice,
   NetworkHistoryBucket,
   NetworkHistoryResult,
   NetworkStatusResult,
+  NetworkProfile,
 } from "@/lib/api";
 
 const WINDOWS = [
@@ -38,12 +55,26 @@ const WINDOWS = [
 ];
 
 export default function NetworkStatusPage() {
-  const [network, setNetwork] = useState<NetworkChoice>("mainnet");
+  const [network, setNetwork] = useState<NetworkChoice | string>("mainnet");
   const [windowMinutes, setWindowMinutes] = useState(60);
   const [status, setStatus] = useState<NetworkStatusResult | null>(null);
   const [history, setHistory] = useState<NetworkHistoryResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [profiles, setProfiles] = useState<NetworkProfile[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [showProfileManager, setShowProfileManager] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    horizonUrl: "",
+    networkPassphrase: "",
+    friendbotUrl: "",
+    isDefault: false,
+  });
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [passphraseWarning, setPassphraseWarning] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [profileLoading, setProfileLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,9 +82,11 @@ export default function NetworkStatusPage() {
     async function fetchData() {
       try {
         setError("");
+        const activeProfile = profiles.find((p) => p.id === activeProfileId);
+        const networkParam = activeProfile?.horizonUrl ?? network;
         const [statusData, historyData] = await Promise.all([
-          getNetworkStatus(network),
-          getNetworkHistory(network, windowMinutes),
+          getNetworkStatus(networkParam as NetworkChoice),
+          getNetworkHistory(networkParam as NetworkChoice, windowMinutes),
         ]);
 
         if (!cancelled) {
@@ -76,7 +109,132 @@ export default function NetworkStatusPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [network, windowMinutes]);
+  }, [network, windowMinutes, activeProfileId, profiles]);
+
+  useEffect(() => {
+    fetchProfiles();
+  }, []);
+
+  async function fetchProfiles() {
+    try {
+      const data = await getNetworkProfiles();
+      setProfiles(data);
+      const defaultProfile = data.find((p) => p.isDefault);
+      if (defaultProfile) {
+        setActiveProfileId(defaultProfile.id);
+        setNetwork(defaultProfile.horizonUrl);
+      }
+    } catch (err) {
+      console.error(err);
+      setProfileError("Could not load network profiles.");
+    }
+  }
+
+  async function handleNetworkChange(e: ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value;
+    if (value === "builtin") {
+      setActiveProfileId(null);
+      setNetwork("mainnet");
+      setPassphraseWarning("");
+    } else if (value === "testnet") {
+      setActiveProfileId(null);
+      setNetwork("testnet");
+      setPassphraseWarning("");
+    } else {
+      const profile = profiles.find((p) => p.id === value);
+      if (profile) {
+        setActiveProfileId(profile.id);
+        setNetwork(profile.horizonUrl);
+        try {
+          const serverPassphrase = await verifyNetworkPassphrase(profile.horizonUrl);
+          setPassphraseWarning(
+            serverPassphrase === profile.networkPassphrase
+              ? ""
+              : `Warning: Horizon network passphrase "${serverPassphrase}" does not match profile passphrase "${profile.networkPassphrase}".`
+          );
+        } catch {
+          setPassphraseWarning("Unable to verify network passphrase for this Horizon URL.");
+        }
+      }
+    }
+  }
+
+  function resetProfileForm() {
+    setProfileForm({
+      name: "",
+      horizonUrl: "",
+      networkPassphrase: "",
+      friendbotUrl: "",
+      isDefault: false,
+    });
+    setEditingProfileId(null);
+  }
+
+  async function handleSaveProfile(e: FormEvent) {
+    e.preventDefault();
+    setProfileLoading(true);
+    setProfileError("");
+    try {
+      if (editingProfileId) {
+        await updateNetworkProfile(editingProfileId, profileForm);
+      } else {
+        await createNetworkProfile(profileForm);
+      }
+      const data = await getNetworkProfiles();
+      setProfiles(data);
+      resetProfileForm();
+    } catch (err) {
+      console.error(err);
+      setProfileError("Could not save profile.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function handleDeleteProfile(id: string) {
+    if (!confirm("Delete this network profile?")) return;
+    try {
+      await deleteNetworkProfile(id);
+      const data = await getNetworkProfiles();
+      setProfiles(data);
+      if (activeProfileId === id) {
+        setActiveProfileId(null);
+        setNetwork("mainnet");
+      }
+    } catch (err) {
+      console.error(err);
+      setProfileError("Could not delete profile.");
+    }
+  }
+
+  async function handleExportProfile(profile: NetworkProfile) {
+    try {
+      const json = await exportNetworkProfile(profile.id);
+      const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${profile.name || "network-profile"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setProfileError("Could not export profile.");
+    }
+  }
+
+  async function handleImportProfile(file: File) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      await importNetworkProfile(parsed);
+      const data = await getNetworkProfiles();
+      setProfiles(data);
+    } catch (err) {
+      console.error(err);
+      setProfileError("Could not import profile. Ensure the JSON is valid.");
+    }
+  }
 
   const chartData = useMemo(
     () =>
@@ -132,14 +290,27 @@ export default function NetworkStatusPage() {
             <BookOpen className="h-3.5 w-3.5" />
             Usage docs
           </Link>
-          <SegmentedControl
-            options={[
-              { label: "Mainnet", value: "mainnet" },
-              { label: "Testnet", value: "testnet" },
-            ]}
-            value={network}
-            onChange={(value) => setNetwork(value as NetworkChoice)}
-          />
+          <select
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium"
+            value={activeProfileId ?? (network === "testnet" ? "testnet" : "builtin")}
+            onChange={handleNetworkChange}
+          >
+            <option value="builtin">Mainnet</option>
+            <option value="testnet">Testnet</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+            onClick={() => setShowProfileManager((v) => !v)}
+            type="button"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            Profiles
+          </button>
           <SegmentedControl
             options={WINDOWS.map((item) => ({
               label: item.label,
@@ -150,6 +321,168 @@ export default function NetworkStatusPage() {
           />
         </div>
       </div>
+
+      {showProfileManager && (
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-xl font-semibold">
+              <Globe className="h-5 w-5 text-primary" />
+              Network Profiles
+            </h2>
+            <button
+              onClick={() => setShowProfileManager(false)}
+              className="text-sm text-muted-foreground hover:text-foreground"
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+          {profileError && <p className="mb-4 text-sm text-red-500">{profileError}</p>}
+          <div className="mb-6 space-y-4">
+            {profiles.map((profile) => (
+              <div key={profile.id} className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <p className="font-medium">
+                    {profile.name}
+                    {profile.isDefault && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">Default</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground break-all">{profile.horizonUrl}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {!profile.isDefault && (
+                    <button
+                      onClick={() => updateNetworkProfile(profile.id, { ...profile, isDefault: true }).then(fetchProfiles)}
+                      className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+                      title="Set as default"
+                      type="button"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setEditingProfileId(profile.id);
+                      setProfileForm({
+                        name: profile.name,
+                        horizonUrl: profile.horizonUrl,
+                        networkPassphrase: profile.networkPassphrase,
+                        friendbotUrl: profile.friendbotUrl || "",
+                        isDefault: profile.isDefault,
+                      });
+                    }}
+                    className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+                    title="Edit"
+                    type="button"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleExportProfile(profile)}
+                    className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+                    title="Export"
+                    type="button"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProfile(profile.id)}
+                    className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+                    title="Delete"
+                    type="button"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={handleSaveProfile} className="space-y-4 border-t pt-4">
+            <div className="flex flex-wrap gap-4">
+              <input
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                placeholder="Profile name"
+                value={profileForm.name}
+                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                required
+              />
+              <input
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                placeholder="Horizon URL"
+                type="url"
+                value={profileForm.horizonUrl}
+                onChange={(e) => setProfileForm({ ...profileForm, horizonUrl: e.target.value })}
+                required
+              />
+              <input
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                placeholder="Network passphrase"
+                value={profileForm.networkPassphrase}
+                onChange={(e) => setProfileForm({ ...profileForm, networkPassphrase: e.target.value })}
+                required
+              />
+              <input
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                placeholder="Friendbot URL (optional)"
+                type="url"
+                value={profileForm.friendbotUrl}
+                onChange={(e) => setProfileForm({ ...profileForm, friendbotUrl: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={profileForm.isDefault}
+                  onChange={(e) => setProfileForm({ ...profileForm, isDefault: e.target.checked })}
+                />
+                Set as default
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={profileLoading}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {editingProfileId ? "Update" : "Save"}
+                </button>
+                {editingProfileId && (
+                  <button
+                    type="button"
+                    onClick={resetProfileForm}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+                  <Upload className="h-3.5 w-3.5" />
+                  Import
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) handleImportProfile(e.target.files[0]);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {passphraseWarning && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {passphraseWarning}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <MetricCard

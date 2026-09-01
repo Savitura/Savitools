@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   OnModuleDestroy,
   Logger,
+  NotFoundException,
   Optional,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -12,6 +13,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { Between, LessThan, Repository } from "typeorm";
 import { MetricsService } from "../metrics/metrics.service";
 import { NetworkSample } from "./entities/network-sample.entity";
+import { NetworkProfile } from "./entities/network-profile.entity";
 
 export interface NetworkStatus {
   timestamp: number;
@@ -80,10 +82,195 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     private configService: ConfigService,
     @InjectRepository(NetworkSample)
     private readonly sampleRepository: Repository<NetworkSample>,
+    @InjectRepository(NetworkProfile)
+    private readonly networkProfileRepository: Repository<NetworkProfile>,
     @Optional() private readonly metricsService?: MetricsService,
   ) {
     this.metricsService?.setHorizonConnections("mainnet", 1);
     this.metricsService?.setHorizonConnections("testnet", 1);
+  }
+
+  async createNetworkProfile(
+    ownerId: string,
+    input: {
+      name: string;
+      horizonUrl: string;
+      networkPassphrase: string;
+      friendbotUrl?: string;
+      isDefault?: boolean;
+    },
+  ): Promise<NetworkProfile> {
+    const horizonUrl = input.horizonUrl.trim().replace(/\/+$/, "");
+    await this.assertHorizonPassphrase(horizonUrl, input.networkPassphrase);
+    if (input.isDefault) {
+      await this.networkProfileRepository.update({ ownerId }, { isDefault: false });
+    }
+    return this.networkProfileRepository.save(
+      this.networkProfileRepository.create({
+        ownerId,
+        name: input.name,
+        horizonUrl,
+        networkPassphrase: input.networkPassphrase,
+        friendbotUrl: input.friendbotUrl,
+        isDefault: input.isDefault ?? false,
+      }),
+    );
+  }
+
+  async listNetworkProfiles(ownerId: string): Promise<NetworkProfile[]> {
+    return this.networkProfileRepository.find({
+      where: { ownerId },
+      order: { isDefault: "DESC" },
+    });
+  }
+
+  async getNetworkProfile(ownerId: string, id: string): Promise<NetworkProfile> {
+    const profile = await this.networkProfileRepository.findOne({
+      where: { id, ownerId },
+    });
+    if (!profile) {
+      throw new NotFoundException("Network profile not found");
+    }
+    return profile;
+  }
+
+  async updateNetworkProfile(
+    ownerId: string,
+    id: string,
+    input: {
+      name?: string;
+      horizonUrl?: string;
+      networkPassphrase?: string;
+      friendbotUrl?: string;
+      isDefault?: boolean;
+    },
+  ): Promise<NetworkProfile> {
+    const profile = await this.getNetworkProfile(ownerId, id);
+    const nextHorizonUrl = input.horizonUrl
+      ? input.horizonUrl.trim().replace(/\/+$/, "")
+      : profile.horizonUrl;
+    const nextPassphrase = input.networkPassphrase ?? profile.networkPassphrase;
+
+    if (input.horizonUrl || input.networkPassphrase) {
+      await this.assertHorizonPassphrase(nextHorizonUrl, nextPassphrase);
+    }
+
+    if (input.isDefault) {
+      await this.networkProfileRepository.update({ ownerId }, { isDefault: false });
+    }
+
+    return this.networkProfileRepository.save({
+      ...profile,
+      name: input.name ?? profile.name,
+      horizonUrl: nextHorizonUrl,
+      networkPassphrase: nextPassphrase,
+      friendbotUrl:
+        input.friendbotUrl !== undefined ? input.friendbotUrl : profile.friendbotUrl,
+      isDefault: input.isDefault ?? profile.isDefault,
+    });
+  }
+
+  async deleteNetworkProfile(ownerId: string, id: string): Promise<void> {
+    await this.networkProfileRepository.remove(
+      await this.getNetworkProfile(ownerId, id),
+    );
+  }
+
+  async setDefaultNetworkProfile(
+    ownerId: string,
+    id: string,
+  ): Promise<NetworkProfile> {
+    const profile = await this.getNetworkProfile(ownerId, id);
+    await this.networkProfileRepository.update({ ownerId }, { isDefault: false });
+    profile.isDefault = true;
+    return this.networkProfileRepository.save(profile);
+  }
+
+  async getDefaultNetworkProfile(
+    ownerId: string,
+  ): Promise<NetworkProfile | null> {
+    return this.networkProfileRepository.findOne({
+      where: { ownerId, isDefault: true },
+    });
+  }
+
+  async exportNetworkProfile(
+    ownerId: string,
+    id: string,
+  ): Promise<Record<string, unknown>> {
+    const profile = await this.getNetworkProfile(ownerId, id);
+    return {
+      name: profile.name,
+      horizonUrl: profile.horizonUrl,
+      networkPassphrase: profile.networkPassphrase,
+      friendbotUrl: profile.friendbotUrl ?? undefined,
+      isDefault: profile.isDefault,
+    };
+  }
+
+  async importNetworkProfile(
+    ownerId: string,
+    input: {
+      name: string;
+      horizonUrl: string;
+      networkPassphrase: string;
+      friendbotUrl?: string;
+      isDefault?: boolean;
+    },
+  ): Promise<NetworkProfile> {
+    return this.createNetworkProfile(ownerId, input);
+  }
+
+  async verifyNetworkPassphrase(
+    horizonUrl: string,
+    expectedPassphrase: string,
+  ): Promise<{ match: boolean; actualPassphrase: string }> {
+    const actualPassphrase = await this.fetchNetworkPassphrase(
+      horizonUrl.trim().replace(/\/+$/, ""),
+    );
+    return {
+      match: actualPassphrase === expectedPassphrase,
+      actualPassphrase,
+    };
+  }
+
+  async fetchCurrentStatusForProfile(
+    ownerId: string,
+    profileId: string,
+  ): Promise<NetworkStatus> {
+    return this.fetchCurrentStatus(
+      await this.getNetworkProfile(ownerId, profileId),
+    );
+  }
+
+  private async assertHorizonPassphrase(horizonUrl: string, expectedPassphrase: string) {
+    const actualPassphrase = await this.fetchNetworkPassphrase(horizonUrl);
+    if (actualPassphrase !== expectedPassphrase) {
+      this.logger.warn(
+        `Horizon passphrase "${actualPassphrase}" does not match expected "${expectedPassphrase}"`,
+      );
+      throw new BadRequestException(
+        `Horizon passphrase "${actualPassphrase}" does not match expected "${expectedPassphrase}"`,
+      );
+    }
+  }
+
+  private async fetchNetworkPassphrase(horizonUrl: string): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(horizonUrl, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`Horizon request failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as { network_passphrase?: string };
+      if (!data.network_passphrase) {
+        throw new Error("Horizon response did not include network_passphrase");
+      }
+      return data.network_passphrase;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async onModuleInit() {
@@ -99,9 +286,16 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchCurrentStatus(
-    network: "mainnet" | "testnet",
+    network: "mainnet" | "testnet" | NetworkProfile,
   ): Promise<NetworkStatus> {
-    const server = new StellarSdk.Horizon.Server(this.horizonUrl(network));
+    const networkLabel = typeof network === "string" ? network : network.name;
+    const horizonBaseUrl =
+      typeof network === "string" ? this.horizonUrl(network) : network.horizonUrl;
+    const passphrase =
+      typeof network === "string"
+        ? this.passphrases[network]
+        : network.networkPassphrase;
+    const server = new StellarSdk.Horizon.Server(horizonBaseUrl);
     const start = Date.now();
 
     try {
@@ -126,8 +320,8 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
 
       return {
         timestamp: Date.now(),
-        network,
-        passphrase: this.passphrases[network],
+        network: networkLabel,
+        passphrase,
         ledger: {
           sequence: latestLedger.sequence,
           closeTime: latestLedger.closed_at,
@@ -150,7 +344,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
         latency,
       };
     } catch (error) {
-      this.logger.error(`Error fetching status for ${network}`, error);
+      this.logger.error(`Error fetching status for ${networkLabel}`, error);
       throw error;
     }
   }
