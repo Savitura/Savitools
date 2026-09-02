@@ -8,8 +8,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, RedisClientType } from 'redis';
-import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
+import {
+  DEFAULT_MAX_AGE_SECONDS,
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+  WebhookSigningStatus,
+} from './signature';
 import { WEBHOOK_TEMPLATES } from './webhook-templates';
 import { SendWebhookDto } from './dto/send-webhook.dto';
 import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from './ssrf-guard';
@@ -76,6 +82,26 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     return WEBHOOK_TEMPLATES;
   }
 
+  /**
+   * Global fallback signing secret. When an operator sets
+   * WEBHOOK_SIGNING_SECRET, outbound webhooks are signed (timestamped
+   * HMAC-SHA256) even when the caller supplies no per-request secret.
+   */
+  private signingSecret(): string | undefined {
+    return this.configService.get<string>('WEBHOOK_SIGNING_SECRET');
+  }
+
+  /** Whether signing is enabled and the wire format receivers should expect. */
+  getSigningStatus(): WebhookSigningStatus {
+    return {
+      enabled: Boolean(this.signingSecret()),
+      algorithm: 'hmac-sha256',
+      signatureHeader: SIGNATURE_HEADER,
+      timestampHeader: TIMESTAMP_HEADER,
+      replayWindowSeconds: DEFAULT_MAX_AGE_SECONDS,
+    };
+  }
+
   async sendWebhook(userId: string, dto: SendWebhookDto): Promise<WebhookHistoryEntry> {
     const template = WEBHOOK_TEMPLATES.find(
       (t) => t.eventType === dto.eventType,
@@ -95,18 +121,18 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
     await assertSafeWebhookDestination(destinationUrl);
 
     const payload = dto.payload ?? template!.samplePayload;
+    const body = JSON.stringify(payload);
 
-    let signature = '';
     const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
     };
 
-    if (dto.secret) {
-      signature = crypto
-        .createHmac('sha256', dto.secret)
-        .update(JSON.stringify(payload))
-        .digest('hex');
-      requestHeaders['X-SaviTools-Signature'] = `sha256=${signature}`;
+    // Per-request secret wins; WEBHOOK_SIGNING_SECRET is the global fallback.
+    const secret = dto.secret || this.signingSecret();
+    if (secret) {
+      const { signature, timestamp } = signBody({ secret, body });
+      requestHeaders[SIGNATURE_HEADER] = signature;
+      requestHeaders[TIMESTAMP_HEADER] = timestamp;
     }
 
     const startTime = Date.now();
@@ -119,7 +145,7 @@ export class WebhookService implements OnModuleInit, OnModuleDestroy {
       const response = await this.fetchWithRedirectGuard(destinationUrl, {
         method: 'POST',
         headers: requestHeaders,
-        body: JSON.stringify(payload),
+        body,
         signal: AbortSignal.timeout(30000),
       });
 

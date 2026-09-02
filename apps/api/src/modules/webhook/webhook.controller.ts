@@ -17,6 +17,13 @@ export class WebhookController {
     return this.webhookService.getTemplates();
   }
 
+  @Get('signing')
+  @ApiOperation({ summary: 'Whether outbound webhook signing is enabled and the signature wire format' })
+  @ApiResponse({ status: 200, description: 'Webhook signing status retrieved' })
+  getSigningStatus() {
+    return this.webhookService.getSigningStatus();
+  }
+
   @Post('send')
   @ApiCookieAuth()
   @UseGuards(JwtAuthGuard)

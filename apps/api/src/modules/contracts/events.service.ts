@@ -6,8 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { rpc, StrKey } from '@stellar/stellar-sdk';
-import { createHmac } from 'crypto';
 import { rpcServer } from '../monitor/horizon';
+import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from '../webhook/signature';
 import {
   MAX_WEBHOOK_REDIRECTS,
   assertSafeWebhookDestination,
@@ -208,6 +212,9 @@ export class EventsService {
 
     await assertSafeWebhookDestination(destination);
 
+    // Per-request secret wins; WEBHOOK_SIGNING_SECRET is the global fallback.
+    const secret = dto.secret || this.configService.get<string>('WEBHOOK_SIGNING_SECRET');
+
     const results: ReplayResult[] = new Array<ReplayResult>(dto.events.length);
     let next = 0;
 
@@ -219,7 +226,7 @@ export class EventsService {
         while (true) {
           const index = next++;
           if (index >= dto.events.length) return;
-          results[index] = await this.deliverOne(destination, dto.events[index], index, dto.secret);
+          results[index] = await this.deliverOne(destination, dto.events[index], index, secret);
         }
       },
     );
@@ -249,11 +256,12 @@ export class EventsService {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
     if (secret) {
-      // Same wire format as WebhookService and the notification worker:
-      // hex HMAC-SHA256 over the exact body, no timestamp prefix.
-      headers['X-SaviTools-Signature'] = `sha256=${createHmac('sha256', secret)
-        .update(body)
-        .digest('hex')}`;
+      // Same timestamped wire format as WebhookService and the notification
+      // worker: hex HMAC-SHA256 over `<timestamp>.<body>`, timestamp carried
+      // in its own header so a receiver can bound the signature's age.
+      const { signature, timestamp } = signBody({ secret, body });
+      headers[SIGNATURE_HEADER] = signature;
+      headers[TIMESTAMP_HEADER] = timestamp;
     }
 
     const startedAt = Date.now();

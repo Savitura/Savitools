@@ -7,7 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Worker } from 'bullmq';
-import { createHmac } from 'crypto';
+import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from '../webhook/signature';
 import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../webhook/ssrf-guard';
 import { Resend } from 'resend';
 import { Repository } from 'typeorm';
@@ -221,9 +225,11 @@ export class NotificationWorkerService
       ruleId: alertEvent.ruleId,
       event: alertEvent.payload,
     });
-    const signature = createHmac('sha256', webhook.secret)
-      .update(body)
-      .digest('hex');
+    // Same timestamped wire format as WebhookService and event replay.
+    const { signature, timestamp } = signBody({
+      secret: webhook.secret,
+      body,
+    });
     let currentUrl = destination;
     let response: Response;
     for (let hop = 0; ; hop++) {
@@ -231,7 +237,8 @@ export class NotificationWorkerService
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-SaviTools-Signature': `sha256=${signature}`,
+          [SIGNATURE_HEADER]: signature,
+          [TIMESTAMP_HEADER]: timestamp,
         },
         body,
         redirect: 'manual',

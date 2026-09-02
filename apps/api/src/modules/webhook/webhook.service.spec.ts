@@ -1,5 +1,10 @@
 import { WebhookService } from './webhook.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from './signature';
 import { WEBHOOK_TEMPLATES } from './webhook-templates';
 
 const lookupMock = jest.fn();
@@ -20,8 +25,19 @@ function mockRedis() {
 
 function mockConfig() {
   return {
-    get: jest.fn(() => 'redis://localhost:6379'),
+    get: jest.fn((key: string) =>
+      key === 'REDIS_URL' ? 'redis://localhost:6379' : undefined,
+    ),
   };
+}
+
+function reSign(entry: { payload: Record<string, unknown>; requestHeaders: Record<string, string> }, secret: string) {
+  const timestamp = entry.requestHeaders[TIMESTAMP_HEADER];
+  return signBody({
+    secret,
+    body: JSON.stringify(entry.payload),
+    timestamp: Number(timestamp),
+  }).signature;
 }
 
 function jsonResponse(body: unknown, init: { status?: number; headers?: [string, string][] } = {}) {
@@ -94,7 +110,7 @@ describe('WebhookService', () => {
       expect(redis.expire).toHaveBeenCalled();
     });
 
-    it('includes HMAC signature when secret is provided', async () => {
+    it('includes a timestamped HMAC signature when a secret is provided', async () => {
       global.fetch = jest.fn().mockResolvedValue(jsonResponse({}, { headers: [] }));
 
       const result = await service.sendWebhook(USER_A, {
@@ -103,7 +119,71 @@ describe('WebhookService', () => {
         secret: 'my-secret',
       });
 
-      expect(result.requestHeaders['X-SaviTools-Signature']).toMatch(/^sha256=/);
+      expect(result.requestHeaders[SIGNATURE_HEADER]).toMatch(/^sha256=[0-9a-f]{64}$/);
+      expect(result.requestHeaders[TIMESTAMP_HEADER]).toMatch(/^\d+$/);
+      // A receiving endpoint can recompute the signature from body + timestamp.
+      expect(result.requestHeaders[SIGNATURE_HEADER]).toBe(
+        reSign(result, 'my-secret'),
+      );
+    });
+
+    it('signs with WEBHOOK_SIGNING_SECRET when no per-request secret is given', async () => {
+      (config.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'WEBHOOK_SIGNING_SECRET'
+          ? 'env-signing-secret'
+          : key === 'REDIS_URL'
+            ? 'redis://localhost:6379'
+            : undefined,
+      );
+      global.fetch = jest.fn().mockResolvedValue(jsonResponse({}, { headers: [] }));
+
+      const result = await service.sendWebhook(USER_A, {
+        endpointUrl: 'https://example.com/hook',
+        eventType: 'campaign.funded',
+      });
+
+      expect(result.requestHeaders[SIGNATURE_HEADER]).toBe(
+        reSign(result, 'env-signing-secret'),
+      );
+      expect(result.requestHeaders[SIGNATURE_HEADER]).not.toBe(
+        reSign(result, 'wrong-secret'),
+      );
+    });
+
+    it('prefers the per-request secret over WEBHOOK_SIGNING_SECRET', async () => {
+      (config.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'WEBHOOK_SIGNING_SECRET'
+          ? 'env-signing-secret'
+          : key === 'REDIS_URL'
+            ? 'redis://localhost:6379'
+            : undefined,
+      );
+      global.fetch = jest.fn().mockResolvedValue(jsonResponse({}, { headers: [] }));
+
+      const result = await service.sendWebhook(USER_A, {
+        endpointUrl: 'https://example.com/hook',
+        eventType: 'campaign.funded',
+        secret: 'per-request-secret',
+      });
+
+      expect(result.requestHeaders[SIGNATURE_HEADER]).toBe(
+        reSign(result, 'per-request-secret'),
+      );
+      expect(result.requestHeaders[SIGNATURE_HEADER]).not.toBe(
+        reSign(result, 'env-signing-secret'),
+      );
+    });
+
+    it('omits signature headers when neither a secret nor WEBHOOK_SIGNING_SECRET is set', async () => {
+      global.fetch = jest.fn().mockResolvedValue(jsonResponse({}, { headers: [] }));
+
+      const result = await service.sendWebhook(USER_A, {
+        endpointUrl: 'https://example.com/hook',
+        eventType: 'campaign.funded',
+      });
+
+      expect(result.requestHeaders[SIGNATURE_HEADER]).toBeUndefined();
+      expect(result.requestHeaders[TIMESTAMP_HEADER]).toBeUndefined();
     });
 
     it('throws for unknown event type without custom payload', async () => {
@@ -225,6 +305,35 @@ describe('WebhookService', () => {
       });
 
       expect(result.responseHeaders['set-cookie']).toBe('[REDACTED]');
+    });
+  });
+
+  describe('getSigningStatus', () => {
+    it('reports signing disabled when WEBHOOK_SIGNING_SECRET is unset', () => {
+      expect(service.getSigningStatus()).toEqual({
+        enabled: false,
+        algorithm: 'hmac-sha256',
+        signatureHeader: SIGNATURE_HEADER,
+        timestampHeader: TIMESTAMP_HEADER,
+        replayWindowSeconds: 300,
+      });
+    });
+
+    it('reports signing enabled and the wire format when the env secret is set', () => {
+      (config.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'WEBHOOK_SIGNING_SECRET'
+          ? 'env-signing-secret'
+          : key === 'REDIS_URL'
+            ? 'redis://localhost:6379'
+            : undefined,
+      );
+
+      const status = service.getSigningStatus();
+      expect(status.enabled).toBe(true);
+      expect(status.algorithm).toBe('hmac-sha256');
+      expect(status.signatureHeader).toBe(SIGNATURE_HEADER);
+      expect(status.timestampHeader).toBe(TIMESTAMP_HEADER);
+      expect(status.replayWindowSeconds).toBe(300);
     });
   });
 

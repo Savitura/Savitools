@@ -71,12 +71,14 @@ function buildLiveCurl(
   payload: string,
   secret: string,
   signature: string,
+  timestamp: string,
 ): string {
   const parts: string[] = ['curl', '-s', '-X', 'POST', `'${endpointUrl}'`];
 
   parts.push("-H 'Content-Type: application/json'");
 
   if (secret) {
+    parts.push(`-H 'X-SaviTools-Timestamp: ${timestamp}'`);
     parts.push(`-H 'X-SaviTools-Signature: sha256=${signature}'`);
   }
 
@@ -121,6 +123,7 @@ export function WebhookTester() {
   const [payloadValid, setPayloadValid] = useState(true);
   const [secret, setSecret] = useState('');
   const [signature, setSignature] = useState('');
+  const [signatureTimestamp, setSignatureTimestamp] = useState('');
 
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<WebhookHistoryEntry | null>(null);
@@ -173,10 +176,14 @@ export function WebhookTester() {
   useEffect(() => {
     if (!secret) {
       setSignature('');
+      setSignatureTimestamp('');
       return;
     }
     try {
-      const payloadBytes = new TextEncoder().encode(payloadEditor);
+      // Mirror the API's wire format: sign `<timestamp>.<body>` and carry the
+      // Unix-second timestamp alongside the signature.
+      const timestamp = Math.floor(Date.now() / 1000);
+      const payloadBytes = new TextEncoder().encode(`${timestamp}.${payloadEditor}`);
       const keyBytes = new TextEncoder().encode(secret);
       crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
         .then((key) => crypto.subtle.sign('HMAC', key, payloadBytes))
@@ -185,9 +192,11 @@ export function WebhookTester() {
             .map((b) => b.toString(16).padStart(2, '0'))
             .join('');
           setSignature(hex);
+          setSignatureTimestamp(String(timestamp));
         });
     } catch {
       setSignature('');
+      setSignatureTimestamp('');
     }
   }, [secret, payloadEditor]);
 
@@ -435,7 +444,7 @@ export function WebhookTester() {
 
         {endpointUrl && payloadEditor && payloadValid && (
           <CopyButton
-            text={buildLiveCurl(endpointUrl, payloadEditor, secret, signature)}
+            text={buildLiveCurl(endpointUrl, payloadEditor, secret, signature, signatureTimestamp)}
             label="Copy as cURL"
           />
         )}

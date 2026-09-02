@@ -119,7 +119,7 @@ cp .env.example .env
 | `WEB_ORIGIN` | Allowed origin for API and WebSocket CORS | `http://localhost:3000` |
 | `THROTTLE_TTL` | Rate limiting sliding window size in milliseconds | `60000` (1 minute) |
 | `THROTTLE_LIMIT` | Max requests allowed in the rate limit window | `100` |
-| `WEBHOOK_SIGNING_SECRET` | HMAC secret to sign test webhook payloads | `your-signing-secret-here` |
+| `WEBHOOK_SIGNING_SECRET` | HMAC secret used to sign outbound webhook payloads when no per-request secret is given (unset = payloads are sent unsigned) | `your-signing-secret-here` (optional) |
 | `NEXT_PUBLIC_API_URL` | Frontend → API URL | `http://localhost:3001/api` |
 
 ### Security & Rate Limiting
@@ -128,6 +128,35 @@ SaviTools protects its REST APIs and WebSocket connections by restricting allowe
 - **CORS Protection**: The WebSocket gateway and HTTP endpoints restrict incoming connections using `WEB_ORIGIN` (defaulting to `http://localhost:3000`). Make sure this is set to your frontend origin in staging/production deployments.
 - **Rate Limiting**: SaviTools implements global rate limiting using `@nestjs/throttler`. By default, it allows a maximum of `100` requests within a `60000` ms (1 minute) sliding window per IP address. When exceeded, the API returns a `429 Too Many Requests` response.
   - Rate limits can be configured in your environment using `THROTTLE_LIMIT` (number of requests) and `THROTTLE_TTL` (time-to-live window in milliseconds).
+
+### Webhook Signature Verification
+
+Outbound webhooks (the Webhook Tester, contract-event replay, and monitor alerts) are signed
+with timestamped HMAC-SHA256 whenever a signing secret is in play — the per-request secret if
+you send one, otherwise `WEBHOOK_SIGNING_SECRET`. Check whether signing is enabled on your
+deployment:
+
+```bash
+curl http://localhost:3001/api/webhooks/signing
+# => {"enabled":true,"algorithm":"hmac-sha256","signatureHeader":"X-SaviTools-Signature",
+#     "timestampHeader":"X-SaviTools-Timestamp","replayWindowSeconds":300}
+```
+
+Every signed request carries two headers:
+
+- `X-SaviTools-Timestamp`: the Unix time in seconds when the request was built
+- `X-SaviTools-Signature`: `sha256=<hex>`, where the hex is HMAC-SHA256 of the UTF-8 bytes
+  of `<timestamp>.<body>` — the exact request body as sent
+
+To verify a signature, recompute the HMAC with your secret over the timestamp and body you
+received, compare it in constant time, and reject requests whose timestamp is older than
+`replayWindowSeconds` (300 s) or implausibly far in the future. The API exposes this exact
+logic as a testable utility: `apps/api/src/modules/webhook/signature.ts`
+(`signBody` / `verifySignature`). A request whose timestamp is older than the replay window
+should be rejected as a potential replay.
+
+> If signing is not enabled (`enabled: false`), webhook payloads are sent unsigned — set
+> `WEBHOOK_SIGNING_SECRET` before pointing receivers at your deployment.
 
 ### 3. Start infrastructure
 
