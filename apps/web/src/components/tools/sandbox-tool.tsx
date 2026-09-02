@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keypair } from '@stellar/stellar-sdk';
+import { addRecentItem } from '@/lib/recent-items';
+import { useCommandPalette, ShortcutBadge } from '@/components/command-palette';
 import {
   Plus,
   Copy,
@@ -24,6 +26,7 @@ import {
   type Balance,
 } from '@/lib/api';
 import { useNetwork } from '@/lib/network-context';
+import { clearSecretString, randomBytes, zeroBuffer } from '@/lib/secure-memory';
 import {
   SandboxAccountSkeleton,
   ErrorState,
@@ -54,6 +57,7 @@ interface PaymentFormState {
 
 export function SandboxTool() {
   const { network } = useNetwork();
+  const { registerContextActions } = useCommandPalette();
   const [keypair, setKeypair] = useState<GeneratedKeypair | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -81,22 +85,67 @@ export function SandboxTool() {
   const [paymentResult, setPaymentResult] = useState<SandboxPaymentResult | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  const handleGenerateKeypair = () => {
+  const handleGenerateKeypair = useCallback(() => {
     setGenerating(true);
     try {
       const pair = Keypair.random();
-      setKeypair({
+      const newPair = {
         publicKey: pair.publicKey(),
         secretKey: pair.secret(),
-      });
+      };
+      setKeypair(newPair);
+  // Security: hold a ref to the latest generated secret so we can drop it
+  // from memory when the component unmounts (see Savitura/Savitools#145). JS
+  // strings are immutable, so clearing the reference is the best we can do
+  // here — the entropy seed itself was already zeroed at generation time.
+  const secretRef = useRef<string | null>(null);
+  useEffect(() => {
+    return () => {
+      if (secretRef.current) clearSecretString(secretRef.current);
+      secretRef.current = null;
+    };
+  }, []);
+
+  const handleGenerateKeypair = () => {
+    setGenerating(true);
+    try {
+      // Generate the seed ourselves so the entropy buffer can be zeroed after
+      // use. `Keypair.random()` hides its internal buffer, so we use the
+      // `crypto.getRandomValues` return-buffer pattern instead (see
+      // Savitura/Savitools#145): derive the keypair from our own seed, then
+      // wipe the seed bytes so they are not left in the JS heap for GC.
+      const seed = randomBytes(32);
+      // The SDK accepts a Buffer-like seed and copies it internally, so we can
+      // pass our zeroable Uint8Array directly (its type signature says Buffer,
+      // but any byte view works — see Keypair constructor in stellar-sdk).
+      const pair = Keypair.fromRawEd25519Seed(
+        seed as unknown as Buffer,
+      );
+      const publicKey = pair.publicKey();
+      const secretKey = pair.secret();
+      zeroBuffer(seed);
+
+      // Drop the previous keypair's secret references before storing the new
+      // one, so the old secret can be garbage-collected promptly.
+      if (keypair?.secretKey && secretRef.current === keypair.secretKey) {
+        clearSecretString(keypair.secretKey);
+      }
+      setKeypair({ publicKey, secretKey });
+      secretRef.current = secretKey;
       setRevealed(false);
       setFundResult(null);
+      addRecentItem({
+        category: 'sandbox',
+        title: `Wallet: ${newPair.publicKey.slice(0, 8)}…`,
+        subtitle: 'Created sandbox keypair',
+        href: '/sandbox',
+      });
     } catch (err) {
       console.error('Failed to generate keypair:', err);
     } finally {
       setGenerating(false);
     }
-  };
+  }, []);
 
   const handleCopy = async (text: string, key: string) => {
     try {
@@ -108,13 +157,36 @@ export function SandboxTool() {
     }
   };
 
-  const handleFund = async () => {
+  const handleInspectAccount = useCallback(async (publicKey: string) => {
+    setInspector((prev) => ({ ...prev, publicKey, loading: true, error: null, account: null }));
+    try {
+      const account = await sandboxGetAccount(publicKey);
+      setInspector((prev) => ({ ...prev, account, loading: false }));
+      addRecentItem({
+        category: 'sandbox',
+        title: `Account: ${publicKey.slice(0, 8)}…`,
+        subtitle: `${account.balances.length} balance(s)`,
+        href: '/sandbox',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load account';
+      setInspector((prev) => ({ ...prev, error: message, loading: false }));
+    }
+  }, []);
+
+  const handleFund = useCallback(async () => {
     if (!keypair) return;
     setFunding(true);
     setFundResult(null);
     try {
       const result = await sandboxFund(keypair.publicKey);
       setFundResult(result);
+      addRecentItem({
+        category: 'sandbox',
+        title: `Funded: ${keypair.publicKey.slice(0, 8)}…`,
+        subtitle: '10,000 testnet XLM received',
+        href: '/sandbox',
+      });
       // Auto-refresh inspector if it matches
       if (inspector.publicKey === keypair.publicKey) {
         handleInspectAccount(keypair.publicKey);
@@ -124,18 +196,7 @@ export function SandboxTool() {
     } finally {
       setFunding(false);
     }
-  };
-
-  const handleInspectAccount = async (publicKey: string) => {
-    setInspector((prev) => ({ ...prev, publicKey, loading: true, error: null, account: null }));
-    try {
-      const account = await sandboxGetAccount(publicKey);
-      setInspector((prev) => ({ ...prev, account, loading: false }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load account';
-      setInspector((prev) => ({ ...prev, error: message, loading: false }));
-    }
-  };
+  }, [keypair, inspector.publicKey, handleInspectAccount]);
 
   const validateAsset = (value: string) => {
     if (value === 'XLM') {
@@ -174,12 +235,59 @@ export function SandboxTool() {
         payment.memo || undefined,
       );
       setPaymentResult(result);
+      if (result.txHash) {
+        addRecentItem({
+          category: 'sandbox',
+          title: `Payment: ${payment.amount} ${payment.asset}`,
+          subtitle: `Tx: ${result.txHash.slice(0, 16)}…`,
+          href: `/inspector?hash=${result.txHash}`,
+        });
+      }
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : 'Payment failed');
     } finally {
       setSending(false);
     }
   };
+
+  // Register contextual shortcuts
+  useEffect(() => {
+    const unregister = registerContextActions({
+      actionLabel: keypair ? 'Fund Sandbox Keypair' : 'Generate Keypair',
+      runAction: () => {
+        if (!keypair && !generating) {
+          handleGenerateKeypair();
+        } else if (keypair && !funding) {
+          void handleFund();
+        }
+      },
+      copyTxHash: () => {
+        if (paymentResult?.txHash) {
+          void navigator.clipboard.writeText(paymentResult.txHash);
+          return true;
+        }
+        if (keypair?.publicKey) {
+          void navigator.clipboard.writeText(keypair.publicKey);
+          return true;
+        }
+        return false;
+      },
+      txHash: paymentResult?.txHash || keypair?.publicKey,
+    });
+
+    return unregister;
+  }, [
+    keypair,
+    generating,
+    funding,
+    paymentResult?.txHash,
+    registerContextActions,
+    handleGenerateKeypair,
+    handleFund,
+  ]);
+
+
+
 
   const stellarExpertUrl = (txHash: string) => `https://stellar.expert/tx/${txHash}?network=testnet`;
 

@@ -1,51 +1,56 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiResponse } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ComposerService } from './composer.service';
+import { TransactionSequenceService } from './transaction-sequence.service';
 import { BuildTransactionDto } from './dto/build-transaction.dto';
 import { SimulateTransactionDto } from './dto/simulate-transaction.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { BenchmarkTransactionDto } from './dto/benchmark-transaction.dto';
+import { RunTransactionSequenceDto } from './dto/transaction-sequence.dto';
 
 @ApiTags('composer')
 @Controller('composer')
 export class ComposerController {
-  constructor(private readonly composerService: ComposerService) {}
-
-  @Get('operations')
-  @ApiOperation({ summary: 'List all supported operation types with field schemas' })
-  @ApiResponse({ status: 200, description: 'List of operation types' })
-  getOperations() {
-    return this.composerService.getOperations();
-  }
+  constructor(
+    private readonly composerService: ComposerService,
+    private readonly transactionSequenceService: TransactionSequenceService,
+  ) {}
 
   @Post('build')
-  @ApiOperation({
-    summary: 'Build a multi-op transaction and return unsigned XDR envelope',
-  })
-  @ApiResponse({ status: 200, description: 'Transaction built successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid transaction parameters' })
-  buildTransaction(@Body() dto: BuildTransactionDto) {
+  \n  @ApiOperation({ summary: 'Build and sign a Stellar transaction XDR' })
+  @ApiResponse({ status: 201, description: 'Transaction built successfully' })
+  async buildTransaction(@body() dto: BuildTransactionDto) {
     return this.composerService.buildTransaction(dto);
   }
 
   @Post('simulate')
-  @ApiOperation({
-    summary: 'Dry-run an XDR transaction against Horizon; returns fee and result codes',
-  })
-  @ApiResponse({ status: 200, description: 'Transaction simulated successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid XDR or simulation failed' })
-  simulateTransaction(@Body() dto: SimulateTransactionDto) {
+  @HttpCode(HttpStatus.OK)
+  \n  @ApiOperation({ summary: 'Simulate a transaction envelope via Horizon' })
+  @ApiResponse({ status: 200, description: 'Simulation completed' })
+  async simulateTransaction(@body() dto: SimulateTransactionDto) {
     return this.composerService.simulateTransaction(dto);
   }
 
-  @Post('send')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({
-    summary: 'Broadcast a signed XDR transaction to the Stellar network',
-  })
-  @ApiResponse({ status: 200, description: 'Transaction submitted successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid XDR or submission failed' })
-  @ApiResponse({ status: 401, description: 'Authentication required' })
-  sendTransaction(@Body() dto: SimulateTransactionDto) {
-    return this.composerService.sendTransaction(dto);
+  @Post('benchmark')
+  @HttpCode(HttpStatus.OK)
+  \n  @ApiOperation({ summary: 'Run sequential and concurrent transaction submission benchmarks' })
+  @ApiResponse({ status: 200, description: 'Benchmark completed' })
+  async benchmarkTransaction(@body() dto: BenchmarkTransactionDto) {
+    return this.composerService.benchmarkTransaction(dto);
+  }
+
+  @Post('sequence/run')
+  @HttpCode(HttpStatus.OK)
+  \n  @ApiOperation({ summary: 'Run a transaction sequence with automatic sequence numbers' })
+  @ApiResponse({ status: 200, description: 'Sequence executed' })
+  async runTransactionSequence(@body() dto: RunTransactionSequenceDto) {
+    return this.transactionSequenceService.run(dto);
+  }
+
+  @Get('sequence')
+  @HttpCode(HttpStatus.OK)
+  \n  @ApiOperation({ summary: 'List transaction sequence runs' })
+  @ApiResponse({ status: 200, description: 'Sequence history' })
+  async listTransactionSequences() {
+    return this.transactionSequenceService.list();
   }
 }

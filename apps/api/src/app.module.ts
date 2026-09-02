@@ -19,26 +19,32 @@ import { ComposerModule } from "./modules/composer/composer.module";
 import { InspectorModule } from "./modules/inspector/inspector.module";
 import { TransactionModule } from "./modules/transaction/transaction.module";
 import { FederationModule } from "./modules/federation/federation.module";
+import { MetricsModule } from "./modules/metrics/metrics.module";
 import { DataSource } from "typeorm";
 import { CreatePlaygroundHistory1784642239000 } from "./database/migrations/1784642239000-create-playground-history";
 import { CreateLedgerMonitor1752926400000 } from "./database/migrations/1752926400000-create-ledger-monitor";
 import { AddMonitorStateAlerts1785312000000 } from "./database/migrations/1785312000000-add-monitor-state-alerts";
 import { AddAuthEnhancements1785398400000 } from "./database/migrations/1785398400000-add-auth-enhancements";
 import { CreateGraphSnapshots1785600000000 } from "./database/migrations/1785600000000-create-graph-snapshots";
+import { CreateNetworkSamples1785786400000 } from "./database/migrations/1785786400000-create-network-samples";
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-
-    ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          ttl: config.get<number>("THROTTLE_TTL", 60000),
-          limit: config.get<number>("THROTTLE_LIMIT", 100),
-        },
-      ],
-    }),
+ThrottlerModule.forRootAsync({
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => [
+    {
+      ttl: config.get<number>("THROTTLE_TTL", 60000),
+      limit: config.get<number>("THROTTLE_LIMIT", 100),
+      skipIf: (context) => {
+        const request = context.switchToHttp().getRequest();
+        return request.method === "OPTIONS";
+      },
+    },
+  ],
+}),
+    
 
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -53,6 +59,7 @@ import { CreateGraphSnapshots1785600000000 } from "./database/migrations/1785600
           AddMonitorStateAlerts1785312000000,
           AddAuthEnhancements1785398400000,
           CreateGraphSnapshots1785600000000,
+          CreateNetworkSamples1785786400000,
         ],
         migrationsRun: config.get<string>("RUN_MIGRATIONS") === "true",
         logging: config.get<string>("NODE_ENV") === "development",
@@ -72,6 +79,7 @@ import { CreateGraphSnapshots1785600000000 } from "./database/migrations/1785600
     InspectorModule,
     TransactionModule,
     FederationModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [

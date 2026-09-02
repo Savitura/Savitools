@@ -1,4 +1,5 @@
 import type { Operation } from '@stellar/stellar-sdk';
+import { decodeScVal } from '../contracts/scval-decoder';
 
 export interface DecodedOperation {
   type: string;
@@ -163,28 +164,27 @@ export function decodeOperation(op: any): DecodedOperation {
     case 'revokeSponsorship':
       return {
         type: 'revoke_sponsorship', label: 'Revoke Sponsorship', sourceAccount: source,
-        fields: { type: op.revokeSponsorshipType ?? 'unknown' },
+        fields: {},
       };
 
     case 'clawback':
       return {
         type: 'clawback', label: 'Clawback', sourceAccount: source,
-        fields: { asset: assetLabel(op.asset), from: op.from, amount: op.amount },
+        fields: { asset: assetLabel(op.asset), amount: op.amount, from: op.from },
       };
 
     case 'clawbackClaimableBalance':
       return {
-        type: 'clawback_claimable_balance', label: 'Clawback Claimable Balance',
-        sourceAccount: source, fields: { balanceId: op.balanceId },
+        type: 'clawback_claimable_balance', label: 'Clawback Claimable Balance', sourceAccount: source,
+        fields: { balanceId: op.balanceId },
       };
 
     case 'setTrustLineFlags':
       return {
-        type: 'set_trust_line_flags', label: 'Set Trustline Flags', sourceAccount: source,
+        type: 'set_trust_line_flags', label: 'Set Trust Line Flags', sourceAccount: source,
         fields: {
-          trustor: op.trustor, asset: assetLabel(op.asset),
-          setFlags: op.setFlags != null ? String(op.setFlags) : null,
-          clearFlags: op.clearFlags != null ? String(op.clearFlags) : null,
+          trustor: op.trustor, asset: assetLabel(op.asset ?? op.line),
+          clearFlags: String(op.clearFlags ?? 0), setFlags: String(op.setFlags ?? 0),
         },
       };
 
@@ -192,9 +192,8 @@ export function decodeOperation(op: any): DecodedOperation {
       return {
         type: 'liquidity_pool_deposit', label: 'Liquidity Pool Deposit', sourceAccount: source,
         fields: {
-          liquidityPoolId: op.liquidityPoolId,
-          maxAmountA: op.maxAmountA, maxAmountB: op.maxAmountB,
-          minPrice: priceLabel(op.minPrice), maxPrice: priceLabel(op.maxPrice),
+          liquidityPoolId: op.liquidityPoolId, maxAmountA: op.maxAmountA,
+          maxAmountB: op.maxAmountB, minPrice: priceLabel(op.minPrice), maxPrice: priceLabel(op.maxPrice),
         },
       };
 
@@ -207,28 +206,94 @@ export function decodeOperation(op: any): DecodedOperation {
         },
       };
 
-    case 'invokeHostFunction':
-      return {
-        type: 'invoke_host_function', label: 'Invoke Host Function (Soroban)', sourceAccount: source,
-        fields: { hostFunction: op.func?.switch?.().name ?? 'unknown' },
-      };
+    case 'invokeHostFunction': {
+      const func = op.func;
+      let functionName = 'unknown';
+      let contractId: string | null = null;
+      let argCount = 0;
+      let decodedArgsSummary = '';
 
-    case 'extendFootprintTtl':
-      return {
-        type: 'extend_footprint_ttl', label: 'Extend Footprint TTL', sourceAccount: source,
-        fields: { extendTo: String(op.extendTo) },
-      };
+      try {
+        if (func && typeof func.switch === 'function') {
+          const switchVal = func.switch();
+          const switchName = typeof switchVal.name === 'string' ? switchVal.name : String(switchVal);
+          
+          if (switchName === 'hostFunctionTypeInvokeContract' && typeof func.invokeContract === 'function') {
+            const invoke = func.invokeContract();
+            if (invoke) {
+              if (typeof invoke.contractAddress === 'function') {
+                try {
+                  const addr = invoke.contractAddress();
+                  contractId = addr ? addr.toString() : null;
+                } catch {
+                  // ignore
+                }
+              }
+              if (typeof invoke.functionName === 'function') {
+                try {
+                  const fn = invoke.functionName();
+                  functionName = typeof fn === 'string' ? fn : (fn?.toString?.() ?? 'unknown');
+                } catch {
+                  // ignore
+                }
+              }
+              if (typeof invoke.args === 'function') {
+                try {
+                  const rawArgs = invoke.args();
+                  if (Array.isArray(rawArgs)) {
+                    argCount = rawArgs.length;
+                    decodedArgsSummary = rawArgs
+                      .map((arg) => {
+                        try {
+                          const decoded = decodeScVal(arg);
+                          return String(decoded.value ?? '');
+                        } catch {
+                          return '';
+                        }
+                      })
+                      .filter(Boolean)
+                      .join(', ');
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          } else if (switchName === 'hostFunctionTypeCreateContract' || switchName === 'hostFunctionTypeCreateContractV2') {
+            functionName = switchName;
+          } else if (switchName === 'hostFunctionTypeUploadWasm') {
+            functionName = 'uploadWasm';
+          } else {
+            functionName = switchName;
+          }
+        }
+      } catch {
+        // fallback
+      }
 
-    case 'restoreFootprint':
       return {
-        type: 'restore_footprint', label: 'Restore Footprint', sourceAccount: source,
-        fields: {},
+        type: 'invoke_host_function',
+        label: 'Invoke Host Function',
+        sourceAccount: source,
+        fields: {
+          contractId,
+          functionName,
+          argCount: String(argCount),
+          args: decodedArgsSummary || (op.args ? String(op.args.length) : null),
+        },
       };
+    }
 
     default:
       return {
-        type: op.type ?? 'unknown', label: op.type ?? 'Unknown Operation',
-        sourceAccount: source, fields: {},
+        type: op.type ?? 'unknown',
+        label: op.type ? op.type.replace(/([A-Z])/g, ' $1').replace(/^./, (str: string) => str.toUpperCase()) : 'Unknown Operation',
+        sourceAccount: source,
+        fields: Object.fromEntries(
+          Object.entries(op)
+            .filter(([k]) => !['type', 'source'].includes(k))
+            .map(([k, v]) => [k, v != null ? String(v) : null])
+        ),
       };
   }
 }

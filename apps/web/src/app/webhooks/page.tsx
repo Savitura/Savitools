@@ -9,6 +9,7 @@ export default function WebhooksPage() {
       <ToolPageShell
         title="Webhook Tester"
         description="Send test CrowdPay and Fluxa webhook payloads to your endpoint, inspect responses, and replay deliveries."
+        docsHref="/docs/webhooks"
       >
         <WebhookTester />
       </ToolPageShell>

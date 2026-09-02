@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { CSV_BOM, toCsv } from '../../common/csv';
 import { decodeOperation, DecodedOperation } from './operation-decoder';
 import { explainOpCode, explainTxCode } from './result-codes';
 
@@ -158,6 +159,74 @@ export class InspectorService {
       network,
       composerPayload: this.buildComposerPayload(horizonTx, xdrOps, network),
     };
+  }
+
+  // ─── GET /inspector/tx/:hash/export ───────────────────────────────────────
+
+  /**
+   * CSV export of a single transaction breakdown, matching the UI display
+   * (see Savitura/Savitools#147). One row per operation; the transaction-level
+   * fields are repeated on every row so the sheet is self-contained.
+   */
+  exportTransactionCsv(breakdown: TransactionBreakdown): string {
+    const header = [
+      'hash',
+      'network',
+      'ledger',
+      'created_at',
+      'source_account',
+      'sequence_number',
+      'fee_charged',
+      'max_fee',
+      'memo',
+      'memo_type',
+      'success',
+      'result_code',
+      'result_explanation',
+      'operation_index',
+      'operation_type',
+      'operation_label',
+      'operation_source',
+      'operation_result_code',
+      'operation_success',
+      'operation_effects',
+      'operation_fields',
+    ];
+
+    const base: unknown[] = [
+      breakdown.hash,
+      breakdown.network,
+      breakdown.ledger > 0 ? breakdown.ledger : '',
+      breakdown.createdAt,
+      breakdown.sourceAccount,
+      breakdown.sequenceNumber,
+      breakdown.feeCharged,
+      breakdown.maxFee,
+      breakdown.memo,
+      breakdown.memoType,
+      breakdown.success,
+      breakdown.resultCode,
+      breakdown.resultExplanation,
+    ];
+
+    const rows: unknown[][] = breakdown.operations.map((op) => [
+      ...base,
+      op.index,
+      op.type,
+      op.label,
+      op.sourceAccount ?? '',
+      op.resultCode ?? '',
+      op.success,
+      op.effects.length,
+      JSON.stringify(op.fields),
+    ]);
+
+    // A transaction with zero operations still yields a header + one data row.
+    if (rows.length === 0) {
+      rows.push([...base, '', '', '', '', '', '', '', '', '']);
+    }
+
+    return CSV_BOM + toCsv([header, ...rows]);
   }
 
   // ─── GET /inspector/account/:publicKey/txs ────────────────────────────────

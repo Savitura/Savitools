@@ -11,6 +11,7 @@ export default function ContractsPage() {
       <ToolPageShell
         title="Contract Deployer"
         description="Upload a compiled Soroban WASM and deploy it to testnet."
+        docsHref="/docs/contracts"
       >
         <p className="mb-4 text-sm text-muted-foreground">
           Looking for what a deployed contract emits?{' '}

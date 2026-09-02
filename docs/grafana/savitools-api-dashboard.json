@@ -1,0 +1,71 @@
+{
+  "title": "SaviTools API Observability",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["savitools", "api", "prometheus"],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP request rate",
+      "targets": [
+        {
+          "expr": "sum by (method, route) (rate(savitools_http_requests_total[5m]))"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p95 latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(savitools_http_request_duration_seconds_bucket[5m])))"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP error rate",
+      "targets": [
+        {
+          "expr": "sum by (status_code) (rate(savitools_http_requests_total{status_code=~\"5..|4..\"}[5m]))"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Soroban RPC p95 latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation, network) (rate(savitools_soroban_rpc_duration_seconds_bucket[5m])))"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "type": "stat",
+      "title": "Contract invocation success rate",
+      "targets": [
+        {
+          "expr": "sum(rate(savitools_soroban_contract_invocations_total{status=\"success\"}[5m])) / sum(rate(savitools_soroban_contract_invocations_total[5m]))"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 16 }
+    },
+    {
+      "type": "stat",
+      "title": "Redis connections",
+      "targets": [{ "expr": "savitools_redis_active_connections" }],
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 }
+    },
+    {
+      "type": "stat",
+      "title": "Horizon clients",
+      "targets": [{ "expr": "savitools_horizon_active_connections" }],
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 }
+    }
+  ]
+}

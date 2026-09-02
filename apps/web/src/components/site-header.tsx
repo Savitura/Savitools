@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { CommandPaletteTrigger } from '@/components/command-palette';
 
 export function SiteHeader() {
   const { user, loading, logout } = useAuth();
@@ -18,38 +19,43 @@ export function SiteHeader() {
           </span>
         </div>
 
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/settings" className="text-muted-foreground hover:text-foreground transition-colors">
-            Settings
-          </Link>
-          {loading ? (
-            <span className="text-muted-foreground text-xs">Loading…</span>
-          ) : user ? (
-            <>
-              <span className="text-muted-foreground hidden sm:inline">{user.email}</span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
-                Log in
-              </Link>
-              <Link
-                href="/register"
-                className="border border-border rounded px-2.5 py-1 hover:border-foreground/30 transition-colors"
-              >
-                Register
-              </Link>
-            </>
-          )}
+        <div className="flex items-center gap-3">
+          <CommandPaletteTrigger />
+
+          <div className="flex items-center gap-4 text-sm">
+            <Link href="/settings" className="text-muted-foreground hover:text-foreground transition-colors">
+              Settings
+            </Link>
+            {loading ? (
+              <span className="text-muted-foreground text-xs">Loading…</span>
+            ) : user ? (
+              <>
+                <span className="text-muted-foreground hidden sm:inline">{user.email}</span>
+                <button
+                  type="button"
+                  onClick={() => void logout()}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Log in
+                </Link>
+                <Link
+                  href="/register"
+                  className="border border-border rounded px-2.5 py-1 hover:border-foreground/30 transition-colors"
+                >
+                  Register
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+

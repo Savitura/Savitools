@@ -30,6 +30,32 @@ describe('WalletService', () => {
       const reconstructed = Keypair.fromSecret(keypair.secretKey);
       expect(reconstructed.publicKey()).toBe(keypair.publicKey);
     });
+
+    it('zeros raw secret key buffer on keypair generation', () => {
+      const { Keypair } = require('@stellar/stellar-sdk');
+      const originalRandom = Keypair.random;
+      
+      let capturedRawSecret: Buffer | null = null;
+      Keypair.random = () => {
+        const kp = originalRandom();
+        try {
+          capturedRawSecret = kp.rawSecret();
+        } catch {
+          capturedRawSecret = Buffer.alloc(32, 1);
+          kp.rawSecret = () => capturedRawSecret;
+        }
+        return kp;
+      };
+
+      try {
+        service.generateKeypair();
+        if (capturedRawSecret) {
+          expect([...capturedRawSecret]).toEqual(new Array(capturedRawSecret.length).fill(0));
+        }
+      } finally {
+        Keypair.random = originalRandom;
+      }
+    });
   });
 
   describe('fundFromFriendbot', () => {

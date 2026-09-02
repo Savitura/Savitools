@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Federation, StrKey } from '@stellar/stellar-sdk';
 import { Plus, Trash2, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { addRecentItem } from '@/lib/recent-items';
 import {
   AlertRuleType,
   NotificationChannel,
@@ -89,6 +90,12 @@ export function WatchForm({
         }),
       });
       onAdd(watch);
+      addRecentItem({
+        category: 'monitor',
+        title: `Watch: ${label || `${publicKey.slice(0, 8)}…`}`,
+        subtitle: `${network} · ${watch.eventTypes.join(', ')}`,
+        href: '/monitor',
+      });
       setPublicKey('');
       setLabel('');
       setRules([]);
@@ -100,6 +107,7 @@ export function WatchForm({
       setLoading(false);
     }
   };
+
 
   const isContract = StrKey.isValidContract(publicKey);
 

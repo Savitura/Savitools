@@ -13,6 +13,7 @@ export default function SandboxPage() {
       <ToolPageShell
         title="Wallet Sandbox"
         description="Generate keypairs, fund testnet accounts, and create trustlines."
+        docsHref="/docs/sandbox"
       >
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
           <ErrorBoundary toolName="Sandbox">

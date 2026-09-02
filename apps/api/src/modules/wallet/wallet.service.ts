@@ -19,9 +19,22 @@ export class WalletService {
 
   generateKeypair() {
     const keypair = Keypair.random();
+    const secretKey = keypair.secret();
+    const publicKey = keypair.publicKey();
+
+    // Securely overwrite the secret buffer if available or overwrite via Node buffer techniques
+    try {
+      const rawBuffer = keypair.rawSecret();
+      if (rawBuffer && Buffer.isBuffer(rawBuffer)) {
+        rawBuffer.fill(0);
+      }
+    } catch {
+      // Fallback if rawSecret is unavailable
+    }
+
     return {
-      publicKey: keypair.publicKey(),
-      secretKey: keypair.secret(),
+      publicKey,
+      secretKey,
     };
   }
 

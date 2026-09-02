@@ -681,6 +681,28 @@ curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c..."
 
 ---
 
+#### GET `/inspector/tx/:hash/export`
+
+Export a transaction breakdown as CSV (UTF-8 BOM included for Excel compatibility).
+
+**Query Parameters:**
+- `network` (optional, default `testnet`): `testnet` or `mainnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c.../export?network=testnet"
+```
+
+**Response (200):** `text/csv` attachment
+```
+hash,network,ledger,created_at,source_account,sequence_number,fee_charged,max_fee,memo,memo_type,success,result_code,result_explanation,operation_index,operation_type,operation_label,operation_source,operation_result_code,operation_success,operation_effects,operation_fields
+```
+
+**Errors:**
+- `404`: Transaction not found
+
+---
+
 #### GET `/inspector/account/:publicKey/txs`
 
 Get the last 20 transactions for a Stellar account.
@@ -1339,6 +1361,63 @@ curl -X POST http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
   "watchId": "watch-123",
   "conditionType": "balance_threshold"
 }
+```
+
+---
+
+#### GET `/monitor/search`
+
+Search watch events across the current user's watches (requires authentication). Accepts the same filters as the CSV export endpoint.
+
+**Query Parameters:**
+- `watchId` (optional): Restrict to a single watch
+- `eventType` (optional): `transaction`, `payment`, or `contract`
+- `q` (optional): Free-text search across event payloads (hashes, accounts, assets)
+- `from` (optional): ISO date — events at or after this time
+- `to` (optional): ISO date — events at or before this time
+- `page` (optional, default `1`)
+- `limit` (optional, default `25`, max `100`)
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/monitor/search?eventType=payment&q=GBZR7...&limit=50" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
+```
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "watchId": "...",
+      "eventType": "payment",
+      "payload": {},
+      "occurredAt": "2026-08-31T12:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 1
+}
+```
+
+---
+
+#### GET `/monitor/search/export`
+
+Export monitor search results as CSV (requires authentication). Accepts the exact same query parameters as `GET /monitor/search`. The response is a `text/csv` attachment with a UTF-8 BOM; large result sets are streamed in chunks and capped at `10000` rows.
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/monitor/search/export?eventType=payment&limit=10000" \
+  --cookie "access_token=YOUR_ACCESS_TOKEN" \
+  -o monitor-search.csv
+```
+
+**Response (200):** `text/csv` attachment
+```
+event_type,occurred_at,amount,asset,from,to,transaction_hash,paging_token,watch_id,payload
 ```
 
 ---

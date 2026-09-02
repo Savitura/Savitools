@@ -321,6 +321,165 @@ export type Direction = "strict_send" | "strict_receive";
 export type AssetType = "native" | "credit_alphanum4" | "credit_alphanum12";
 export type NetworkChoice = "mainnet" | "testnet";
 
+export interface NetworkStatusResult {
+  timestamp: number;
+  network: NetworkChoice;
+  passphrase: string;
+  ledger: {
+    sequence: number;
+    closeTime: string;
+    secondsSinceClose: number;
+    avgCloseTime: number;
+  };
+  fees: {
+    baseFee: { min: number; mode: number; max: number };
+    percentiles: { p10: number; p50: number; p90: number; p99: number };
+  };
+  latency: number;
+}
+
+export interface NetworkHistoryBucket {
+  timestamp: number;
+  sampledAt: string;
+  ok: boolean;
+  latencyMs: number | null;
+  sampleCount: number;
+  errorCount: number;
+}
+
+export interface NetworkHistorySummary {
+  uptimePercent: number;
+  p50LatencyMs: number | null;
+  p95LatencyMs: number | null;
+  outageCount: number;
+  sampleCount: number;
+}
+
+export interface NetworkHistoryResult {
+  network: NetworkChoice;
+  from: string;
+  to: string;
+  bucketSeconds: number;
+  summary: NetworkHistorySummary;
+  samples: NetworkHistoryBucket[];
+}
+
+export async function getNetworkStatus(network: NetworkChoice = "mainnet") {
+  return apiFetch<NetworkStatusResult>(`/network/status?network=${network}`);
+}
+
+export async function getNetworkHistory(
+  network: NetworkChoice = "mainnet",
+  windowMinutes = 60,
+) {
+  const to = new Date();
+  const from = new Date(to.getTime() - windowMinutes * 60 * 1000);
+  const params = new URLSearchParams({
+    network,
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+
+  return apiFetch<NetworkHistoryResult>(
+    `/network/status/history?${params.toString()}`,
+  );
+}
+
+export interface NetworkProfile {
+  id: string;
+  ownerId: string;
+  name: string;
+  horizonUrl: string;
+  networkPassphrase: string;
+  friendbotUrl?: string | null;
+  isDefault: boolean;
+}
+
+export interface NetworkProfileInput {
+  name: string;
+  horizonUrl: string;
+  networkPassphrase: string;
+  friendbotUrl?: string | null;
+  isDefault?: boolean;
+}
+
+export type NetworkProfileExport = NetworkProfileInput;
+
+export interface NetworkPassphraseVerificationResult {
+  horizonUrl: string;
+  networkPassphrase: string;
+  expectedPassphrase?: string;
+  match: boolean;
+}
+
+export async function listNetworkProfiles() {
+  return apiFetch<NetworkProfile[]>("/network/profiles");
+}
+
+export async function createNetworkProfile(input: NetworkProfileInput) {
+  return apiFetch<NetworkProfile>("/network/profiles", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateNetworkProfile(
+  id: string,
+  input: Partial<NetworkProfileInput>,
+) {
+  return apiFetch<NetworkProfile>(
+    `/network/profiles/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deleteNetworkProfile(id: string) {
+  return apiFetch<{ success: boolean }>(
+    `/network/profiles/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function setDefaultNetworkProfile(id: string) {
+  return apiFetch<NetworkProfile>(
+    `/network/profiles/${encodeURIComponent(id)}/default`,
+    {
+      method: "PUT",
+    },
+  );
+}
+
+export async function verifyNetworkPassphrase(
+  horizonUrl: string,
+  expectedPassphrase?: string,
+) {
+  return apiFetch<NetworkPassphraseVerificationResult>(
+    "/network/profiles/verify",
+    {
+      method: "POST",
+      body: JSON.stringify({ horizonUrl, expectedPassphrase }),
+    },
+  );
+}
+
+export async function exportNetworkProfile(id: string) {
+  return apiFetch<NetworkProfileExport>(
+    `/network/profiles/${encodeURIComponent(id)}/export`,
+  );
+}
+
+export async function importNetworkProfile(profile: NetworkProfileExport) {
+  return apiFetch<NetworkProfile>("/network/profiles/import", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
+}
+
 export interface SimulatedAsset {
   type: AssetType;
   code?: string;
@@ -470,28 +629,42 @@ export interface WebhookSendRequest {
   eventType: string;
   payload?: Record<string, unknown>;
   secret?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  repeatCount?: number;
+  repeatIntervalMs?: number;
 }
 
 export interface WebhookHistoryEntry {
   id: string;
   eventType: string;
   endpointUrl: string;
+  method?: string;
   payload: Record<string, unknown>;
   requestHeaders: Record<string, string>;
-  statusCode: number | null;
+  statusCode?: number | null;
+  responseStatus?: number | null;
   responseHeaders: Record<string, string>;
-  responseBody: unknown;
+  responseBody: any;
   latencyMs: number;
   timestamp: number;
   error?: string;
+  repeatIndex?: number;
 }
 
 export async function fetchWebhookTemplates() {
   return apiFetch<WebhookTemplate[]>("/webhooks/templates");
 }
 
+export async function saveWebhookTemplate(template: WebhookTemplate) {
+  return apiFetch<WebhookTemplate>("/webhooks/templates", {
+    method: "POST",
+    body: JSON.stringify(template),
+  });
+}
+
 export async function sendWebhook(dto: WebhookSendRequest) {
-  return apiFetch<WebhookHistoryEntry>("/webhooks/send", {
+  return apiFetch<WebhookHistoryEntry | WebhookHistoryEntry[]>("/webhooks/send", {
     method: "POST",
     body: JSON.stringify(dto),
   });
@@ -506,6 +679,7 @@ export async function replayWebhook(id: string) {
     method: "POST",
   });
 }
+
 /* ─── Wallet ─────────────────────────────────────────────────────────────── */
 
 export interface GenerateKeypairResult {

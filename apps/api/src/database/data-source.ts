@@ -11,10 +11,14 @@ import { AlertEvent } from '../modules/monitor/entities/alert-event.entity';
 import { MonitorWebhook } from '../modules/monitor/entities/monitor-webhook.entity';
 import { WatchEvent } from '../modules/monitor/entities/watch-event.entity';
 import { Watch } from '../modules/monitor/entities/watch.entity';
+import { TransactionReplay } from '../modules/transaction/entities/transaction-replay.entity';
+import { NetworkSample } from '../modules/network/entities/network-sample.entity';
 import { CreateLedgerMonitor1752926400000 } from './migrations/1752926400000-create-ledger-monitor';
 import { CreatePlaygroundHistory1784642239000 } from './migrations/1784642239000-create-playground-history';
 import { AddMonitorStateAlerts1785312000000 } from './migrations/1785312000000-add-monitor-state-alerts';
 import { AddAuthEnhancements1785398400000 } from './migrations/1785398400000-add-auth-enhancements';
+import { CreateTransactionReplay1785700000000 } from './migrations/1785700000000-create-transaction-replay';
+import { CreateNetworkSamples1785786400000 } from './migrations/1785786400000-create-network-samples';
 
 export default new DataSource({
   type: 'postgres',
@@ -31,12 +35,16 @@ export default new DataSource({
     WatchEvent,
     AlertEvent,
     MonitorWebhook,
+    TransactionReplay,
+    NetworkSample,
   ],
   migrations: [
     CreateLedgerMonitor1752926400000,
     CreatePlaygroundHistory1784642239000,
     AddMonitorStateAlerts1785312000000,
     AddAuthEnhancements1785398400000,
+    CreateTransactionReplay1785700000000,
+    CreateNetworkSamples1785786400000,
   ],
   synchronize: false,
 });

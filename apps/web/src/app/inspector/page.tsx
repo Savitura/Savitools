@@ -11,6 +11,7 @@ export default function InspectorPage() {
       <ToolPageShell
         title="Transaction Inspector"
         description="Decode and visualize Stellar transactions, operations, and XDR."
+        docsHref="/docs/inspector"
       >
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
           <ErrorBoundary toolName="Inspector">

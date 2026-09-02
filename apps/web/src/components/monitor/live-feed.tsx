@@ -5,13 +5,16 @@ import {
   Activity,
   ArrowDownLeft,
   ArrowUpRight,
+  Download,
   ExternalLink,
   FileCode2,
   Pause,
   Play,
   RefreshCw,
+  Search,
+  X,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, downloadCsv } from '@/lib/api';
 import { Paginated, Watch, WatchEvent } from './monitor-types';
 import {
   MonitorFeedSkeleton,
@@ -31,15 +34,48 @@ export function LiveFeed({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const feedRef = useRef<HTMLDivElement>(null);
 
-  const loadHistory = useCallback(async (watchId: string) => {
+  const handleExportCsv = async () => {
+    if (!watch) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      // Same filters as the on-screen feed (watch + search query), capped at
+      // the server's 10,000-row export limit (see Savitura/Savitools#147).
+      const params = new URLSearchParams({
+        watchId: watch.id,
+        limit: '10000',
+      });
+      if (query.trim()) params.set('q', query.trim());
+      await downloadCsv(
+        `/monitor/search/export?${params.toString()}`,
+        `monitor-${watch.publicKey.slice(0, 8)}.csv`,
+      );
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const loadHistory = useCallback(async (watchId: string, q = '') => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const page = await apiFetch<Paginated<WatchEvent>>(
-        `/monitor/watches/${watchId}/events?limit=100`,
-      );
+      const trimmed = q.trim();
+      // With a query, use the search endpoint so the feed and the CSV export
+      // share the same filters (see Savitura/Savitools#147).
+      const page = trimmed
+        ? await apiFetch<Paginated<WatchEvent>>(
+            `/monitor/search?watchId=${encodeURIComponent(watchId)}&q=${encodeURIComponent(trimmed)}&limit=100`,
+          )
+        : await apiFetch<Paginated<WatchEvent>>(
+            `/monitor/watches/${watchId}/events?limit=100`,
+          );
       setHistory(page.items);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load event history';
@@ -56,8 +92,8 @@ export function LiveFeed({
       setHistoryError(null);
       return;
     }
-    void loadHistory(watch.id);
-  }, [watch, loadHistory]);
+    void loadHistory(watch.id, query);
+  }, [watch, query, loadHistory]);
 
   const events = useMemo(() => {
     const byId = new Map<string, WatchEvent>();
@@ -99,6 +135,49 @@ export function LiveFeed({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search
+              className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search events…"
+              aria-label="Search events by hash, account, or asset"
+              className="w-40 rounded-md border border-border bg-background py-1.5 pl-6 pr-6 text-xs placeholder:text-muted-foreground/60 focus:outline-none focus:border-foreground/30"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {exportError && (
+            <span className="text-[11px] text-red-500" title={exportError}>
+              Export failed
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40"
+            title="Download event history as CSV (up to 10,000 rows)"
+          >
+            {exporting ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
           {historyError && (
             <button
               type="button"
@@ -143,6 +222,10 @@ export function LiveFeed({
           events.map((event) => (
             <EventCard key={event.id} event={event} watch={watch} />
           ))
+        ) : query.trim() ? (
+          <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+            No events match “{query.trim()}”. Try a different hash, account, or asset.
+          </p>
         ) : (
           <MonitorNoEventsState
             watchLabel={watch.label || watch.publicKey.slice(0, 8) + '…' + watch.publicKey.slice(-6)}

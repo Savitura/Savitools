@@ -3,10 +3,12 @@ import {
   BadRequestException,
   Injectable,
   Logger,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { rpc, StrKey } from '@stellar/stellar-sdk';
-import { rpcServer } from '../monitor/horizon';
+  Optional,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { rpc, StrKey } from "@stellar/stellar-sdk";
+import { createHmac } from "crypto";
+import { rpcServer } from "../monitor/horizon";
 import {
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
@@ -15,11 +17,16 @@ import {
 import {
   MAX_WEBHOOK_REDIRECTS,
   assertSafeWebhookDestination,
-} from '../webhook/ssrf-guard';
-import { DecodedContractEvent, EventFilterCriterion, applyEventFilters } from './event-filters';
-import { decodeScVal } from './scval-decoder';
-import { EventQueryNetwork, QueryEventsDto } from './dto/query-events.dto';
-import { ReplayEventsDto } from './dto/replay-events.dto';
+} from "../webhook/ssrf-guard";
+import {
+  DecodedContractEvent,
+  EventFilterCriterion,
+  applyEventFilters,
+} from "./event-filters";
+import { decodeScVal } from "./scval-decoder";
+import { EventQueryNetwork, QueryEventsDto } from "./dto/query-events.dto";
+import { ReplayEventsDto } from "./dto/replay-events.dto";
+import { MetricsService } from "../metrics/metrics.service";
 
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const REPLAY_TIMEOUT_MS = 10_000;
@@ -51,25 +58,31 @@ export interface ReplaySummary {
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly metricsService?: MetricsService,
+  ) {}
 
   /**
    * The monitor module's rpcServer takes 'testnet' | 'public'; this module's
    * API surface uses 'testnet' | 'mainnet' like its contracts/inspector
    * neighbours. Convert at the boundary rather than propagating the split.
    */
-  private server(network: EventQueryNetwork = 'testnet'): rpc.Server {
-    return rpcServer(this.configService, network === 'mainnet' ? 'public' : 'testnet');
+  private server(network: EventQueryNetwork = "testnet"): rpc.Server {
+    return rpcServer(
+      this.configService,
+      network === "mainnet" ? "public" : "testnet",
+    );
   }
 
   async queryEvents(dto: QueryEventsDto): Promise<QueryEventsResult> {
     if (!StrKey.isValidContract(dto.contractId)) {
-      throw new BadRequestException('Invalid contract ID format');
+      throw new BadRequestException("Invalid contract ID format");
     }
 
     if (dto.startLedger !== undefined && dto.cursor) {
       throw new BadRequestException(
-        'Provide either startLedger or cursor, not both',
+        "Provide either startLedger or cursor, not both",
       );
     }
 
@@ -78,12 +91,16 @@ export class EventsService {
       dto.endLedger !== undefined &&
       dto.endLedger <= dto.startLedger
     ) {
-      throw new BadRequestException('endLedger must be greater than startLedger');
+      throw new BadRequestException(
+        "endLedger must be greater than startLedger",
+      );
     }
 
     const server = this.server(dto.network);
     const request: rpc.Server.GetEventsRequest = {
-      filters: [{ type: dto.type ?? 'contract', contractIds: [dto.contractId] }],
+      filters: [
+        { type: dto.type ?? "contract", contractIds: [dto.contractId] },
+      ],
       limit: dto.limit ?? 100,
     };
 
@@ -113,9 +130,12 @@ export class EventsService {
 
   private async latestLedger(server: rpc.Server): Promise<number> {
     try {
-      return (await server.getLatestLedger()).sequence;
+      const result = await this.timeRpc("get_latest_ledger", () =>
+        server.getLatestLedger(),
+      );
+      return result.sequence;
     } catch (err) {
-      throw this.upstreamError(err, 'Failed to reach the Soroban RPC node');
+      throw this.upstreamError(err, "Failed to reach the Soroban RPC node");
     }
   }
 
@@ -124,10 +144,19 @@ export class EventsService {
     request: rpc.Server.GetEventsRequest,
   ): Promise<rpc.Api.GetEventsResponse> {
     try {
-      return await server.getEvents(request);
+      return await this.timeRpc("get_events", () => server.getEvents(request));
     } catch (err) {
-      throw this.upstreamError(err, 'Failed to fetch events from the Soroban RPC node');
+      throw this.upstreamError(
+        err,
+        "Failed to fetch events from the Soroban RPC node",
+      );
     }
+  }
+
+  private timeRpc<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+    return this.metricsService
+      ? this.metricsService.timeSorobanRpc(operation, "events", fn)
+      : fn();
   }
 
   /**
@@ -138,15 +167,17 @@ export class EventsService {
   private errorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
 
-    if (err && typeof err === 'object') {
+    if (err && typeof err === "object") {
       const { message, code } = err as { message?: unknown; code?: unknown };
-      if (typeof message === 'string' && message.length > 0) {
-        return typeof code === 'number' ? `${message} (rpc code ${code})` : message;
+      if (typeof message === "string" && message.length > 0) {
+        return typeof code === "number"
+          ? `${message} (rpc code ${code})`
+          : message;
       }
       try {
         return JSON.stringify(err);
       } catch {
-        return 'Unknown upstream error';
+        return "Unknown upstream error";
       }
     }
 
@@ -161,7 +192,10 @@ export class EventsService {
   private upstreamError(err: unknown, fallback: string): Error {
     const message = this.errorMessage(err);
 
-    if (/start(Ledger)?|ledger/i.test(message) && /range|retention|not available|too old|must be within/i.test(message)) {
+    if (
+      /start(Ledger)?|ledger/i.test(message) &&
+      /range|retention|not available|too old|must be within/i.test(message)
+    ) {
       return new BadRequestException(
         `startLedger is outside the RPC node's retention window (typically ~24h of ledgers): ${message}`,
       );
@@ -207,7 +241,7 @@ export class EventsService {
     try {
       destination = new URL(dto.webhookUrl);
     } catch {
-      throw new BadRequestException('webhookUrl must be a valid URL');
+      throw new BadRequestException("webhookUrl must be a valid URL");
     }
 
     await assertSafeWebhookDestination(destination);
@@ -226,7 +260,12 @@ export class EventsService {
         while (true) {
           const index = next++;
           if (index >= dto.events.length) return;
-          results[index] = await this.deliverOne(destination, dto.events[index], index, secret);
+          results[index] = await this.deliverOne(
+            destination,
+            dto.events[index],
+            index,
+            dto.secret,
+          );
         }
       },
     );
@@ -248,26 +287,29 @@ export class EventsService {
     secret?: string,
   ): Promise<ReplayResult> {
     const eventId =
-      event && typeof event === 'object' && typeof (event as { id?: unknown }).id === 'string'
+      event &&
+      typeof event === "object" &&
+      typeof (event as { id?: unknown }).id === "string"
         ? (event as { id: string }).id
         : null;
 
     const body = JSON.stringify(event);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
 
     if (secret) {
-      // Same timestamped wire format as WebhookService and the notification
-      // worker: hex HMAC-SHA256 over `<timestamp>.<body>`, timestamp carried
-      // in its own header so a receiver can bound the signature's age.
-      const { signature, timestamp } = signBody({ secret, body });
-      headers[SIGNATURE_HEADER] = signature;
-      headers[TIMESTAMP_HEADER] = timestamp;
+      // Same wire format as WebhookService and the notification worker:
+      // hex HMAC-SHA256 over the exact body, no timestamp prefix.
+      headers["X-SaviTools-Signature"] = `sha256=${createHmac("sha256", secret)
+        .update(body)
+        .digest("hex")}`;
     }
 
     const startedAt = Date.now();
     try {
       const response = await this.fetchWithRedirectGuard(destination, {
-        method: 'POST',
+        method: "POST",
         headers,
         body,
         signal: AbortSignal.timeout(REPLAY_TIMEOUT_MS),
@@ -288,23 +330,26 @@ export class EventsService {
         statusCode: null,
         ok: false,
         latencyMs: Date.now() - startedAt,
-        error: err instanceof Error ? err.message : 'Unknown fetch error',
+        error: err instanceof Error ? err.message : "Unknown fetch error",
       };
     }
   }
 
   /** Re-validates every redirect hop so a 302 cannot walk into a private host. */
-  private async fetchWithRedirectGuard(url: URL, init: RequestInit): Promise<Response> {
+  private async fetchWithRedirectGuard(
+    url: URL,
+    init: RequestInit,
+  ): Promise<Response> {
     let currentUrl = url;
 
     for (let hop = 0; hop <= MAX_WEBHOOK_REDIRECTS; hop++) {
-      const response = await fetch(currentUrl, { ...init, redirect: 'manual' });
+      const response = await fetch(currentUrl, { ...init, redirect: "manual" });
 
       if (!REDIRECT_STATUS_CODES.has(response.status)) {
         return response;
       }
 
-      const location = response.headers.get('location');
+      const location = response.headers.get("location");
       if (!location) {
         return response;
       }
@@ -313,6 +358,6 @@ export class EventsService {
       await assertSafeWebhookDestination(currentUrl);
     }
 
-    throw new BadRequestException('Too many redirects');
+    throw new BadRequestException("Too many redirects");
   }
 }

@@ -3,7 +3,8 @@
 import * as React from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SdkCodeBlock } from '@/components/SdkCodeBlock';
-import { Layers } from 'lucide-react';
+import { BookOpen, Layers } from 'lucide-react';
+import Link from 'next/link';
 
 const API_OPTIONS = ['Fluxa', 'CrowdPay'];
 const LANGUAGE_OPTIONS = ['TypeScript', 'Python', 'Go', 'cURL'];
@@ -59,10 +60,17 @@ export default function SdkGeneratorPage() {
           <div className="p-3 bg-blue-600/20 rounded-lg text-blue-400">
             <Layers className="w-8 h-8" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl font-bold tracking-tight text-white">SDK Generator</h1>
             <p className="text-gray-400 mt-1">Copy-paste ready client code for your favorite languages.</p>
           </div>
+          <Link
+            href="/docs/sdk"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            Usage docs
+          </Link>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
