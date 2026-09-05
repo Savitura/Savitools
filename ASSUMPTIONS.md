@@ -18,7 +18,7 @@
    timestamp prefix.
 
 4. **Replay's HMAC secret is caller-supplied per request**, mirroring `SendWebhookDto.secret`.
-   `WEBHOOK_SIGNING_SECRET` is documented in `.env.example` and the README but is read by
+   Webhook signing is not yet implemented — `WEBHOOK_SIGNING_SECRET` was documented in `.env.example` and the README but was read by
    nothing in the codebase, so it was deliberately not wired in here.
 
 5. **Events are not persisted.** Query → decode → return; the UI holds them in component
