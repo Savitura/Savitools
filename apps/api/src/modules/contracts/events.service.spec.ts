@@ -1,7 +1,11 @@
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Address, Contract, nativeToScVal, rpc, xdr } from '@stellar/stellar-sdk';
-import { createHmac } from 'crypto';
+import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from '../webhook/signature';
 
 const lookupMock = jest.fn();
 jest.mock('dns/promises', () => ({
@@ -60,6 +64,10 @@ describe('EventsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Restore the default config mock: nothing is configured unless a test says so.
+    (configService.get as jest.Mock).mockImplementation(
+      (_key: string, defaultValue?: string) => defaultValue,
+    );
     getEvents = jest.fn().mockResolvedValue(response([eventRecord()]));
     getLatestLedger = jest.fn().mockResolvedValue({ sequence: 500 });
     rpcServerMock.mockReturnValue({ getEvents, getLatestLedger });
@@ -284,7 +292,7 @@ describe('EventsService', () => {
       expect(summary.results.every((r) => r.ok && r.statusCode === 200)).toBe(true);
     });
 
-    it('signs each POST with an HMAC a receiver can recompute', async () => {
+    it('signs each POST with a timestamped HMAC a receiver can recompute', async () => {
       const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
       global.fetch = fetchMock;
 
@@ -298,16 +306,21 @@ describe('EventsService', () => {
       const headers = init.headers as Record<string, string>;
       const body = init.body as string;
 
-      // What a receiving endpoint would compute over the raw body.
-      const expected = createHmac('sha256', SECRET).update(body).digest('hex');
+      // What a receiving endpoint would compute over raw body + timestamp.
+      const expected = signBody({
+        secret: SECRET,
+        body,
+        timestamp: Number(headers[TIMESTAMP_HEADER]),
+      }).signature;
 
-      expect(headers['X-SaviTools-Signature']).toBe(`sha256=${expected}`);
+      expect(headers[TIMESTAMP_HEADER]).toMatch(/^\d+$/);
+      expect(headers[SIGNATURE_HEADER]).toBe(expected);
       expect(JSON.parse(body)).toEqual(events[0]);
       expect(init.method).toBe('POST');
       expect(headers['Content-Type']).toBe('application/json');
     });
 
-    it('signs each event independently', async () => {
+    it('signs each event independently with its own timestamp', async () => {
       const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
       global.fetch = fetchMock;
 
@@ -319,16 +332,74 @@ describe('EventsService', () => {
 
       const signatures = fetchMock.mock.calls.map((call) => {
         const init = call[1] as RequestInit;
-        return (init.headers as Record<string, string>)['X-SaviTools-Signature'];
+        return (init.headers as Record<string, string>)[SIGNATURE_HEADER];
       });
 
       expect(signatures[0]).not.toBe(signatures[1]);
       fetchMock.mock.calls.forEach((call) => {
         const init = call[1] as RequestInit;
+        const headers = init.headers as Record<string, string>;
         const body = init.body as string;
-        const sig = (init.headers as Record<string, string>)['X-SaviTools-Signature'];
-        expect(sig).toBe(`sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`);
+        const sig = headers[SIGNATURE_HEADER];
+        expect(sig).toBe(
+          signBody({
+            secret: SECRET,
+            body,
+            timestamp: Number(headers[TIMESTAMP_HEADER]),
+          }).signature,
+        );
       });
+    });
+
+    it('signs with WEBHOOK_SIGNING_SECRET when no per-request secret is given', async () => {
+      (configService.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'WEBHOOK_SIGNING_SECRET' ? 'env-signing-secret' : undefined,
+      );
+      const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
+      global.fetch = fetchMock;
+
+      await service.replayEvents({
+        webhookUrl: 'https://example.com/hook',
+        events: [events[0]],
+      });
+
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      const body = init.body as string;
+
+      expect(headers[SIGNATURE_HEADER]).toBe(
+        signBody({
+          secret: 'env-signing-secret',
+          body,
+          timestamp: Number(headers[TIMESTAMP_HEADER]),
+        }).signature,
+      );
+    });
+
+    it('prefers the per-request secret over WEBHOOK_SIGNING_SECRET', async () => {
+      (configService.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'WEBHOOK_SIGNING_SECRET' ? 'env-signing-secret' : undefined,
+      );
+      const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
+      global.fetch = fetchMock;
+
+      await service.replayEvents({
+        webhookUrl: 'https://example.com/hook',
+        secret: SECRET,
+        events: [events[0]],
+      });
+
+      const init = fetchMock.mock.calls[0][1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      const body = init.body as string;
+
+      expect(headers[SIGNATURE_HEADER]).toBe(
+        signBody({
+          secret: SECRET,
+          body,
+          timestamp: Number(headers[TIMESTAMP_HEADER]),
+        }).signature,
+      );
     });
 
     it('omits the signature header when no secret is supplied', async () => {

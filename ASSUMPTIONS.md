@@ -20,6 +20,19 @@
 4. **Replay's HMAC secret is caller-supplied per request**, mirroring `SendWebhookDto.secret`.
    Webhook signing is not yet implemented — `WEBHOOK_SIGNING_SECRET` was documented in `.env.example` and the README but was read by
    nothing in the codebase, so it was deliberately not wired in here.
+   a POST" — not one batched payload. The wire format matches the rest of the repo
+   (Webhook Tester, event replay, and monitor alerts share `apps/api/src/modules/webhook/signature.ts`):
+   `X-SaviTools-Signature: sha256=<hex>` plus `X-SaviTools-Timestamp: <unix seconds>`, where
+   the hex is HMAC-SHA256 over the UTF-8 bytes of `<timestamp>.<body>` with the exact body
+   bytes sent. A verifier rejects signatures older than 300 s (replay window) or more than
+   60 s in the future (sender clock skew).
+
+4. **The signing secret resolves as per-request secret, then `WEBHOOK_SIGNING_SECRET`.**
+   `WebhookService.sendWebhook` and `EventsService.replayEvents` sign with the caller-supplied
+   `secret` when present, otherwise with `WEBHOOK_SIGNING_SECRET`; when neither is set the
+   webhook goes out unsigned. Monitor alerts always sign with the per-webhook DB secret,
+   never the env var. `GET /webhooks/signing` reports whether the env secret is configured
+   and the exact wire format, so operators can confirm what receivers will see.
 
 5. **Events are not persisted.** Query → decode → return; the UI holds them in component
    state. The issue describes no storage, and Soroban RPC is itself the retention layer

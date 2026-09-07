@@ -10,6 +10,11 @@ import { rpc, StrKey } from "@stellar/stellar-sdk";
 import { createHmac } from "crypto";
 import { rpcServer } from "../monitor/horizon";
 import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from '../webhook/signature';
+import {
   MAX_WEBHOOK_REDIRECTS,
   assertSafeWebhookDestination,
 } from "../webhook/ssrf-guard";
@@ -240,6 +245,9 @@ export class EventsService {
     }
 
     await assertSafeWebhookDestination(destination);
+
+    // Per-request secret wins; WEBHOOK_SIGNING_SECRET is the global fallback.
+    const secret = dto.secret || this.configService.get<string>('WEBHOOK_SIGNING_SECRET');
 
     const results: ReplayResult[] = new Array<ReplayResult>(dto.events.length);
     let next = 0;
