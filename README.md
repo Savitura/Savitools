@@ -119,7 +119,6 @@ cp .env.example .env
 | `WEB_ORIGIN`             | Allowed origin for API and WebSocket CORS             | `http://localhost:3000`                                   |
 | `THROTTLE_TTL`           | Rate limiting sliding window size in milliseconds     | `60000` (1 minute)                                        |
 | `THROTTLE_LIMIT`         | Max requests allowed in the rate limit window         | `100`                                                     |
-| `WEBHOOK_SIGNING_SECRET` | HMAC secret to sign test webhook payloads             | `your-signing-secret-here`                                |
 | `NEXT_PUBLIC_API_URL`    | Frontend → API URL                                    | `http://localhost:3001/api`                               |
 
 ### Security & Rate Limiting

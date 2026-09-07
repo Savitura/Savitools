@@ -13,6 +13,13 @@
    carries the original base64 for anyone who needs the bytes.
 
 3. **Replay signs each event as its own POST**, matching the issue's "sends each event as
+   a POST" — not one batched payload. The wire format matches the rest of the repo:
+   `X-SaviTools-Signature: sha256=<hex>`, HMAC-SHA256 over the exact request body, no
+   timestamp prefix.
+
+4. **Replay's HMAC secret is caller-supplied per request**, mirroring `SendWebhookDto.secret`.
+   Webhook signing is not yet implemented — `WEBHOOK_SIGNING_SECRET` was documented in `.env.example` and the README but was read by
+   nothing in the codebase, so it was deliberately not wired in here.
    a POST" — not one batched payload. The wire format matches the rest of the repo
    (Webhook Tester, event replay, and monitor alerts share `apps/api/src/modules/webhook/signature.ts`):
    `X-SaviTools-Signature: sha256=<hex>` plus `X-SaviTools-Timestamp: <unix seconds>`, where
