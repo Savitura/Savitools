@@ -1,6 +1,10 @@
 import { ConfigService } from "@nestjs/config";
-import { createHmac } from "crypto";
 import { Repository } from "typeorm";
+import {
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  signBody,
+} from "../webhook/signature";
 import { User } from "../auth/entities/user.entity";
 import { AlertEvent } from "./entities/alert-event.entity";
 import { MonitorWebhook } from "./entities/monitor-webhook.entity";
@@ -52,16 +56,21 @@ describe("NotificationWorkerService", () => {
       ruleId: alert.ruleId,
       event: alert.payload,
     });
-    const signature = createHmac("sha256", secret).update(body).digest("hex");
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL(webhook.url),
-      expect.objectContaining({
-        body,
-        headers: expect.objectContaining({
-          "X-SaviTools-Signature": `sha256=${signature}`,
-        }),
-      }),
-    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    // What a receiving endpoint would compute over raw body + timestamp.
+    const expected = signBody({
+      secret,
+      body,
+      timestamp: Number(headers[TIMESTAMP_HEADER]),
+    }).signature;
+
+    expect(url).toEqual(new URL(webhook.url));
+    expect(init.method).toBe("POST");
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers[TIMESTAMP_HEADER]).toMatch(/^\d+$/);
+    expect(headers[SIGNATURE_HEADER]).toBe(expected);
   });
 
   it("rejects a webhook that resolves to a private address", async () => {

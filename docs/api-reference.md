@@ -958,6 +958,39 @@ curl http://localhost:3001/api/v1/webhooks/templates
 
 ---
 
+#### GET `/webhooks/signing`
+
+Whether outbound webhook signing is enabled and the exact signature wire format receivers
+should expect. Public — reveals configuration only, no secrets.
+
+**Request:**
+```bash
+curl http://localhost:3001/api/v1/webhooks/signing
+```
+
+**Response (200):**
+```json
+{
+  "enabled": true,
+  "algorithm": "hmac-sha256",
+  "signatureHeader": "X-SaviTools-Signature",
+  "timestampHeader": "X-SaviTools-Timestamp",
+  "replayWindowSeconds": 300
+}
+```
+
+`enabled` is `true` when `WEBHOOK_SIGNING_SECRET` is configured. When enabled (or when a
+per-request `secret` is supplied to `/webhooks/send` or the replay endpoint), every outbound
+request carries `X-SaviTools-Timestamp: <unix seconds>` and
+`X-SaviTools-Signature: sha256=<hex>`, where the hex is HMAC-SHA256 over the UTF-8 bytes of
+`<timestamp>.<body>` with the exact body bytes sent. Receivers should recompute that HMAC with
+the shared secret, compare in constant time, and reject signatures whose timestamp is older
+than `replayWindowSeconds` (replay) or far in the future (clock skew). The reference
+implementation lives in `apps/api/src/modules/webhook/signature.ts` (`signBody` /
+`verifySignature`).
+
+---
+
 #### POST `/webhooks/send`
 
 Send a webhook payload to a target endpoint.

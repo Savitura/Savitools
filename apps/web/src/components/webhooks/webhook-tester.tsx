@@ -95,6 +95,7 @@ export function WebhookTester() {
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [secret, setSecret] = useState('');
   const [signature, setSignature] = useState('');
+  const [signatureTimestamp, setSignatureTimestamp] = useState('');
 
   const [customHeaders, setCustomHeaders] = useState<Array<{ name: string; value: string }>>([]);
   const [repeatCount, setRepeatCount] = useState<number>(1);
@@ -183,10 +184,14 @@ export function WebhookTester() {
   useEffect(() => {
     if (!secret || !payloadValid) {
       setSignature('');
+      setSignatureTimestamp('');
       return;
     }
     try {
-      const payloadBytes = new TextEncoder().encode(payloadEditor);
+      // Mirror the API's wire format: sign `<timestamp>.<body>` and carry the
+      // Unix-second timestamp alongside the signature.
+      const timestamp = Math.floor(Date.now() / 1000);
+      const payloadBytes = new TextEncoder().encode(`${timestamp}.${payloadEditor}`);
       const keyBytes = new TextEncoder().encode(secret);
       crypto.subtle
         .importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -200,6 +205,7 @@ export function WebhookTester() {
         .catch(() => setSignature(''));
     } catch {
       setSignature('');
+      setSignatureTimestamp('');
     }
   }, [secret, payloadEditor, payloadValid]);
 
