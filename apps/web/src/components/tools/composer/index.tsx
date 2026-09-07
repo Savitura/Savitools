@@ -21,7 +21,7 @@ import { SignSubmitDialog } from './sign-submit-dialog';
 import { BenchmarkPanel } from './benchmark-panel';
 import { ComposerOperationListSkeleton } from '../state-display';
 import { ErrorState } from '../state-display';
-import { Code2, Zap, Save, Download, Upload, Share2, Trash2, Copy, Clock, FolderOpen } from 'lucide-react';
+import { Code2, Zap, Save, Download, Upload, Share2, Trash2, Copy, Clock, FolderOpen, ListOrdered } from 'lucide-react';
 
 export interface ComposedOperation {
   id: string;
@@ -139,7 +139,7 @@ function SequenceRunner({
       </p>
 
       {steps.length === 0 && operations.length === 0 ? (
-        <p className="text-sm text-muted-foreground mb-3">No steps yet. Use the builder to compose an operation set, then click "Add Step".</p>
+        <p className="text-sm text-muted-foreground mb-3">No steps yet. Use the builder to compose an operation set, then click &quot;Add Step&quot;.</p>
       ) : null}
 
       <div className="flex flex-col gap-2 mb-3">

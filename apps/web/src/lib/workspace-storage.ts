@@ -222,7 +222,7 @@ export function downloadWorkspace(filename: string, json: string): void {
 export function useWorkspaceManager(tool: WorkspaceTool) {
   const { user, loading } = useAuth();
   const isAuthenticated = Boolean(user) && !loading;
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[](([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -103,13 +103,13 @@ export interface SequenceRunResult {
  // API wrappers
 // -------------------------------------------------------------------------------
 export async function fetchOperations(): Promise<OperationManifestEntry[]> {
-  return apiFetch<OperationManifestEntry[]>'/composer/operations');
+  return apiFetch<OperationManifestEntry[]>('/composer/operations');
 }
 
 export async function buildTransaction(
   input: BuildTransactionInput,
 ): Promise<BuildTransactionResult> {
-  return apiFetch<BuildTransactionResult>'/composer/build', {
+  return apiFetch<BuildTransactionResult>('/composer/build', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -175,7 +175,7 @@ export interface CreateComposerWorkspaceInput {
 }
 
 export function listComposerWorkspaces(): Promise<ComposerWorkspaceListResponse> {
-  return apiFetch<ComposerWorkspaceListResponse>'/workspaces?tool=composer');
+  return apiFetch<ComposerWorkspaceListResponse>('/workspaces?tool=composer');
 }
 
 export function createComposerWorkspace(

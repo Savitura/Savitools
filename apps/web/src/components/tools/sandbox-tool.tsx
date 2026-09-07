@@ -85,15 +85,6 @@ export function SandboxTool() {
   const [paymentResult, setPaymentResult] = useState<SandboxPaymentResult | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  const handleGenerateKeypair = useCallback(() => {
-    setGenerating(true);
-    try {
-      const pair = Keypair.random();
-      const newPair = {
-        publicKey: pair.publicKey(),
-        secretKey: pair.secret(),
-      };
-      setKeypair(newPair);
   // Security: hold a ref to the latest generated secret so we can drop it
   // from memory when the component unmounts (see Savitura/Savitools#145). JS
   // strings are immutable, so clearing the reference is the best we can do
@@ -106,7 +97,7 @@ export function SandboxTool() {
     };
   }, []);
 
-  const handleGenerateKeypair = () => {
+  const handleGenerateKeypair = useCallback(() => {
     setGenerating(true);
     try {
       // Generate the seed ourselves so the entropy buffer can be zeroed after
@@ -136,7 +127,7 @@ export function SandboxTool() {
       setFundResult(null);
       addRecentItem({
         category: 'sandbox',
-        title: `Wallet: ${newPair.publicKey.slice(0, 8)}…`,
+        title: `Wallet: ${publicKey.slice(0, 8)}…`,
         subtitle: 'Created sandbox keypair',
         href: '/sandbox',
       });

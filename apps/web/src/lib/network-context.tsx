@@ -80,7 +80,7 @@ function sanitizeUrl(url: string): string {
   return url.replace(/\/$/, '');
 }
 
-function getBuiltInProfile(network: Network: 'Network'): NetworkProfile {
+function getBuiltInProfile(network: Network): NetworkProfile {
   if (network === 'mainnet') {
     return {
       id: 'mainnet',

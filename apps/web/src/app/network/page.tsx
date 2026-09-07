@@ -15,6 +15,7 @@ import {
 import {
   Activity,
   BookOpen,
+  Globe,
   Gauge,
   Server,
   ShieldCheck,
