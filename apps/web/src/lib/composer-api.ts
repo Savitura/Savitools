@@ -124,7 +124,7 @@ export async function simulateTransaction(
   });
 }
 
-export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet' = 'testnet'); Promise<{ success: boolean; hash?: string; error?: string }> {
+export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<{ success: boolean; hash?: string; error?: string }> {
   const horizonUrl =
     network === 'mainnet'
       ? 'https://cassino.stellar.org'
@@ -149,6 +149,11 @@ export async function runTransactionSequence(
   input: RunTransactionSequenceInput,
 ): Promise<SequenceRunResult> {
   return apiFetch<SequenceRunResult>('/composer/sequence/run', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 // ------------------------------------------------------------------------------
 // Named composer workspaces
 // ------------------------------------------------------------------------------
@@ -189,17 +194,19 @@ export function createComposerWorkspace(
 
 export async function fetchTransactionSequenceRuns(): Promise<SequenceRunResult[]> {
   return apiFetch<SequenceRunResult[]>('/composer/sequence');
+}
+
 export function getComposerWorkspace(
   id: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/workspaces/composer/${id});
+  return apiFetch<ComposerWorkspace>(`/workspaces/composer/${id}`);
 }
 
 export function updateComposerWorkspace(
   id: string,
   data: Record<string, unknown>,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/workspaces/composer/${id}, {
+  return apiFetch<ComposerWorkspace>(`/workspaces/composer/${id}`, {
     method: 'PUT',
     body: JSON.stringify({ data }),
   });
@@ -209,7 +216,7 @@ export function renameComposerWorkspace(
   id: string,
   name: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/workspaces/composer/${id}, {
+  return apiFetch<ComposerWorkspace>(`/workspaces/composer/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ name }),
   });
@@ -218,7 +225,7 @@ export function renameComposerWorkspace(
 export function deleteComposerWorkspace(
   id: string,
 ): Promise<{ success: boolean }> {
-  return apiFetch<{ success: boolean }>(/workspaces/composer/${id}, {
+  return apiFetch<{ success: boolean }>(`/workspaces/composer/${id}`, {
     method: 'DELETE',
   });
 }
@@ -226,7 +233,7 @@ export function deleteComposerWorkspace(
 export function duplicateComposerWorkspace(
   id: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/workspaces/composer/${id}/duplicate', {
+  return apiFetch<ComposerWorkspace>(`/workspaces/composer/${id}/duplicate`, {
     method: 'POST',
   });
 }
@@ -234,7 +241,7 @@ export function duplicateComposerWorkspace(
 export function exportComposerWorkspace(
   id: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/workspaces/composer/${id}/export');
+  return apiFetch<ComposerWorkspace>(`/workspaces/composer/${id}/export`);
 }
 
 export function importComposerWorkspace(
@@ -249,7 +256,7 @@ export function importComposerWorkspace(
 export function shareComposerWorkspace(
   id: string,
 ): Promise<{ token: string; expiresAt: string; url: string }> {
-  return apiFetch<{ token: string; expiresAt: string; url: string }>(/workspaces/composer/${id}/share', {
+  return apiFetch<{ token: string; expiresAt: string; url: string }>(`/workspaces/composer/${id}/share`, {
     method: 'POST',
   });
 }
@@ -257,7 +264,7 @@ export function shareComposerWorkspace(
 export function unshareComposerWorkspace(
   id: string,
 ): Promise<{ success: boolean }> {
-  return apiFetch<{ success: boolean }>(/workspaces/composer/${id}/unshare', {
+  return apiFetch<{ success: boolean }>(`/workspaces/composer/${id}/unshare`, {
     method: 'POST',
   });
 }
@@ -265,5 +272,5 @@ export function unshareComposerWorkspace(
 export function fetchSharedComposerWorkspace(
   token: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(/shared/composer/${token});
+  return apiFetch<ComposerWorkspace>(`/shared/composer/${token}`);
 }

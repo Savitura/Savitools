@@ -168,7 +168,7 @@ export function NetworkProvider( { children }: { children: React.ReactNode }) {
     writeStorage(STORAGE_KEYS.profiles, JSON.stringify(profiles));
   }, [profiles]);
 
-  useEffect() => {
+  useEffect(() => {
     if (activeProfileId) {
       writeStorage(STORAGE_KEYS.activeProfileId, activeProfileId);
     } else {
@@ -201,9 +201,9 @@ export function NetworkProvider( { children }: { children: React.ReactNode }) {
       const isMain = profile.networkPassphrase === MAINNET_PASSTPRASE;
       setNetworkState(isTest ? 'testnet' : isMain ? 'mainnet' : 'custom');
     } else {
-      console.warn``Profile ${id} not found`);
+      console.warn(`Profile ${id} not found`);
     }
-  }, [profiles, ]);
+  }, [profiles]);
 
   const addProfile = useCallback((profile: Omit<NetworkProfile, 'id' | 'isDefault'>) => {
     const newProfile: NetworkProfile = {
@@ -241,25 +241,22 @@ export function NetworkProvider( { children }: { children: React.ReactNode }) {
     setProfiles(prev => prev.map(p => ({
       ...p,
       isDefault: p.id === id,
-    }));
+    })));
   }, []);
 
   const exportProfile = useCallback((id: string) => {
     const profile = profiles.find(p => p.id === id);
     if (!profile) throw new Error('Profile not found');
-    const { [key: string], ...rest }: any = profile;
-    // Remove internal fields such as id and isDefault
-    delete rest.id;
-    delete rest.isDefault;
+    const { id: _id, isDefault: _default, ...rest } = profile;
     return JSON.stringify(rest, null, 2);
-  }, [profiles, ]);
+  }, [profiles]);
 
   const importProfile = useCallback((json: string) => {
     const parsed: any = JSON.parse(json);
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('Invalid JSON');
     }
-    const { name: nameStr = 'Imported Profile', horizonUrl: horizonStr = '', networkPassphrase: passphraseStr = '', friendbotUrl: friendbotStr = '' = parsed;
+    const { name: nameStr = 'Imported Profile', horizonUrl: horizonStr = '', networkPassphrase: passphraseStr = '', friendbotUrl: friendbotStr = '' } = parsed;
     if (!horizonStr || !passphraseStr) {
       throw new Error('Profile must have horizonUrl and networkPassphrase');
     }
