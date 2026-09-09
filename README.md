@@ -12,18 +12,22 @@ SaviTools is a standalone product in the [Savitura](https://savitura.com) ecosys
 
 ## Tools
 
-| Tool                       | What it does                                                                          | Status      |
-| -------------------------- | ------------------------------------------------------------------------------------- | ----------- |
-| **Transaction Inspector**  | Decode any tx hash, Stellar address, or raw XDR into a human-readable breakdown       | In progress |
-| **Wallet Sandbox**         | Generate testnet keypairs, fund via Friendbot, send test payments                     | In progress |
-| **Transaction Composer**   | Visual builder for multi-operation Stellar transactions; sign and submit without code | In progress |
-| **Payment Simulator**      | Find path payment routes between assets; preview hops, rates, and fees                | In progress |
-| **Webhook Tester**         | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response  | In progress |
-| **Ledger Monitor**         | Watch a Stellar address or contract for live activity; set threshold alerts           | Planned     |
-| **API Playground**         | Interactive request builder for Fluxa and CrowdPay APIs                               | Planned     |
-| **Contract Deploy Helper** | Upload and deploy Soroban WASM files to testnet from the browser                      | Planned     |
-| **SDK Generator**          | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | Planned     |
-| **Network Status**         | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | Planned     |
+| Tool                      | What it does                                                                          | Status |
+| ------------------------- | ------------------------------------------------------------------------------------- | ------ |
+| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR into a human-readable breakdown       | MVP    |
+| **Wallet Sandbox**        | Generate testnet keypairs, fund via Friendbot, send test payments                     | MVP    |
+| **Transaction Composer**  | Visual builder for multi-operation Stellar transactions; sign and submit without code | MVP    |
+| **Payment Simulator**     | Find path payment routes between assets; preview hops, rates, and fees                | MVP    |
+| **Webhook Tester**        | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response  | MVP    |
+| **Ledger Monitor**        | Watch a Stellar address or contract for live activity; set threshold alerts           | MVP    |
+| **API Playground**        | Interactive request builder for Fluxa and CrowdPay APIs                               | MVP    |
+| **Contract Deployer**     | Upload and deploy Soroban WASM files to testnet from the browser                      | MVP    |
+| **SDK Generator**         | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | Planned |
+| **Network Status**        | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | Planned |
+| **Federation & TOML**     | Resolve federation addresses, inspect stellar.toml files, check SEP compliance        | MVP    |
+| **Order Book**            | Live DEX order book, spread analytics, and liquidity depth chart for any asset pair   | MVP    |
+| **Account Graph**         | Visualize signer networks, offers, and payment relationships with a force-directed graph | MVP |
+| **Contract Events**       | Decode, filter, and replay Soroban contract events from raw ScVal XDR                 | MVP    |
 
 ---
 

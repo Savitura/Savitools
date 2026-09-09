@@ -48,7 +48,7 @@ export const tools = [
     href: "/monitor",
     label: "Monitor",
     description: "Watch addresses and contracts for live ledger activity.",
-    status: "Planned" as const,
+    status: "MVP" as const,
   },
   {
     href: "/inspector/federation",

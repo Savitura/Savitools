@@ -79,7 +79,7 @@ export class WebhookService {
       }
 
       let responseStatus: number | null = null;
-      let responseHeaders: Record<string, string> = {};
+      const responseHeaders: Record<string, string> = {};
       let responseBody = '';
       let errorMessage: string | undefined;
 
