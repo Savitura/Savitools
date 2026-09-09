@@ -22,8 +22,8 @@ SaviTools is a standalone product in the [Savitura](https://savitura.com) ecosys
 | **Ledger Monitor**        | Watch a Stellar address or contract for live activity; set threshold alerts           | MVP    |
 | **API Playground**        | Interactive request builder for Fluxa and CrowdPay APIs                               | MVP    |
 | **Contract Deployer**     | Upload and deploy Soroban WASM files to testnet from the browser                      | MVP    |
-| **SDK Generator**         | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | MVP    |
-| **Network Status**        | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | MVP    |
+| **SDK Generator**         | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | Planned |
+| **Network Status**        | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | Planned |
 | **Federation & TOML**     | Resolve federation addresses, inspect stellar.toml files, check SEP compliance        | MVP    |
 | **Order Book**            | Live DEX order book, spread analytics, and liquidity depth chart for any asset pair   | MVP    |
 | **Account Graph**         | Visualize signer networks, offers, and payment relationships with a force-directed graph | MVP |
