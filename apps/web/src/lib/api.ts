@@ -915,6 +915,86 @@ export async function getOrderQuote(params: OrderQuoteParams) {
   });
 }
 
+/* ─── LP Pool Quote (Savitura/Savitools#LP) ─────────────────────────────── */
+
+export type PoolQuoteScenario = 'deposit' | 'withdrawal';
+
+export interface PoolQuoteParams {
+  scenario: PoolQuoteScenario;
+  network?: NetworkChoice;
+  /** Explicit Horizon pool ID (hex, 64 chars). Takes precedence over assetA/B. */
+  poolId?: string;
+  /** Asset A in canonical order. "XLM" or "CODE:ISSUER". Required when poolId is absent. */
+  assetA?: string;
+  /** Asset B in canonical order. "XLM" or "CODE:ISSUER". Required when poolId is absent. */
+  assetB?: string;
+  // deposit inputs
+  amountA?: string;
+  amountB?: string;
+  // withdrawal inputs
+  shares?: string;
+  withdrawAmountA?: string;
+}
+
+export interface PoolQuoteAsset {
+  asset: string;
+  reserve: string;
+}
+
+interface PoolQuoteBase {
+  poolId: string;
+  network: string;
+  scenario: PoolQuoteScenario;
+  assetA: PoolQuoteAsset;
+  assetB: PoolQuoteAsset;
+  totalShares: string;
+  feePct: string;
+  spotPriceAperB: string;
+  spotPriceBperA: string;
+  priceImpactBps: string;
+}
+
+export interface DepositQuoteResult extends PoolQuoteBase {
+  scenario: 'deposit';
+  depositA: string;
+  depositB: string;
+  sharesOut: string;
+  minSharesOut: string;
+  composerHint: {
+    operation: 'liquidityPoolDeposit';
+    poolId: string;
+    maxAmountA: string;
+    maxAmountB: string;
+    minPrice: string;
+    maxPrice: string;
+  };
+}
+
+export interface WithdrawalQuoteResult extends PoolQuoteBase {
+  scenario: 'withdrawal';
+  sharesToBurn: string;
+  reserveAOut: string;
+  reserveBOut: string;
+  minReserveAOut: string;
+  minReserveBOut: string;
+  composerHint: {
+    operation: 'liquidityPoolWithdraw';
+    poolId: string;
+    amount: string;
+    minAmountA: string;
+    minAmountB: string;
+  };
+}
+
+export type PoolQuoteResult = DepositQuoteResult | WithdrawalQuoteResult;
+
+export async function getPoolQuote(params: PoolQuoteParams): Promise<PoolQuoteResult> {
+  return apiFetch<PoolQuoteResult>('/simulator/pool/quote', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 /* ─── Webhooks ──────────────────────────────────────────────────────────── */
 
 export interface WebhookTemplate {
