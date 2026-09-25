@@ -453,7 +453,7 @@ export async function encodeContractAbiArguments(
 
 /* ─── Playground ─────────────────────────────────────────────────────────── */
 
-export type PlaygroundProvider = "fluxa" | "crowdpay";
+export type PlaygroundProvider = "fluxa" | "crowdpay" | "custom";
 
 export interface PlaygroundApiKey {
   id: string;

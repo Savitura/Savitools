@@ -102,24 +102,37 @@ export class PlaygroundService {
   }
 
   async proxyRequest(userId: string, dto: ProxyRequestDto): Promise<ProxyResult> {
-    const baseUrl = this.getProviderBaseUrl(dto.provider);
-    if (!baseUrl) {
-      throw new BadRequestException(`${dto.provider} API URL is not configured`);
-    }
+    let baseUrl: string | null;
+    let key: ApiKey | null;
 
-    const apiKeyRecord = await this.findUserKey(userId, dto.provider);
-    if (!apiKeyRecord) {
-      // Fall back to the vault / connected accounts for key injection
-      const vaultKey = await this.authService.resolveKey(userId, dto.provider);
-      if (!vaultKey) {
+    if (dto.provider === ApiKeyProvider.CUSTOM) {
+      key = await this.findUserKey(userId, dto.provider);
+      if (!key) {
         throw new NotFoundException(
           `No ${dto.provider} API key stored. Save one in Playground → Key Manager or the Vault first.`,
         );
       }
-      return this.executeProxyRequest(userId, dto, vaultKey, baseUrl);
+      baseUrl = this.getProviderBaseUrl(dto.provider, { providerOrigin: key.providerOrigin });
+    } else {
+      baseUrl = this.getProviderBaseUrl(dto.provider);
+      if (!baseUrl) {
+        throw new BadRequestException(`${dto.provider} API URL is not configured`);
+      }
+
+      key = await this.findUserKey(userId, dto.provider);
+      if (!key) {
+        // Fall back to the vault / connected accounts for key injection
+        const vaultKey = await this.authService.resolveKey(userId, dto.provider);
+        if (!vaultKey) {
+          throw new NotFoundException(
+            `No ${dto.provider} API key stored. Save one in Playground → Key Manager or the Vault first.`,
+          );
+        }
+        return this.executeProxyRequest(userId, dto, vaultKey, baseUrl);
+      }
     }
 
-    const decryptedKey = await this.decryptAndUpgrade(userId, apiKeyRecord);
+    const decryptedKey = await this.decryptAndUpgrade(userId, key!);
     return this.executeProxyRequest(userId, dto, decryptedKey, baseUrl);
   }
 
@@ -376,6 +389,109 @@ export class PlaygroundService {
     await this.apiKeysRepository.remove(key);
   }
 
+  async importProvider(
+    userId: string,
+    dto: { name: string; openApiJson: unknown; origin: string; apiKey: string }
+  ): Promise<{ id: string; name: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }> {
+    // Validate the OpenAPI document
+    const spec = dto.openApiJson as Record<string, unknown>;
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      throw new BadRequestException('Invalid OpenAPI document: must be a JSON object');
+    }
+    if (!spec.paths) {
+      throw new BadRequestException('Invalid OpenAPI document: missing "paths" object');
+    }
+
+    // Encrypt the API key
+    const { encrypted, iv, authTag } = this.encryptionService.encryptForUser(
+      userId,
+      dto.apiKey,
+      ENCRYPTION_PURPOSES.PLAYGROUND_API_KEY,
+    );
+
+    const key = this.apiKeysRepository.create({
+      userId,
+      provider: ApiKeyProvider.CUSTOM,
+      label: dto.name,
+      encryptedKey: encrypted,
+      iv,
+      authTag,
+      keyVersion: 2,
+      providerOrigin: dto.origin,
+      openApiSpec: spec,
+    });
+
+    const saved = await this.apiKeysRepository.save(key);
+    const decrypted = await this.decryptAndUpgrade(userId, saved);
+    const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+    return {
+      id: saved.id,
+      name: saved.label,
+      provider: saved.provider,
+      maskedKey: masked,
+      createdAt: saved.createdAt,
+    };
+  }
+
+  async listProviders(userId: string): Promise<Array<{
+    id: string;
+    name: string;
+    provider: ApiKeyProvider;
+    origin: string | null;
+    hasSpec: boolean;
+    maskedKey: string;
+    createdAt: Date;
+  }>> {
+    const keys = await this.apiKeysRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return Promise.all(
+      keys.map(async (key) => {
+        const decrypted = await this.decryptAndUpgrade(userId, key);
+        const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+        return {
+          id: key.id,
+          name: key.label,
+          provider: key.provider,
+          origin: key.providerOrigin,
+          hasSpec: !!key.openApiSpec,
+          maskedKey: masked,
+          createdAt: key.createdAt,
+        };
+      }),
+    );
+  }
+
+  async renameProvider(
+    id: string,
+    userId: string,
+    dto: { name: string }
+  ): Promise<{ id: string; name: string; provider: ApiKeyProvider }> {
+    const key = await this.apiKeysRepository.findOne({ where: { id } });
+    if (!key) {
+      throw new NotFoundException('API key not found');
+    }
+    if (key.userId !== userId) {
+      throw new ForbiddenException('Cannot rename another user\'s API key');
+    }
+    key.label = dto.name;
+    const saved = await this.apiKeysRepository.save(key);
+    return { id: saved.id, name: saved.label, provider: saved.provider };
+  }
+
+  async deleteProvider(id: string, userId: string): Promise<void> {
+    const key = await this.apiKeysRepository.findOne({ where: { id } });
+    if (!key) {
+      throw new NotFoundException('API key not found');
+    }
+    if (key.userId !== userId) {
+      throw new ForbiddenException('Cannot delete another user\'s API key');
+    }
+    await this.apiKeysRepository.remove(key);
+  }
+
   async updateKey(
     id: string,
     userId: string,
@@ -416,7 +532,10 @@ export class PlaygroundService {
     });
   }
 
-  private getProviderBaseUrl(provider: ApiKeyProvider): string | null {
+  private getProviderBaseUrl(provider: ApiKeyProvider, key?: { providerOrigin: string | null }): string | null {
+    if (provider === ApiKeyProvider.CUSTOM) {
+      return key?.providerOrigin ?? null;
+    }
     switch (provider) {
       case ApiKeyProvider.FLUXA:
         return this.configService.get<string>('FLUXA_API_URL') ?? null;
