@@ -17,6 +17,7 @@ import { ListHistoryDto } from './dto/list-history.dto';
 import { ProxyRequestDto } from './dto/proxy-request.dto';
 import { SaveApiKeyDto } from './dto/save-api-key.dto';
 import { UpdateApiKeyDto } from './dto/update-api-key.dto';
+import { ImportProviderDto, RenameProviderDto } from './dto/import-provider.dto';
 import { ApiKeyProvider } from './entities/api-key.entity';
 import { PlaygroundService } from './playground.service';
 
@@ -80,6 +81,44 @@ export class PlaygroundController {
   @ApiResponse({ status: 404, description: 'API key not found' })
   async deleteKey(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     await this.playgroundService.deleteKey(id, user.id);
+    return { success: true };
+  }
+
+  @Post('providers/import')
+  @ApiOperation({ summary: 'Import a custom OpenAPI provider' })
+  @ApiResponse({ status: 201, description: 'Provider imported successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid OpenAPI document or key' })
+  async importProvider(@CurrentUser() user: { id: string }, @Body() dto: ImportProviderDto) {
+    return this.playgroundService.importProvider(user.id, dto);
+  }
+
+  @Get('providers')
+  @ApiOperation({ summary: 'List all providers for the current user' })
+  @ApiResponse({ status: 200, description: 'Providers retrieved' })
+  async listProviders(@CurrentUser() user: { id: string }) {
+    return this.playgroundService.listProviders(user.id);
+  }
+
+  @Put('providers/:id/rename')
+  @ApiOperation({ summary: 'Rename a provider' })
+  @ApiParam({ name: 'id', description: 'API key ID' })
+  @ApiResponse({ status: 200, description: 'Provider renamed successfully' })
+  @ApiResponse({ status: 404, description: 'API key not found' })
+  async renameProvider(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: RenameProviderDto,
+  ) {
+    return this.playgroundService.renameProvider(id, user.id, dto);
+  }
+
+  @Delete('providers/:id')
+  @ApiOperation({ summary: 'Delete a provider' })
+  @ApiParam({ name: 'id', description: 'API key ID' })
+  @ApiResponse({ status: 204, description: 'Provider deleted successfully' })
+  @ApiResponse({ status: 404, description: 'API key not found' })
+  async deleteProvider(@CurrentUser() user: { id: string }, @Param('id') id: string) {
+    await this.playgroundService.deleteProvider(id, user.id);
     return { success: true };
   }
 

@@ -12,6 +12,7 @@ import { User } from '../../auth/entities/user.entity';
 export enum ApiKeyProvider {
   FLUXA = 'fluxa',
   CROWDPAY = 'crowdpay',
+  CUSTOM = 'custom',
 }
 
 @Entity('api_keys')
@@ -49,6 +50,12 @@ export class ApiKey {
    */
   @Column({ name: 'key_version', default: 1 })
   keyVersion!: number;
+
+  @Column({ name: 'provider_origin', nullable: true })
+  providerOrigin!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  openApiSpec!: Record<string, unknown> | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
