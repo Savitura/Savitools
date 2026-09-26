@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags, ApiResponse } from '@nestjs/swagger';
 import { SimulatorService } from './simulator.service';
 import { OrderbookService } from './orderbook.service';
+import { PoolQuoteService } from './pool-quote.service';
 import { FindPathsDto } from './dto/find-paths.dto';
 import { EstimateDto } from './dto/estimate.dto';
 import { SimulateStrictSendDto } from './dto/strict-send.dto';
@@ -9,6 +10,7 @@ import { SimulateStrictReceiveDto } from './dto/strict-receive.dto';
 import { SimulateFeeQueryDto } from './dto/simulate-fee.dto';
 import { OrderbookQueryDto } from './dto/orderbook.dto';
 import { TradesQueryDto, OrderQuoteDto } from './dto/trades.dto';
+import { PoolQuoteDto } from './dto/pool-quote.dto';
 
 @ApiTags('simulator')
 @Controller('simulator')
@@ -16,6 +18,7 @@ export class SimulatorController {
   constructor(
     private readonly simulatorService: SimulatorService,
     private readonly orderbookService: OrderbookService,
+    private readonly poolQuoteService: PoolQuoteService,
   ) {}
 
   @Get('paths')
@@ -109,5 +112,31 @@ export class SimulatorController {
   @ApiResponse({ status: 400, description: 'Invalid amount, asset pair, or network' })
   getQuote(@Body() dto: OrderQuoteDto) {
     return this.orderbookService.getQuote(dto);
+  }
+
+  // ── LP pool quote ────────────────────────────────────────────────────────
+
+  @Post('pool/quote')
+  @ApiOperation({
+    summary: 'Preview an LP pool deposit or withdrawal',
+    description:
+      'Fetches the live Horizon liquidity-pool record and returns estimated ' +
+      'shares (deposit) or reserves (withdrawal), spot ratio, price impact, ' +
+      'pool fee, and Composer-ready hint fields. ' +
+      'This endpoint is distinct from classic order-book quotes — it uses ' +
+      'constant-product AMM arithmetic, not order-book fills.',
+  })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Deposit quote: estimated shares minted, required deposit amounts, ' +
+      'price impact, and Composer hint. ' +
+      'Withdrawal quote: estimated reserve amounts released, shares burned, ' +
+      'price impact, and Composer hint.',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input, impossible amount, or cross-scenario parameters' })
+  @ApiResponse({ status: 404, description: 'Pool not found on Horizon' })
+  getPoolQuote(@Body() dto: PoolQuoteDto) {
+    return this.poolQuoteService.getPoolQuote(dto);
   }
 }
