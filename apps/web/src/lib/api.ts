@@ -16,6 +16,8 @@ export interface AuthUser {
 
 interface ApiErrorBody {
   message?: string | string[];
+  /** Machine-readable rejection reason, e.g. CLAWBACK_NOT_ENABLED. */
+  code?: string;
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -24,7 +26,11 @@ async function parseJson<T>(response: Response): Promise<T> {
     const message = Array.isArray(body.message)
       ? body.message.join(", ")
       : (body.message ?? response.statusText);
-    throw new Error(message);
+    const error = new Error(message) as Error & { code?: string };
+    if (body.code) {
+      error.code = body.code;
+    }
+    throw error;
   }
 
   if (response.status === 204) {
@@ -1600,4 +1606,171 @@ export async function replayContractEvents(
     method: "POST",
     body: JSON.stringify({ webhookUrl, events, ...(secret ? { secret } : {}) }),
   });
+}
+
+/* ─── Asset Control (Savitura/Savitools#81) ─────────────────────────────── */
+
+export interface AssetControlFlags {
+  asset: { code: string; issuer: string };
+  account: string;
+  authorizationRequired: boolean;
+  authorizationRevocable: boolean;
+  authorizationClawbackEnabled: boolean;
+  authorizationImmutable: boolean;
+}
+
+export interface AssetTrustline {
+  account: string;
+  balance: string;
+  limit: string | null;
+  authorized: boolean;
+  authorizedToMaintainLiabilities: boolean;
+  clawbackEnabled: boolean;
+}
+
+export interface AssetTrustlinesResult {
+  asset: { code: string; issuer: string };
+  total: number;
+  fetched: number;
+  pages: number;
+  truncated: boolean;
+  trustlines: AssetTrustline[];
+}
+
+export interface AssetTrustlineFilters {
+  authorized?: boolean;
+  clawbackEnabled?: boolean;
+  minBalance?: number;
+  maxBalance?: number;
+  account?: string;
+}
+
+export interface AssetAccountFlagsInput {
+  authorizationRequired?: boolean;
+  authorizationRevocable?: boolean;
+  authorizationClawbackEnabled?: boolean;
+  authorizationImmutable?: boolean;
+}
+
+export interface AssembledAssetOperation {
+  xdr: string;
+  network: "testnet";
+  networkPassphrase: string;
+  sourceAccount: string;
+  sequence: string;
+  operationType: "setTrustlineFlags" | "clawback" | "setOptions";
+  operation: Record<string, unknown>;
+  summary: string;
+  unsigned: true;
+}
+
+function assetPath(code: string, issuer: string, suffix: string): string {
+  return `/wallet/asset/${encodeURIComponent(code)}/${encodeURIComponent(issuer)}/${suffix}`;
+}
+
+export async function getAssetControlFlags(code: string, issuer: string) {
+  return apiFetch<AssetControlFlags>(assetPath(code, issuer, "flags"));
+}
+
+export async function getAssetTrustlines(
+  code: string,
+  issuer: string,
+  filters: AssetTrustlineFilters = {},
+) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  });
+  const query = params.toString();
+
+  return apiFetch<AssetTrustlinesResult>(
+    `${assetPath(code, issuer, "trustlines")}${query ? `?${query}` : ""}`,
+  );
+}
+
+export async function buildSetTrustlineFlagsXdr(
+  code: string,
+  issuer: string,
+  input: {
+    account: string;
+    flags: {
+      authorized?: boolean;
+      authorizedToMaintainLiabilities?: boolean;
+    };
+  },
+) {
+  return apiFetch<AssembledAssetOperation>(assetPath(code, issuer, "set-flags"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function buildClawbackXdr(
+  code: string,
+  issuer: string,
+  input: { account: string; amount: string },
+) {
+  return apiFetch<AssembledAssetOperation>(assetPath(code, issuer, "clawback"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function buildAccountFlagsXdr(
+  code: string,
+  issuer: string,
+  input: AssetAccountFlagsInput,
+) {
+  return apiFetch<AssembledAssetOperation>(
+    assetPath(code, issuer, "account-flags"),
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+/**
+ * Build a Transaction Composer link that prefills the matching operation.
+ * The composer reads these params in its URL-prefill effect, so the XDR the
+ * Asset Control workstation just showed can be rebuilt, signed and submitted
+ * without retyping any field (acceptance criterion 6).
+ */
+export function assetControlComposerLink(input: {
+  operationType: "setTrustlineFlags" | "clawback" | "setOptions";
+  code: string;
+  issuer: string;
+  account?: string;
+  amount?: string;
+  flags?: {
+    authorized?: boolean;
+    authorizedToMaintainLiabilities?: boolean;
+  };
+  setFlags?: number;
+  clearFlags?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (input.operationType === "clawback") {
+    params.set("prefillOp", "clawback");
+    params.set("from", input.account ?? "");
+    params.set("amount", input.amount ?? "");
+  } else if (input.operationType === "setTrustlineFlags") {
+    params.set("prefillOp", "set_trustline_flags");
+    params.set("trustor", input.account ?? "");
+    if (input.flags?.authorized !== undefined) {
+      params.set("authorize", String(input.flags.authorized));
+    }
+    if (input.flags?.authorizedToMaintainLiabilities !== undefined) {
+      params.set(
+        "authorizeToMaintainLiabilities",
+        String(input.flags.authorizedToMaintainLiabilities),
+      );
+    }
+  } else {
+    params.set("prefillOp", "set_options");
+    params.set("setFlags", String(input.setFlags ?? 0));
+    params.set("clearFlags", String(input.clearFlags ?? 0));
+  }
+
+  params.set("assetCode", input.code);
+  params.set("assetIssuer", input.issuer);
+
+  return `/composer?${params.toString()}`;
 }

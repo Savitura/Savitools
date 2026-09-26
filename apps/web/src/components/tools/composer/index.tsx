@@ -337,27 +337,82 @@ export function ComposerTool() {
   }, [operations, sourceAccount, memo, precondKind, precondFields, rebuildXdr]);
 
   // ---------------------------------------------------------------------------
-  // URL prefill — receives estimates from other tools (e.g. Order Book quote)
+  // URL prefill — receives operations from other tools
+  // (Order Book quotes, and the Asset Control workstation, Savitura/Savitools#81)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (prefilled.current) return;
     prefilled.current = true;
-    if (searchParams.get('prefillOp') !== 'payment') return;
-    const amount = searchParams.get('amount');
-    if (!amount) return;
+
+    const prefillOp = searchParams.get('prefillOp');
     const code = searchParams.get('assetCode');
     const issuer = searchParams.get('assetIssuer');
-    const op: ComposedOperation = {
-      id: newId(),
-      type: 'payment',
-      fields: {
+
+    /** Queue one prefilled operation and focus it. */
+    const addPrefilled = (type: string, fields: Record<string, unknown>) => {
+      const op: ComposedOperation = { id: newId(), type, fields };
+      setOperations((prev) => [...prev, op]);
+      setSelectedId(op.id);
+    };
+
+    if (prefillOp === 'payment') {
+      const amount = searchParams.get('amount');
+      if (!amount) return;
+      addPrefilled('payment', {
         destination: searchParams.get('destination') ?? '',
         asset: issuer ? { code: code || 'XLM', issuer } : { code: code || 'native' },
         amount,
-      },
-    };
-    setOperations((prev) => [...prev, op]);
-    setSelectedId(op.id);
+      });
+      return;
+    }
+
+    if (prefillOp === 'set_trustline_flags') {
+      const trustor = searchParams.get('trustor');
+      const authorize = searchParams.get('authorize');
+      const authorizeToMaintainLiabilities = searchParams.get(
+        'authorizeToMaintainLiabilities',
+      );
+      if (!code || !issuer || !trustor) return;
+      // A boolean field can legitimately be "false", so null checks decide
+      // which flags to send rather than truthiness.
+      const flags: Record<string, boolean> = {};
+      if (authorize !== null) flags.authorized = authorize === 'true';
+      if (authorizeToMaintainLiabilities !== null) {
+        flags.authorizedToMaintainLiabilities =
+          authorizeToMaintainLiabilities === 'true';
+      }
+      if (Object.keys(flags).length === 0) return;
+      addPrefilled('set_trustline_flags', {
+        trustor,
+        asset: { code, issuer },
+        flags,
+      });
+      return;
+    }
+
+    if (prefillOp === 'clawback') {
+      const from = searchParams.get('from');
+      const amount = searchParams.get('amount');
+      if (!code || !issuer || !from || !amount) return;
+      addPrefilled('clawback', {
+        from,
+        asset: { code, issuer },
+        amount,
+      });
+      return;
+    }
+
+    if (prefillOp === 'set_options') {
+      const setFlags = Number(searchParams.get('setFlags') ?? '0');
+      const clearFlags = Number(searchParams.get('clearFlags') ?? '0');
+      const fields: Record<string, unknown> = {};
+      if (Number.isFinite(setFlags) && setFlags !== 0) fields.setFlags = setFlags;
+      if (Number.isFinite(clearFlags) && clearFlags !== 0) {
+        fields.clearFlags = clearFlags;
+      }
+      if (Object.keys(fields).length === 0) return;
+      addPrefilled('set_options', fields);
+    }
   }, [searchParams]);
 
   // ---------------------------------------------------------------------------

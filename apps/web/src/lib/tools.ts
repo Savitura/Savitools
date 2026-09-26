@@ -20,6 +20,13 @@ export const tools = [
     status: "MVP" as const,
   },
   {
+    href: "/sandbox/assetcontrol",
+    label: "Asset Control",
+    description:
+      "Inspect issuer authorization flags, audit every trustline, and assemble SetTrustlineFlags, Clawback and SetOptions transactions.",
+    status: "MVP" as const,
+  },
+  {
     href: "/simulator",
     label: "Simulator",
     description: "Find path payment routes and preview fees before you send.",

@@ -22,6 +22,7 @@ export interface Balance {
 
 /** The part of a Horizon account response the API reads. */
 export interface HorizonAccount {
+  account_id: string;
   sequence: string;
   balances: Array<{
     asset_type: string;
@@ -40,6 +41,8 @@ export interface HorizonAccount {
     auth_required: boolean;
     auth_revocable: boolean;
     auth_immutable: boolean;
+    /** Present on every Horizon account; optional so older fixtures still type. */
+    auth_clawback_enabled?: boolean;
   };
 }
 
