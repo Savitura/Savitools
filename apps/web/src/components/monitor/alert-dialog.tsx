@@ -113,7 +113,7 @@ function WebhookForm({ onSaved }: { onSaved: () => void }) {
     event.preventDefault();
     setError(null);
     try {
-      await apiFetch('/monitor/webhooks', {
+      await apiFetch('/monitor/webhook', {
         method: 'POST',
         body: JSON.stringify({ url, secret }),
       });
