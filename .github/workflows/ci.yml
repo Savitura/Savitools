@@ -53,6 +53,25 @@ jobs:
       - run: npm ci
       - run: npx turbo test
 
+  route-contract:
+    name: Route Contract (API <-> Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: API route contract (records every versioned route + auth)
+        run: npm test --workspace @savitools/api -- api-contract
+
+      - name: Web route contract (wrappers, hygiene and smoke flows)
+        run: npm test --workspace @savitools/web -- api-contract
+
   docker-build:
     name: Docker Build (API)
     runs-on: ubuntu-latest
