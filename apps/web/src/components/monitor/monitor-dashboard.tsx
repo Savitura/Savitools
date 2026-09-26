@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Plus, Trash2, Loader2, Wifi, WifiOff } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { API_ORIGIN, apiFetch } from '@/lib/api';
 import { AlertPanel } from './alert-dialog';
 import { LiveFeed } from './live-feed';
 import { AlertEvent, Watch, WatchEvent } from './monitor-types';
@@ -48,9 +48,7 @@ export function MonitorDashboard() {
   }, []);
 
   useEffect(() => {
-    const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-    const socket: Socket = io(apiUrl.replace(/\/api$/, ''), {
+    const socket: Socket = io(API_ORIGIN, {
       withCredentials: true,
       transports: ['websocket', 'polling'],
     });
