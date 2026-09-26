@@ -26,6 +26,7 @@ import {
   type Balance,
 } from '@/lib/api';
 import { useNetwork } from '@/lib/network-context';
+import { previewDestination, accountExplorerUrl } from '@/lib/muxed-address';
 import { clearSecretString, randomBytes, zeroBuffer } from '@/lib/secure-memory';
 import {
   SandboxAccountSkeleton,
@@ -53,6 +54,11 @@ interface PaymentFormState {
   amount: string;
   memo: string;
   assetError: string | null;
+}
+
+/** Middle-elided G… address for inline hints. */
+function shorten(value: string): string {
+  return value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-8)}` : value;
 }
 
 export function SandboxTool() {
@@ -84,6 +90,14 @@ export function SandboxTool() {
   const [sending, setSending] = useState(false);
   const [paymentResult, setPaymentResult] = useState<SandboxPaymentResult | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Decoded live so a muxed destination can be shown as (account, payment ID)
+  // before the user submits.
+  const destinationPreview = previewDestination(payment.toPublicKey);
+  // NetworkContext also allows 'custom'; the sandbox is testnet-only, so a
+  // custom profile gets the testnet explorer rather than no link at all.
+  const explorerNetwork: 'testnet' | 'mainnet' =
+    network === 'mainnet' ? 'mainnet' : 'testnet';
 
   // Security: hold a ref to the latest generated secret so we can drop it
   // from memory when the component unmounts (see Savitura/Savitools#145). JS
@@ -593,9 +607,31 @@ export function SandboxTool() {
               type="text"
               value={payment.toPublicKey}
               onChange={(e) => setPayment((prev) => ({ ...prev, toPublicKey: e.target.value }))}
-              placeholder="G..."
+              placeholder="G… or M…"
               className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-mono"
             />
+            {/* A muxed address pays into the account an explorer knows, but
+                routes on the ID, so show both halves rather than the
+                compound string. */}
+            {destinationPreview.kind === 'muxed' && (
+              <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground">
+                <p>
+                  Muxed account &middot; pays into{' '}
+                  <a
+                    href={accountExplorerUrl(destinationPreview.account ?? '', explorerNetwork)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono hover:underline"
+                  >
+                    {shorten(destinationPreview.account ?? '')}
+                  </a>
+                </p>
+                <p>
+                  Payment ID:{' '}
+                  <span className="font-mono">{destinationPreview.muxedId}</span>
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -685,6 +721,24 @@ export function SandboxTool() {
               <p className="text-xs text-green-600">
                 Result: {paymentResult.resultCode}
               </p>
+              {paymentResult.muxedId && (
+                <p className="text-xs text-green-600">
+                  Muxed destination &middot; account{' '}
+                  <a
+                    href={accountExplorerUrl(
+                      paymentResult.destinationAccount ?? '',
+                      explorerNetwork,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono hover:underline"
+                  >
+                    {shorten(paymentResult.destinationAccount ?? '')}
+                  </a>{' '}
+                  &middot; payment ID{' '}
+                  <span className="font-mono">{paymentResult.muxedId}</span>
+                </p>
+              )}
               <a
                 href={stellarExpertUrl(paymentResult.txHash)}
                 target="_blank"

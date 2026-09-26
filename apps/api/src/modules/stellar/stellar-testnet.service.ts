@@ -10,6 +10,7 @@ import {
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { parseDestination, type ParsedDestination } from './address';
 
 /** Horizon balance shape both the wallet and sandbox pages render. */
 export interface Balance {
@@ -246,10 +247,38 @@ export class StellarTestnetService {
     }
   }
 
-  assertDestination(destination: string): void {
-    if (!destination || destination.length < 56) {
-      throw new BadRequestException('Invalid destination public key');
-    }
+  /**
+   * Validate a payment destination and return its decoded form.
+   *
+   * Accepts both `G…` accounts and `M…` muxed accounts; see
+   * {@link parseDestination} for the rejection copy.
+   */
+  assertDestination(destination: string): ParsedDestination {
+    return parseDestination(destination);
+  }
+
+  /**
+   * Build the payment operation for a request.
+   *
+   * Kept separate from {@link submitPayment} so the XDR-level behaviour — in
+   * particular that a muxed destination survives into the operation as
+   * `keyTypeMuxedEd25519` with its payment ID intact — is testable without a
+   * Horizon round trip. `Operation.payment` accepts the `M…` strkey directly
+   * and packs it into the muxed arm of `xdr.MuxedAccount`.
+   *
+   * The asset is normally parsed by the caller so the format is rejected
+   * before any network load; parsing lazily here keeps the method usable on
+   * its own.
+   */
+  buildPaymentOperation(
+    request: PaymentRequest,
+    asset: Asset = this.parseAsset(request.asset),
+  ) {
+    return Operation.payment({
+      destination: request.destination,
+      asset,
+      amount: request.amount,
+    });
   }
 
   assertPositiveAmount(amount: string): void {
@@ -292,6 +321,8 @@ export class StellarTestnetService {
     const sourceKeypair = this.keypairFromSecret(request.sourceSecret);
     this.assertDestination(request.destination);
     this.assertPositiveAmount(request.amount);
+    // Required before the account load: a bad asset format is a request error
+    // and must not cost a Horizon round trip.
     const asset = this.parseAsset(request.asset);
 
     const sourceAccount = await this.loadSourceAccount(
@@ -301,13 +332,7 @@ export class StellarTestnetService {
     let builder = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
       networkPassphrase: Networks.TESTNET,
-    }).addOperation(
-      Operation.payment({
-        destination: request.destination,
-        asset,
-        amount: request.amount,
-      }),
-    );
+    }).addOperation(this.buildPaymentOperation(request, asset));
 
     if (request.memo) {
       try {
