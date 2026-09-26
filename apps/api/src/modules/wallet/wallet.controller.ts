@@ -15,6 +15,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { WalletService } from './wallet.service';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { AssetControlService } from './assetcontrol.service';
 import { FundDto } from './dto/fund.dto';
 import { BalancesDto } from './dto/balances.dto';
@@ -78,14 +81,16 @@ export class WalletController {
   @ApiQuery({ name: 'publicKey', required: true, type: String })
   @ApiResponse({ status: 200, description: 'Balances retrieved successfully' })
   @ApiResponse({ status: 400, description: 'Invalid public key or account not found' })
-  getBalances(@Query('publicKey') publicKey: string) {
-    return this.walletService.getBalances(publicKey);
+  getBalances(@Query() query: BalancesDto) {
+    return this.walletService.getBalances(query.publicKey);
   }
 
   @Post('payment')
-  @ApiOperation({ summary: 'Send a payment from a sandbox wallet' })
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @ApiOperation({ summary: 'Send a payment from a sandbox wallet (authenticated & rate-limited testnet signing)' })
   @ApiResponse({ status: 200, description: 'Payment sent successfully' })
   @ApiResponse({ status: 400, description: 'Invalid payment parameters or insufficient balance' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   sendPayment(@Body() dto: SendPaymentDto) {
     return this.walletService.sendPayment(dto.sourceSecret, dto.destination, dto.asset, dto.amount);
   }

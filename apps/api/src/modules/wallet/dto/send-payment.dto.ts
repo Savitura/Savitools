@@ -8,6 +8,9 @@ import {
 export class SendPaymentDto {
   @ApiProperty({ description: 'Source account secret key' })
   @IsString()
+  @Matches(/^S[A-Z2-7]{55}$/, {
+    message: 'sourceSecret must be a valid Stellar S… secret key',
+  })
   sourceSecret: string;
 
   @ApiProperty({

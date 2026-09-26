@@ -7,6 +7,9 @@ import {
 export class PaymentDto {
   @IsString()
   @IsNotEmpty()
+  @Matches(/^S[A-Z2-7]{55}$/, {
+    message: 'Invalid Stellar secret key format',
+  })
   fromSecret: string;
 
   @IsString()

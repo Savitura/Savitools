@@ -73,8 +73,10 @@ export interface PaymentRequest {
   memo?: string;
 }
 
-const HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
-const FRIENDBOT_URL = 'https://friendbot.stellar.org';
+import { ConfigService } from '@nestjs/config';
+
+const DEFAULT_HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
+const DEFAULT_FRIENDBOT_URL = 'https://friendbot.stellar.org';
 const FRIENDBOT_TIMEOUT_MS = 30000;
 const FRIENDBOT_STARTING_BALANCE = '10,000 XLM';
 
@@ -92,7 +94,18 @@ const FRIENDBOT_STARTING_BALANCE = '10,000 XLM';
 export class StellarTestnetService {
   private readonly logger = new Logger(StellarTestnetService.name);
 
-  readonly server = new StellarSdk.Horizon.Server(HORIZON_TESTNET_URL);
+  readonly server: StellarSdk.Horizon.Server;
+  private readonly horizonUrl: string;
+  private readonly friendbotUrl: string;
+  private readonly networkPassphrase: string;
+
+  constructor(private readonly configService: ConfigService) {
+    this.horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || DEFAULT_HORIZON_TESTNET_URL;
+    this.friendbotUrl = this.configService.get<string>('FRIENDBOT_URL') || DEFAULT_FRIENDBOT_URL;
+    const network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
+    this.networkPassphrase = network.toLowerCase() === 'mainnet' || network.toLowerCase() === 'public' ? Networks.PUBLIC : Networks.TESTNET;
+    this.server = new StellarSdk.Horizon.Server(this.horizonUrl);
+  }
 
   /**
    * Random testnet keypair.
@@ -192,7 +205,7 @@ export class StellarTestnetService {
    * failure is returned so the sandbox can treat "already funded" as success.
    */
   async requestFriendbotFunding(publicKey: string): Promise<FriendbotReply> {
-    const url = `${FRIENDBOT_URL}?addr=${encodeURIComponent(publicKey)}`;
+    const url = `${this.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`;
 
     let response: Response;
     try {
@@ -334,7 +347,7 @@ export class StellarTestnetService {
 
     let builder = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase: this.networkPassphrase,
     }).addOperation(this.buildPaymentOperation(request, asset));
 
     if (request.memo) {

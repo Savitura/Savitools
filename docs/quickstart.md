@@ -247,9 +247,9 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 
 ---
 
-## Step 8: Sign and Submit (Via External Tool)
+## Step 8: Sign and Submit
 
-**Important:** SaviTools does NOT sign transactions with your secret key. You must sign externally for security.
+SaviTools supports server-side testnet transaction signing via authenticated and rate-limited endpoints (`POST /wallet/payment` and `POST /sandbox/payment`), or you can sign externally using the Stellar CLI or SDKs.
 
 Use the [Stellar CLI](https://developers.stellar.org/docs/tools-and-sdks#command-line-client) or a wallet SDK:
 
