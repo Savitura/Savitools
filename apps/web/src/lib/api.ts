@@ -7,6 +7,15 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
 
+/**
+ * API origin (without the `/api` suffix) for the few transports that cannot go
+ * through `apiFetch` — currently the Socket.IO stream used by the Monitor
+ * dashboard. Components must import this instead of reading
+ * `process.env.NEXT_PUBLIC_API_URL` or hard-coding a host, so the API origin
+ * stays in one place and the route-contract guard can keep it that way.
+ */
+export const API_ORIGIN = API_URL.replace(/\/api\/?$/, "");
+
 export interface AuthUser {
   id: string;
   email: string;

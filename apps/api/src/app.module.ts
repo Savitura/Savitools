@@ -14,6 +14,7 @@ import { ContractsModule } from "./modules/contracts/contracts.module";
 import { NetworkModule } from "./modules/network/network.module";
 import { StellarTestnetModule } from "./modules/stellar/stellar-testnet.module";
 import { WalletModule } from "./modules/wallet/wallet.module";
+import { SandboxModule } from "./modules/sandbox/sandbox.module";
 import { SimulatorModule } from "./modules/simulator/simulator.module";
 import { WebhookModule } from "./modules/webhook/webhook.module";
 import { ComposerModule } from "./modules/composer/composer.module";
@@ -76,6 +77,8 @@ ThrottlerModule.forRootAsync({
     CommonModule,
     AuthModule,
     StellarTestnetModule,
+    WalletModule,
+    SandboxModule,
     PlaygroundModule,
     WorkspaceModule,
     MonitorModule,
