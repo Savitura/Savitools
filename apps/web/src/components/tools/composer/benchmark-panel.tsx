@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Zap, Play, Loader2, AlertTriangle, CheckCircle2, History, BarChart3, ArrowUpDown } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
 
 interface BenchmarkPanelProps {
   xdr: string;
@@ -26,10 +27,8 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
     setError(null);
 
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-      const res = await fetch(`${API_BASE}/composer/benchmark`, {
+      const data = await apiFetch<any>('/composer/benchmark', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           xdr,
           network,
@@ -38,12 +37,6 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
         }),
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.message || 'Benchmark execution failed');
-      }
-
-      const data = await res.json();
       setResult(data);
       setHistory((prev) => [data, ...prev].slice(0, 5));
     } catch (err: any) {
