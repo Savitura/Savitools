@@ -5,6 +5,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SdkCodeBlock } from '@/components/SdkCodeBlock';
 import { BookOpen, Layers } from 'lucide-react';
 import Link from 'next/link';
+import { apiFetch } from '@/lib/api';
 
 const API_OPTIONS = ['Fluxa', 'CrowdPay'];
 const LANGUAGE_OPTIONS = ['TypeScript', 'Python', 'Go', 'cURL'];
@@ -19,19 +20,17 @@ export default function SdkGeneratorPage() {
     const fetchCode = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('http://localhost:3001/api/v1/sdkgen/generate', {
+        const data = await apiFetch<{ code?: string }>('/sdkgen/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             spec: selectedApi.toLowerCase(),
             language: selectedLang.toLowerCase()
           })
         });
-        const data = await response.json();
         setGeneratedCode(data.code || 'Failed to generate code');
       } catch (error) {
         console.error('Error fetching code:', error);
-        setGeneratedCode('// Error connecting to backend\n// Ensure API is running on port 3001');
+        setGeneratedCode('// Error connecting to backend\n// Ensure the Savitools API is reachable');
       } finally {
         setIsLoading(false);
       }
