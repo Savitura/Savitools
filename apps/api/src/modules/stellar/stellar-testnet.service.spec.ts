@@ -1,6 +1,28 @@
 import { BadRequestException } from '@nestjs/common';
-import { Account, Keypair } from '@stellar/stellar-sdk';
+import {
+  Account,
+  Keypair,
+  MuxedAccount,
+  Networks,
+  StrKey,
+  Transaction,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
 import { StellarTestnetService } from './stellar-testnet.service';
+
+/**
+ * Build an M… address for `account` carrying `id`.
+ *
+ * The SDK has no single "encode muxed address" helper, so this mirrors what
+ * `MuxedAccount` does internally: a MED25519 payload is the 32-byte ed25519
+ * key followed by the big-endian uint64 payment ID.
+ */
+function muxedAddress(account: string, id: string): string {
+  const payload = Buffer.alloc(40);
+  StrKey.decodeEd25519PublicKey(account).copy(payload, 0);
+  payload.writeBigUInt64BE(BigInt(id), 32);
+  return StrKey.encodeMed25519PublicKey(payload);
+}
 
 describe('StellarTestnetService', () => {
   let service: StellarTestnetService;
@@ -88,8 +110,48 @@ describe('StellarTestnetService', () => {
       ).not.toThrow();
     });
 
+    it('returns the plain account for a G… destination', () => {
+      const account = Keypair.random().publicKey();
+
+      expect(service.assertDestination(account)).toEqual({
+        input: account,
+        muxed: false,
+        account,
+        muxedId: null,
+      });
+    });
+
+    it('accepts a muxed destination and reports the underlying account', () => {
+      const account = Keypair.random().publicKey();
+      const muxed = muxedAddress(account, '12345');
+
+      expect(service.assertDestination(muxed)).toEqual({
+        input: muxed,
+        muxed: true,
+        account,
+        muxedId: '12345',
+      });
+    });
+
+    it('rejects an M… address whose checksum does not match', () => {
+      const muxed = muxedAddress(Keypair.random().publicKey(), '1');
+      const corrupted = `${muxed.slice(0, -1)}${muxed.endsWith('A') ? 'B' : 'A'}`;
+
+      expect(() => service.assertDestination(corrupted)).toThrow(
+        `Invalid muxed destination address: ${corrupted}`,
+      );
+    });
+
     it('rejects a short destination', () => {
       expect(() => service.assertDestination('short')).toThrow(
+        'Invalid destination public key',
+      );
+    });
+
+    it('rejects a contract id as a payment destination', () => {
+      const contract = StrKey.encodeContract(Buffer.alloc(32, 7));
+
+      expect(() => service.assertDestination(contract)).toThrow(
         'Invalid destination public key',
       );
     });
@@ -314,6 +376,103 @@ describe('StellarTestnetService', () => {
         .mockResolvedValueOnce(account as never);
 
       await expect(service.loadAccountIfPresent('GTEST')).resolves.toBe(account);
+    });
+  });
+
+  describe('buildPaymentOperation', () => {
+    /**
+     * `Operation.payment`'s declared return type is a union of every operation
+     * class, none of which expose `body()` in the generated typings. Narrowing
+     * through the XDR accessor is the point of these assertions, so read the
+     * arm through a minimal structural type.
+     */
+    const xdrBody = (operation: unknown) =>
+      (
+        operation as {
+          body: () => { value: () => { destination: () => MuxedDestination } };
+        }
+      )
+        .body()
+        .value()
+        .destination();
+
+    type MuxedDestination = {
+      switch: () => { name: string };
+      med25519: () => { ed25519: () => Buffer; id: () => { toString: () => string } };
+      ed25519: () => Buffer;
+    };
+
+    it('keeps a muxed destination in the muxed arm with its payment ID', () => {
+      const account = Keypair.random().publicKey();
+      const muxed = muxedAddress(account, '4294967297');
+
+      const destination = xdrBody(
+        service.buildPaymentOperation({
+          sourceSecret: 'unused',
+          destination: muxed,
+          asset: 'XLM',
+          amount: '10',
+        }),
+      );
+
+      expect(destination.switch().name).toBe('keyTypeMuxedEd25519');
+
+      const med25519 = destination.med25519();
+      expect(StrKey.encodeEd25519PublicKey(med25519.ed25519())).toBe(account);
+      expect(med25519.id().toString()).toBe('4294967297');
+    });
+
+    it('keeps a plain G destination in the ed25519 arm', () => {
+      const account = Keypair.random().publicKey();
+
+      const destination = xdrBody(
+        service.buildPaymentOperation({
+          sourceSecret: 'unused',
+          destination: account,
+          asset: 'XLM',
+          amount: '10',
+        }),
+      );
+
+      expect(destination.switch().name).toBe('keyTypeEd25519');
+      expect(StrKey.encodeEd25519PublicKey(destination.ed25519())).toBe(account);
+    });
+
+    it('survives a full XDR round trip', () => {
+      const source = Keypair.random();
+      const account = Keypair.random().publicKey();
+      const muxed = muxedAddress(account, '7');
+      const builder = new TransactionBuilder(
+        new Account(source.publicKey(), '100'),
+        { fee: '100', networkPassphrase: Networks.TESTNET },
+      ).addOperation(
+        service.buildPaymentOperation({
+          sourceSecret: source.secret(),
+          destination: muxed,
+          asset: 'XLM',
+          amount: '10',
+        }),
+      );
+      const roundTripped = new Transaction(
+        builder.setTimeout(30).build().toXDR(),
+        Networks.TESTNET,
+      );
+
+      // Decoding the envelope hands back the destination as a strkey, so the
+      // payment ID has to survive the encode/decode cycle to come out muxed.
+      const decoded = roundTripped.operations[0] as unknown as {
+        type: string;
+        destination: string;
+        amount: string;
+      };
+      expect(decoded.type).toBe('payment');
+      expect(Number(decoded.amount)).toBe(10);
+      expect(decoded.destination).toBe(muxed);
+      expect(StrKey.isValidMed25519PublicKey(decoded.destination)).toBe(true);
+
+      const muxedAccount = MuxedAccount.fromAddress(decoded.destination, '0');
+      expect(muxedAccount.baseAccount().accountId()).toBe(account);
+      expect(muxedAccount.id()).toBe('7');
     });
   });
 

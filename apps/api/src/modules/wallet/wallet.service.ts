@@ -65,10 +65,19 @@ export class WalletService {
       amount,
     });
 
+    // Decoded after the submission so the validation order (and therefore the
+    // error a caller sees for a bad destination) stays inside submitPayment.
+    const parsed = this.stellar.assertDestination(destination);
+
     return {
       success: true,
       txHash: result.hash,
       destination,
+      // For an M… address, the funds land in the underlying G… account; the
+      // wallet page shows the two halves separately rather than echoing the
+      // muxed string as if it were an account.
+      destinationAccount: parsed.account,
+      muxedId: parsed.muxedId,
       asset: assetString,
       amount,
     };

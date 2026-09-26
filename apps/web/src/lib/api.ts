@@ -1080,6 +1080,10 @@ export interface SandboxPaymentResult {
   feeCharged: number;
   resultCode: string;
   destination: string;
+  /** Underlying G… account a muxed destination pays into. */
+  destinationAccount?: string;
+  /** 64-bit payment ID when `destination` is an M… muxed address. */
+  muxedId?: string | null;
   asset: string;
   amount: string;
 }

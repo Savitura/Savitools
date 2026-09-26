@@ -112,12 +112,20 @@ export class SandboxService {
       memo: dto.memo,
     });
 
+    // Decoded after the submission so the validation order (and therefore the
+    // error a caller sees for a bad destination) stays inside submitPayment.
+    const parsed = this.stellar.assertDestination(dto.toPublicKey);
+
     return {
       success: true,
       txHash: result.hash,
       feeCharged: result.fee_charged,
       resultCode: result.result_codes?.operation_results?.[0] || 'success',
       destination: dto.toPublicKey,
+      // M… destinations move funds into the underlying G… account; the sandbox
+      // receipt renders the account and the payment ID as separate fields.
+      destinationAccount: parsed.account,
+      muxedId: parsed.muxedId,
       asset: dto.asset,
       amount: dto.amount,
     };
