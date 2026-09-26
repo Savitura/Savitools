@@ -110,6 +110,81 @@ describe('AlertEvaluator', () => {
     ).toBe(false);
   });
 
+  it('matches event topic equals', () => {
+    const contractEvent: NormalizedMonitorEvent = {
+      pagingToken: '1',
+      source: 'contract',
+      eventType: 'contract',
+      ledger: 1,
+      occurredAt: new Date().toISOString(),
+      successful: true,
+      transactionHash: 'tx123',
+      payload: {
+        topic: 'transfer',
+      },
+    };
+    expect(
+      evaluator.matches(
+        rule('event_topic_equals', { topic: 'transfer' }),
+        watch,
+        contractEvent,
+      ),
+    ).toBe(true);
+    expect(
+      evaluator.matches(
+        rule('event_topic_equals', { topic: 'transfer' }),
+        watch,
+        contractEvent,
+      ),
+    ).toBe(true);
+    expect(
+      evaluator.matches(
+        rule('event_topic_equals', { topic: 'approve' }),
+        watch,
+        contractEvent,
+      ),
+    ).toBe(false);
+  });
+
+  it('matches failed contract call', () => {
+    const contractEvent: NormalizedMonitorEvent = {
+      pagingToken: '1',
+      source: 'contract',
+      eventType: 'contract',
+      ledger: 1,
+      occurredAt: new Date().toISOString(),
+      successful: false,
+      transactionHash: 'tx456',
+      payload: {
+        topic: 'transfer',
+      },
+    };
+    expect(
+      evaluator.matches(rule('failed_contract_call'), watch, contractEvent),
+    ).toBe(true);
+    expect(
+      evaluator.matches(rule('failed_contract_call'), watch, {
+        ...contractEvent,
+        successful: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores non-contract events for topic and failed rules', () => {
+    const paymentEvent: NormalizedMonitorEvent = {
+      ...payment,
+      source: 'payment',
+      eventType: 'payment',
+      successful: false,
+    };
+    expect(
+      evaluator.matches(rule('event_topic_equals', { topic: 'transfer' }), watch, paymentEvent),
+    ).toBe(false);
+    expect(
+      evaluator.matches(rule('failed_contract_call'), watch, paymentEvent),
+    ).toBe(false);
+  });
+
   const snapshot = {
     publicKey: 'GACCOUNT',
     network: 'testnet',

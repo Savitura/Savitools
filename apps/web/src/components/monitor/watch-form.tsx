@@ -19,6 +19,7 @@ interface DraftRule {
   threshold: string;
   windowMinutes: string;
   channels: NotificationChannel[];
+  topic?: string;
 }
 
 export function WatchForm({
@@ -85,6 +86,9 @@ export function WatchForm({
             ...rule,
             ...(rule.type === 'transaction_count' && windowMinutes
               ? { windowMinutes: Number(windowMinutes) }
+              : {}),
+            ...(rule.type === 'event_topic_equals' && rule.topic
+              ? { topic: rule.topic }
               : {}),
           })),
         }),
@@ -307,10 +311,11 @@ function RuleEditor({
     rule.type === 'amount_received_gte' ||
     rule.type === 'amount_sent_gte';
   const needsAsset = rule.type === 'asset_received';
+  const needsTopic = rule.type === 'event_topic_equals';
   return (
     <div className="space-y-3 rounded-md border border-border bg-background p-3">
       <div className="flex gap-2">
-        <select
+<select
           value={rule.type}
           onChange={(event) =>
             onChange({ ...rule, type: event.target.value as AlertRuleType })
@@ -332,6 +337,12 @@ function RuleEditor({
           {!contract && <option value="balance_below">Balance below</option>}
           {!contract && (
             <option value="transaction_count">Transaction count reaches</option>
+          )}
+          {contract && (
+            <option value="event_topic_equals">Event topic equals</option>
+          )}
+          {contract && (
+            <option value="failed_contract_call">Failed contract call</option>
           )}
         </select>
         <button type="button" onClick={onDelete} aria-label="Remove rule">
@@ -376,6 +387,16 @@ function RuleEditor({
           placeholder="XLM or CODE:ISSUER"
           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
           required
+        />
+      )}
+      {needsTopic && (
+        <input
+          value={rule.topic || ''}
+          onChange={(event) =>
+            onChange({ ...rule, topic: event.target.value })
+          }
+          placeholder="Topic (e.g. transfer)"
+          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
         />
       )}
       <div className="flex flex-wrap gap-3">
