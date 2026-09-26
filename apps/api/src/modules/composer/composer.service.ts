@@ -135,6 +135,31 @@ export const OPERATION_MANIFEST = [
     ],
   },
   {
+    // Asset Control workstation (Savitura/Savitools#81)
+    type: 'set_trustline_flags',
+    label: 'Set Trustline Flags',
+    description: 'Authorize, deauthorize or enable clawback for a single trustline',
+    fields: [
+      { name: 'trustor', label: 'Trustor', type: 'text', required: true, placeholder: 'G…' },
+      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'USDC' },
+      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: true, placeholder: 'G…' },
+      { name: 'flags.authorized', label: 'Authorized', type: 'boolean', required: false, placeholder: 'true / false' },
+      { name: 'flags.authorizedToMaintainLiabilities', label: 'Authorized To Maintain Liabilities', type: 'boolean', required: false, placeholder: 'true / false' },
+      { name: 'flags.clawbackEnabled', label: 'Clawback Enabled', type: 'boolean', required: false, placeholder: 'true / false' },
+    ],
+  },
+  {
+    type: 'clawback',
+    label: 'Clawback',
+    description: 'Claw an issued asset back from a trustline holder',
+    fields: [
+      { name: 'from', label: 'From', type: 'text', required: true, placeholder: 'G…' },
+      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'USDC' },
+      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: true, placeholder: 'G…' },
+      { name: 'amount', label: 'Amount', type: 'number', required: true, placeholder: '10' },
+    ],
+  },
+  {
     type: 'path_payment_strict_send',
     label: 'Path Payment (Strict Send)',
     description: 'Send exact amount; recipient gets at least destMin',
@@ -187,6 +212,21 @@ interface CachedSequence {
 
 function isNativeAssetCode(code: string | undefined): boolean {
   return code === 'native' || code === 'XLM' || !code;
+}
+
+/**
+ * Operation forms send every field as a string, so a checkbox arrives as
+ * "true"/"false" rather than a boolean. `undefined`/"" means "leave this flag
+ * alone" for the partial-flag operations.
+ */
+function toOptionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return String(value).toLowerCase() === 'true';
 }
 
 function resolveAsset(code: string | undefined, issuer?: string): Asset {
@@ -673,6 +713,40 @@ export class ComposerService {
           trustor: dto.trustor,
           assetCode: dto.assetCode,
           authorize: dto.authorize,
+        });
+      case 'set_trustline_flags': {
+        // Savitura/Savitools#81 — the Asset Control workstation builds these.
+        const flags: {
+          authorized?: boolean;
+          authorizedToMaintainLiabilities?: boolean;
+          clawbackEnabled?: boolean;
+        } = {};
+        const authorized = toOptionalBoolean(dto.flags?.authorized);
+        const authorizedToMaintainLiabilities = toOptionalBoolean(
+          dto.flags?.authorizedToMaintainLiabilities,
+        );
+        const clawbackEnabled = toOptionalBoolean(dto.flags?.clawbackEnabled);
+        if (authorized !== undefined) flags.authorized = authorized;
+        if (authorizedToMaintainLiabilities !== undefined) {
+          flags.authorizedToMaintainLiabilities = authorizedToMaintainLiabilities;
+        }
+        if (clawbackEnabled !== undefined) flags.clawbackEnabled = clawbackEnabled;
+        if (Object.keys(flags).length === 0) {
+          throw new BadRequestException(
+            'set_trustline_flags requires at least one of authorized, authorizedToMaintainLiabilities or clawbackEnabled',
+          );
+        }
+        return Operation.setTrustLineFlags({
+          trustor: dto.trustor,
+          asset: resolveAsset(dto.asset.code, dto.asset.issuer),
+          flags,
+        });
+      }
+      case 'clawback':
+        return Operation.clawback({
+          from: dto.from,
+          asset: resolveAsset(dto.asset.code, dto.asset.issuer),
+          amount: dto.amount,
         });
       case 'path_payment_strict_send': {
         const path = ((dto.path as Array<{ code?: string; issuer?: string }> | undefined) || []).map(
