@@ -1,0 +1,651 @@
+{
+  "version": 1,
+  "description": "Generated contract of every versioned Nest route (method, path, auth). Regenerate with UPDATE_API_CONTRACT=1 npm test --workspace @savitools/api -- api-contract",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/connect",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/connect/:provider",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/connect/fluxa",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/connect/fluxa/callback",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/fluxa",
+      "auth": "optional"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/forgot-password",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/passkeys",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/passkeys/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/auth/passkeys/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/passkeys/login",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/passkeys/login/options",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/passkeys/register",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/passkeys/register/options",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/reauthenticate",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/reset-password",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/sessions",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/auth/sessions/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/verify-email",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/composer/benchmark",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/composer/build",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/composer/fee-bump",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/composer/operations",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/composer/sequence",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/composer/sequence/run",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/composer/simulate",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/contracts/:contractId/abi",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/:contractId/abi",
+      "auth": "admin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/:contractId/abi/:functionName/encode",
+      "auth": "admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/contracts/:contractId/info",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/:contractId/invoke",
+      "auth": "admin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/deploy",
+      "auth": "admin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/deploy/wizard",
+      "auth": "admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/contracts/events",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/events/filter",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/events/replay",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/contracts/wasm/upload",
+      "auth": "admin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/federation/link-preview",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/federation/resolve",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/federation/sep",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/federation/toml",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/health",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inspector/:txHash/events",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inspector/account/:publicKey/txs",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/decode-xdr",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inspector/tx/:hash",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inspector/tx/:hash/events",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/inspector/tx/:hash/export",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/metrics",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/search",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/search/export",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/stream",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/watches",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitor/watches",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/monitor/watches/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/watches/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/watches/:id/alerts",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/watches/:id/events",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/webhook",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitor/webhook",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/network/profiles",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/network/profiles",
+      "auth": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/network/profiles/:id",
+      "auth": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/network/profiles/:id",
+      "auth": "public"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/network/profiles/:id/default",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/network/profiles/:id/export",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/network/profiles/:id/select",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/network/profiles/import",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/network/profiles/verify",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/network/status",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/network/status/history",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playground/history",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playground/history/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playground/history/diff",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playground/keys",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/playground/keys",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/playground/keys/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/playground/keys/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/playground/proxy",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/playground/spec/:provider",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sandbox/account/:publicKey",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sandbox/fund",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sandbox/keypair",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sandbox/payment",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sdkgen/generate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulator/estimate",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulator/fee",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulator/orderbook",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulator/orderbook/history",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulator/orderbook/quote",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulator/path-receive",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulator/path-send",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulator/paths",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulator/trades",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/transaction/graph",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/transactions/:hash",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/transactions/replay",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/transactions/replay/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/transactions/replay/history",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/vault/keys",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/vault/keys",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/vault/keys/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/wallet/balances",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/fund",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/generate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/payment",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/webhooks/history",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks/replay/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks/send",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/webhooks/templates",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/webhooks/templates",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workspaces",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workspaces/:tool",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/workspaces/:tool",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/workspaces/composer",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/workspaces/composer/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workspaces/composer/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/workspaces/composer/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/workspaces/composer/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/workspaces/composer/:id/duplicate",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/workspaces/composer/:id/export",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/workspaces/composer/:id/share",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/workspaces/composer/:id/unshare",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/workspaces/composer/import",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics",
+      "auth": "public"
+    }
+  ]
+}
