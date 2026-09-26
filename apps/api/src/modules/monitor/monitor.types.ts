@@ -11,6 +11,8 @@ export const EVENT_ALERT_RULE_TYPES = [
   'asset_received',
   'tx_failed',
   'any_activity',
+  'event_topic_equals',
+  'failed_contract_call',
 ] as const;
 export type EventAlertRuleType = (typeof EVENT_ALERT_RULE_TYPES)[number];
 
@@ -50,6 +52,7 @@ export interface AlertRuleDefinition {
   threshold?: string;
   windowMinutes?: number;
   channels: NotificationChannel[];
+  topic?: string;
 }
 
 /** Latest Horizon view of an account, used to evaluate state-based rules. */

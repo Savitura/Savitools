@@ -46,6 +46,11 @@ export class AlertRuleDto {
   @ArrayNotEmpty()
   @IsIn(NOTIFICATION_CHANNELS, { each: true })
   channels?: NotificationChannel[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  topic?: string;
 }
 
 export class CreateWatchDto {
