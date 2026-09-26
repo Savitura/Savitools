@@ -198,7 +198,50 @@ describe("NetworkService", () => {
     });
   });
 
-  describe("verifyNetworkPassphrase", () => {
+describe("verifyNetworkPassphrase SSRF guard", () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      global.fetch = jest.fn();
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it("rejects loopback IP in verifyNetworkPassphrase", async () => {
+      await expect(
+        service.verifyNetworkPassphrase("http://127.0.0.1", "any"),
+      ).rejects.toThrow(BadRequestException);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects link-local cloud metadata endpoint (169.254.169.254)", async () => {
+      await expect(
+        service.verifyNetworkPassphrase("http://169.254.169.254", "any"),
+      ).rejects.toThrow(BadRequestException);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects private IP range", async () => {
+      await expect(
+        service.verifyNetworkPassphrase("http://10.0.0.1", "any"),
+      ).rejects.toThrow(BadRequestException);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects redirect to an internal host", async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          status: 302,
+          headers: new Headers({ location: "http://127.0.0.1/secret" }),
+        });
+
+      await expect(
+        service.verifyNetworkPassphrase("https://public-horizon.example.com", "any"),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it("returns match true when passphrases match", async () => {
       jest.spyOn(global, "fetch").mockResolvedValueOnce({
         ok: true,
@@ -231,7 +274,6 @@ describe("NetworkService", () => {
       });
     });
   });
-
   describe("pruneRetention", () => {
     it("deletes samples older than 90 days", async () => {
       await service.pruneRetention(new Date("2026-08-31T12:00:00.000Z"));
