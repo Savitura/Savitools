@@ -5,16 +5,12 @@ import {
   BASE_FEE,
   Keypair,
   Memo,
-  Networks,
   Operation,
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { parseDestination, type ParsedDestination } from './address';
-import {
-  resolveStellarEndpoints,
-  StellarNetworkEndpoints,
-} from './stellar-endpoints';
+import { resolveStellarEndpoints } from './stellar-endpoints';
 
 /** Horizon balance shape both the wallet and sandbox pages render. */
 export interface Balance {

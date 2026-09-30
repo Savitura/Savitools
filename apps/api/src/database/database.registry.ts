@@ -12,6 +12,7 @@ import { Watch } from '../modules/monitor/entities/watch.entity';
 import { WatchEvent } from '../modules/monitor/entities/watch-event.entity';
 import { AlertEvent } from '../modules/monitor/entities/alert-event.entity';
 import { MonitorWebhook } from '../modules/monitor/entities/monitor-webhook.entity';
+import { MonitorDigestPreference } from '../modules/monitor/entities/monitor-digest-preference.entity';
 import { TransactionReplay } from '../modules/transaction/entities/transaction-replay.entity';
 import { NetworkSample } from '../modules/network/entities/network-sample.entity';
 import { NetworkProfile } from '../modules/network/entities/network-profile.entity';
@@ -63,6 +64,7 @@ export const ALL_ENTITIES: EntityClass[] = [
   WatchEvent,
   AlertEvent,
   MonitorWebhook,
+  MonitorDigestPreference,
   TransactionReplay,
   NetworkSample,
   NetworkProfile,

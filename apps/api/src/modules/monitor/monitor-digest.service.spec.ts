@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { MonitorDigestService } from './monitor-digest.service';
 import { MonitorDigestPreference } from './entities/monitor-digest-preference.entity';
 import { AlertEvent } from './entities/alert-event.entity';

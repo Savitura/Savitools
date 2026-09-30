@@ -12,7 +12,6 @@ import {
   HttpCode,
   UseGuards,
   BadRequestException,
-  NotFoundException,
   ServiceUnavailableException,
   Logger,
   OnModuleDestroy,

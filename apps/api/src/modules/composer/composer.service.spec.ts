@@ -508,12 +508,7 @@ describe('ComposerService', () => {
 
     it('returns a hash for valid XDR without submitting', async () => {
       const xdr = buildTestXdr();
-      const expectedHash = new (require('@stellar/stellar-sdk').Transaction)(
-        xdr,
-        Networks.TESTNET,
-      )
-        .hash()
-        .toString('hex');
+      const expectedHash = new Transaction(xdr, Networks.TESTNET).hash().toString('hex');
 
       const submitSpy = jest.spyOn(Horizon.Server.prototype, 'submitTransaction');
 

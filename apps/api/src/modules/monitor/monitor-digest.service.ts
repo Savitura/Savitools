@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { In, LessThan, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Resend } from 'resend';
 import { User } from '../auth/entities/user.entity';
 import { AlertEvent } from './entities/alert-event.entity';
