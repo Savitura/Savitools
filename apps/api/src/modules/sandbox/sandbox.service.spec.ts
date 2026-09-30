@@ -1,4 +1,5 @@
 import { SandboxService } from './sandbox.service';
+import { resolveStellarEndpoints } from '../stellar/stellar-endpoints';
 import { BadRequestException } from '@nestjs/common';
 import { Keypair } from '@stellar/stellar-sdk';
 
