@@ -28,6 +28,7 @@ import { StellarTomlModule } from "./modules/stellar-toml/stellar-toml.module";
 import { SequencePlannerModule } from "./modules/sequence-planner/sequence-planner.module";
 import { SorobanRpcModule } from "./modules/soroban-rpc/soroban-rpc.module";
 import { LiquidityPoolsModule } from "./modules/liquidity-pools/liquidity-pools.module";
+import { Sep24DebuggerModule } from "./modules/sep24-debugger/sep24-debugger.module";
 import { DataSource } from "typeorm";
 import { ALL_ENTITIES, ALL_MIGRATIONS } from "./database/database.registry";
 import { validateEnvironment } from "./config/env-validation";
@@ -94,6 +95,7 @@ ThrottlerModule.forRootAsync({
     SequencePlannerModule,
     SorobanRpcModule,
     LiquidityPoolsModule,
+    Sep24DebuggerModule,
   ],
   controllers: [AppController],
   providers: [
