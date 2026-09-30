@@ -64,6 +64,7 @@ export class PathPaymentLabService {
   private readonly logger = new Logger(PathPaymentLabService.name);
 
   constructor(private readonly simulatorService: SimulatorService) {}
+
   async run(dto: PathPaymentLabDto): Promise<PathPaymentLabResult> {
     try {
       return await this.simulate(dto);
