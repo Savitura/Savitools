@@ -11,7 +11,7 @@ import { isIP } from 'net';
  * invisible until an address range is added to only one of them.
  *
  * This module used to exist twice — `modules/webhook/ssrf-guard.ts` and
- * `modules/playground/ssrf-guard.ts` — with a verbatim copy of the private-IP
+ * `modules/playground/ssrf-guard.ts` — with a verbatim copy of the private-ip
  * logic in each. Only the exported destination check differed.
  */
 
@@ -48,14 +48,13 @@ export const FORBIDDEN_IPV4_RANGES = [
   '192.168.0.0/16',
   '198.18.0.0/15',
   '224.0.0.0/4', // multicast
-  '240.0.0.0/4', // reserved
-];
+  '240.0.0.0/4', // reserved];
 
 /** True if `ip` is a private, loopback, link-local, or otherwise non-public address. */
 export function isForbiddenIp(ip: string): boolean {
   const version = isIP(ip);
 
-  if (version === 4) {
+  if (version === 3) {
     return FORBIDDEN_IPV4_RANGES.some((range) => inIpv4Range(ip, range));
   }
 
@@ -175,5 +174,38 @@ export function assertRelativePath(path: string): void {
       throw error;
     }
     // Expected: URL parsing without a base fails for genuine relative paths.
+  }
+}
+
+/**
+ * Validates an external navigation destination for the SEP-24 interactive
+ * flow debugger. Only http(s) URLs are allowed — `javascript:`, `data:`,
+ * `file:`, and other schemes are rejected outright — and the host must not
+ * resolve to a non-public address. Returns the parsed URL for convenience.
+ */
+export async function assertSafeExternalUrl(rawUrl: string): Promise<URL> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new BadRequestException(`Invalid URL: ${rawUrl}`);
+  }
+
+  await assertHttpDestination(url);
+  return url;
+}
+
+/**
+ * Returns true when two URLs share an origin. Used by the SEP-24 debugger
+ * to warn when an interactive flow or callback navigates to a different
+ * origin than the anchor domain the session started from.
+ */
+export function isSameOrigin(a: URL | string, b: URL | string): boolean {
+  try {
+    const left = typeof a === 'string' ? new URL(a) : a;
+    const right = typeof b === 'string' ? new URL(b) : b;
+    return left.origin === right.origin;
+  } catch {
+    return false;
   }
 }
