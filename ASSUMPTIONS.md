@@ -16,6 +16,8 @@ the same thing even as sections are added.
 - [How to add an entry](#how-to-add-an-entry)
 - [Soroban Event Stream Inspector — issue #78](#soroban-event-stream-inspector-issue-78) — entries 1–10
 - [Unified outbound signing contract — issue #204](#unified-outbound-signing-contract-issue-204) — entries 11–15
+- [Path-payment simulation lab — issue #351](#path-payment-simulation-lab-issue-351) — entries 16–22
+- [Multisig signer-weight and threshold simulator — issue #352](#multisig-signer-weight-and-threshold-simulator-issue-352) — entries 23–28
 
 ## How to add an entry
 
@@ -173,3 +175,103 @@ Section for [issue #204](https://github.com/Savitura/Savitools/issues/204)
     (`sha256=8fdd9825...` in `signature.spec.ts` and
     `webhook-signature.test.ts`), so a divergence fails one of the two suites
     rather than surfacing as a signature that only the UI believes.
+
+## Path-payment simulation lab (issue #351)
+
+Section for [issue #351](https://github.com/Savitura/Savitools/issues/351).
+
+16. **The lab prices `destinationMin` and `sendMax` against a simulated move; it does not
+    fetch a live quote for a specific transaction.** `/simulator/path-payment-lab`
+    reads the same Horizon route table as the existing strict-send and strict-receive
+    lookups (`SimulatorService.simulateStrictSend` / `simulateStrictReceive`, reused by
+    `PathPaymentLabService`) and then applies the tolerance maths locally
+    (`apps/api/src/modules/simulator/slippage-lab.ts`). A path payment's tolerance is a
+    bound on the transaction, not on a quote, so the bound plus the route is the whole
+    question; nothing in the SDK resolves a tolerance to a promise of an amount at a
+    future ledger.
+
+17. **The strict-receive `sendMax` is `ceil(source × (1 + s))`.** This is the Stellar
+    definition: in a strict-receive payment the recipient's amount is exact and the
+    sender's cost is bounded by the cap. `POST /simulator/estimate` computes
+    `srcAmt / (1 - s)` for the same field
+    (`apps/api/src/modules/simulator/simulator.service.ts`, `estimateSlippage`), which
+    over-provisions the cap; the lab deliberately does not reuse that formula. The
+    divergence is left in place rather than silently changing a shipped endpoint's
+    numbers, and the correct formula is documented at
+    `docs/api-reference.md` under `/simulator/path-payment-lab`.
+
+18. **`headroom` is signed so positive always means "the payment clears", which makes the
+    two directions subtract differently.** A `destinationMin` is a floor the fill must
+    stay above, so its slack is `worstCase − guarantee`; a `sendMax` is a ceiling the
+    fill must stay below, so its slack is `guarantee − worstCase`. Reporting one
+    direction with the other's sign would report a 0.1% tolerance against a 2% move as a
+    comfortable pass. Pinned by `apps/api/src/modules/simulator/slippage-lab.spec.ts`.
+
+19. **A verdict of `exact` is deliberately not a pass.** When the tolerance and the
+    adverse move produce the same amount the headroom is zero, and the payment clears
+    only if the rate does not move by another stroop. Reporting it as `pass` would let a
+    caller ship a transaction with no margin, so it has its own verdict
+    (`SlippageVerdict` in `slippage-lab.ts`).
+
+20. **Tolerances below 0.01% are rejected rather than rounded.** The percentage is
+    carried internally as hundredths of a percent (`percentToBps`), and a tolerance
+    finer than that collapses to zero basis points — which means "no tolerance at all"
+    while looking like 0.001%. `MIN_SLIPPAGE_PERCENT` in
+    `apps/api/src/modules/simulator/dto/path-payment-lab.dto.ts` makes the floor explicit
+    at the API boundary, so the client is told rather than silently misled.
+
+21. **The lab response is not cached.** A run is a pure function of the live route table
+    plus the caller's tolerances. Any cached answer would describe a route table that
+    has since moved, which is the one thing a slippage comparison must not do. There is
+    no Redis entry for `PathPaymentLabService`, unlike `OrderbookService`.
+
+22. **An unreadable amount from Horizon is a 400, not a 500.** The request `amount` is
+    validated by the DTO, but the amounts that come back in the route records are not,
+    so `parseLabAmount` in `slippage-lab.ts` is the only thing that can catch a
+    malformed upstream amount. `PathPaymentLabService.translate` maps that `RangeError`
+    to a `BadRequestException`, because reporting it as a server fault would tell the
+    caller their own request was malformed when the upstream route table was.
+
+## Multisig signer-weight and threshold simulator (issue #352)
+
+Section for [issue #352](https://github.com/Savitura/Savitools/issues/352).
+
+23. **The simulator is a pure function of the request body and reads no account state.**
+    `MultisigService.simulate` touches neither Horizon nor Postgres: an account is fully
+    described by its signer list and three thresholds, so there is nothing to look up. A
+    consequence is that a simulation cannot confirm that the described signers are
+    really on the account — the UI says so explicitly rather than implying otherwise.
+
+24. **`minimumSignersNeeded` is minimal by count, then by tightest fit.** It is a 0/1
+    knapsack over reachable weights (`solveMinimumSigners` in
+    `apps/api/src/modules/multisig/multisig-weights.ts`) rather than a descending greedy
+    pass. Greedy is already minimal by count — the k largest weights sum to the maximum
+    any k signers can reach — but it returns whichever minimal combination it hits
+    first, so it can commit more weight than the quorum needs. The search is bounded at
+    255 per signer and 21 signers, so exactness costs a few thousand cells. `null` and
+    `[]` are deliberately different answers: unreachable versus already satisfied.
+
+25. **`indispensable`/`redundant` describe the configured signer set, not the collected
+    signatures.** They answer "what happens if this key is removed", which is what an
+    operator designing a quorum needs. Who still has to sign is answered separately by
+    `minimumSignersNeeded`, which depends on which signatures are in hand. Conflating
+    the two would report a signer as indispensable because nobody has signed yet.
+
+26. **`MAX_SIGNERS` is 21, one more than SEP-0023's 20.** SEP-0023 allows 20 additional
+    signers plus the master key, and a request has to be able to describe the master key
+    too, so the accepted list is one longer than the protocol's cap on *additional*
+    signers. The number is exported from `multisig-weights.ts` and published by
+    `GET /multisig/limits` so the two cannot drift.
+
+27. **A required signer is rejected if it carries weight.** A master-weight-0 required
+    signer is an account-existence guard, not a voting signer, so
+    `simulateMultisig` throws rather than quietly coercing the weight to 0 — a caller who
+    asks for both has a configuration that does not exist, and telling them so is the
+    point of a simulator.
+
+28. **Time bounds accept unix seconds *and* ISO 8601, and the numeric branch is anchored
+    before the date branch.** Horizon reports transaction time bounds in unix seconds
+    while operators read them as timestamps, so `parseTimeBound` accepts both. The order
+    matters: `Date.parse('-5')` yields a real instant in Node, so without anchoring the
+    numeric branch first a negative timestamp would pass validation as a date. Covered by
+    `apps/api/src/modules/multisig/multisig.service.spec.ts`.

@@ -31,8 +31,11 @@ import { join, relative } from 'path';
 import {
   apiFetch,
   fetchWebhookHistory,
+  getMultisigLimits,
   refreshSession,
+  runPathPaymentLab,
   sendWebhook,
+  simulateMultisig,
 } from '@/lib/api';
 import { buildTransaction, fetchOperations } from '@/lib/composer-api';
 
@@ -385,10 +388,17 @@ function serverRouteKeys(): Set<string> {
  *   has no alert re-send endpoint, so the "Re-send" button cannot work yet.
  * - `GET /api/v1/shared/composer/:token` — `fetchSharedComposerWorkspace` has no
  *   callers and there is no shared-workspace controller.
+ * - `POST /api/v1/composer/fee-bump/inspect` — `inspectFeeBump` in
+ *   `composer-api.ts` and the Composer fee-bump panel both call it, but
+ *   `ComposerService` has no matching method and `ComposerController` exposes no
+ *   route, so the panel's "Inspect" action cannot work. Re-registering the route
+ *   without the service method behind it is not possible; the wrapper is pinned
+ *   here until that method lands.
  */
 const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
   'GET /api/v1/shared/composer/:param',
+  'POST /api/v1/composer/fee-bump/inspect',
 ];
 
 interface SmokeContract {
@@ -456,6 +466,45 @@ const SMOKE_CONTRACTS: readonly SmokeContract[] = [
     invoke: () => apiFetch<unknown>('/playground/history'),
     method: 'GET',
     path: '/v1/playground/history',
+  },
+  {
+    flow: 'Path-payment slippage lab',
+    wrapper: 'runPathPaymentLab() in lib/api.ts',
+    invoke: () =>
+      runPathPaymentLab({
+        direction: 'strict_send',
+        sourceAsset: 'XLM',
+        destinationAsset: 'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+        amount: '100',
+        slippageScenarios: [0.5, 2],
+        adverseMovePercent: 1,
+      }),
+    method: 'POST',
+    path: '/v1/simulator/path-payment-lab',
+  },
+  {
+    flow: 'Multisig limits',
+    wrapper: 'getMultisigLimits() in lib/api.ts',
+    invoke: () => getMultisigLimits(),
+    method: 'GET',
+    path: '/v1/multisig/limits',
+  },
+  {
+    flow: 'Multisig simulation',
+    wrapper: 'simulateMultisig() in lib/api.ts',
+    invoke: () =>
+      simulateMultisig({
+        threshold: 2,
+        signers: [
+          {
+            key: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+            weight: 1,
+            signed: true,
+          },
+        ],
+      }),
+    method: 'POST',
+    path: '/v1/multisig/simulate',
   },
 ];
 

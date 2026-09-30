@@ -256,6 +256,143 @@ export const toolDocs: ToolDocs[] = [
     ],
   },
   {
+    slug: 'path-payment-lab',
+    name: 'Slippage Lab',
+    href: '/simulator/path-payment-lab',
+    tagline: 'Price several slippage tolerances against one adverse rate move and see which would survive it.',
+    overview: [
+      'A path payment does not lock a rate. Your transaction carries a tolerance — destinationMin for strict send, sendMax for strict receive — and the payment fails if the live route cannot fill inside it. The Slippage Lab takes one asset pair, one amount, and up to ten tolerances, then prices every one of them against a single simulated adverse rate move.',
+      'That turns “how much slippage is safe?” from a guess into a table: each row shows the value you would submit, what the route delivers once the move happens, how much headroom is left, and whether the payment clears. The narrowest tolerance that survives is called out as the recommendation, and the lab tells you when every tolerance you compared is too tight.',
+      'All arithmetic runs on exact stroop integers and rounds the way the network rounds, so a tolerance the lab reports is always one the network will accept.',
+    ],
+    prerequisites: [
+      'The source and destination assets, as “XLM” or “CODE:ISSUER”.',
+      'An amount with at most 7 decimal places.',
+      'Network access to Horizon, which supplies the live route table.',
+    ],
+    setup: [
+      'Open the Slippage Lab from the home page or go directly to /simulator/path-payment-lab.',
+      'Pick strict send if you are fixing the amount leaving your account, or strict receive if you are fixing the amount arriving.',
+    ],
+    usage: [
+      {
+        title: 'Run a comparison',
+        steps: [
+          'Choose the network, the direction, the two assets and the amount, then press “Run the lab”.',
+          'Each tolerance row shows the destinationMin or sendMax to submit, the amount at the simulated move, the headroom, and whether it clears.',
+          'Read the summary below the table: the narrowest tolerance that survives the move, and how much unused headroom it leaves.',
+          'If every row says it would fail, widen a tolerance or wait for the route to recover — as written, the payment would not land.',
+        ],
+      },
+      {
+        title: 'Stress a tolerance',
+        steps: [
+          'Set the adverse rate move to the worst deterioration you are willing to accept, for example 1 or 2 percent.',
+          'Compare tolerances that bracket it, such as 0.5 and 5 percent.',
+          'Anything narrower than the move fails; the narrowest row above the move is your recommendation.',
+        ],
+      },
+      {
+        title: 'Price a non-best route',
+        steps: [
+          'Run once to discover how many routes Horizon returned for the pair.',
+          'Switch the Route selector to a higher index to simulate a worse route.',
+          'The dispersion figure shows how far that route already sits below the best one before any move is applied.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: 'Every tolerance would fail',
+        cause: 'The adverse rate move you set is wider than every tolerance compared.',
+        fix: 'Widen a tolerance past the move, or reduce the move to the deterioration you actually expect before the transaction lands.',
+      },
+      {
+        issue: 'A row reads “exactly at the limit”',
+        cause: 'The tolerance and the adverse move landed on the same amount, so the headroom is exactly zero.',
+        fix: 'Treat it as a failure. It clears only if the rate does not move by another stroop, which is not something to rely on.',
+      },
+      {
+        issue: '400 routeIndex is out of range',
+        cause: 'The route selector points past the routes Horizon returned for that pair and amount.',
+        fix: 'Run the lab once without changing the selector to see how many routes exist, then pick one of those.',
+      },
+      {
+        issue: '400 No path found',
+        cause: 'There is no order-book or liquidity-pool route connecting the two assets at that amount.',
+        fix: 'Try a different pair, or route through a liquid asset such as XLM or USDC by splitting the payment.',
+      },
+    ],
+  },
+  {
+    slug: 'multisig',
+    name: 'Multisig Simulator',
+    href: '/multisig',
+    tagline: 'Check whether the signatures collected so far clear the threshold, and name the signers still outstanding.',
+    overview: [
+      'A Stellar multisig is not “2 of 3 signers” — it is any subset of signers whose weights total at least the threshold. The Multisig Simulator makes that concrete. Enter the account’s signers and weights, tick the signatures you already hold, and see whether the operation is authorised, which of the low/medium/high weight classes are cleared, and exactly which signers still have to sign.',
+      'It also reports the risks an operator would otherwise only discover on-chain: a threshold no set of signatures can reach, one signer whose weight alone clears the quorum, a configuration where every signer is needed, an outstanding required signer, and signers that could be dropped without weakening the account.',
+      'The simulation is a pure function of what you type. Nothing is fetched from an account and nothing is submitted, so it is safe to try configurations that do not exist.',
+    ],
+    prerequisites: [
+      'The signer public keys and weights from the account’s `signers` list.',
+      'The account’s thresholds — the medium one is what gates payments and path payments.',
+      'Which signatures you have collected. Optional — leave every box unticked to plan an operation from scratch.',
+    ],
+    setup: [
+      'Open the Multisig Simulator from the home page or go directly to /multisig.',
+      'Leave Low and High threshold blank to let them default to the medium threshold, which is what Stellar itself does.',
+    ],
+    usage: [
+      {
+        title: 'Check a collected signature set',
+        steps: [
+          'Add each signer with its weight, and tick Signed for the signatures you hold.',
+          'Press “Simulate”.',
+          'Read the verdict: whether the operation is authorised, the weight still missing, and the smallest set of outstanding signers that would close the gap.',
+          'Check the weight classes to see whether the account can also submit trustlines, offers, settings, or clawbacks.',
+        ],
+      },
+      {
+        title: 'Design a quorum',
+        steps: [
+          'Leave every Signed box unticked to ask who would need to sign.',
+          'Use the findings to spot a single signer holding control, or a configuration where every signer is required.',
+          'Lower a weight and re-run to see which signers become droppable without dropping the account below the threshold.',
+        ],
+      },
+      {
+        title: 'Handle a required signer',
+        steps: [
+          'Tick Required for a master-weight-0 signer and leave its weight at 0.',
+          'The verdict stays “not authorised” until that signer signs, however much weight the others have collected.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: 'Total weight is below the threshold',
+        cause: 'The threshold exceeds the sum of every signer weight, so no combination of signatures can ever authorise the operation.',
+        fix: 'Lower the threshold or add weight. This is a critical finding, not a rounding issue.',
+      },
+      {
+        issue: 'A required signer must have weight 0',
+        cause: 'A master-weight-0 required signer is an account-existence guard, not a voting signer.',
+        fix: 'Set its weight to 0 and tick Required. Its signature is still required; it just contributes no weight.',
+      },
+      {
+        issue: 'The same key appears twice',
+        cause: 'The same public key was entered more than once.',
+        fix: 'Stellar counts each key once, so the simulation reports the duplicate rather than double-counting it silently. Remove the duplicate.',
+      },
+      {
+        issue: '400 Public key is not a Stellar account id',
+        cause: 'A signer field contains something other than a G… account id.',
+        fix: 'Use the exact account id from the account’s signer list. Contract addresses (C…) are not signers.',
+      },
+    ],
+  },
+  {
     slug: 'webhooks',
     name: 'Webhook Tester',
     href: '/webhooks',

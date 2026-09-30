@@ -72,6 +72,20 @@ export const tools = [
     status: "MVP" as const,
   },
   {
+    href: "/simulator/path-payment-lab",
+    label: "Slippage Lab",
+    description:
+      "Price several slippage tolerances against one adverse rate move and see which would survive it.",
+    status: "MVP" as const,
+  },
+  {
+    href: "/multisig",
+    label: "Multisig Simulator",
+    description:
+      "Check whether collected signatures clear the threshold, and name the signers still outstanding.",
+    status: "MVP" as const,
+  },
+  {
     href: "/inspector/graph",
     label: "Account Graph",
     description:

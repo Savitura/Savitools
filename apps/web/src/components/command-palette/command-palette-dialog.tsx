@@ -25,9 +25,11 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  Scale,
   Sliders,
   Sparkles,
   ToggleLeft,
+  Users,
   X,
   Zap,
 } from 'lucide-react';
@@ -54,6 +56,10 @@ function getToolIcon(href: string) {
       return ArrowRightLeft;
     case '/simulator/orderbook':
       return Activity;
+    case '/simulator/path-payment-lab':
+      return Scale;
+    case '/multisig':
+      return Users;
     case '/inspector/federation':
       return ShieldCheck;
     case '/inspector/graph':
