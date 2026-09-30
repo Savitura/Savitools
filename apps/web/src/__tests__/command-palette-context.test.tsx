@@ -10,6 +10,10 @@
  * This suite is the regression proof for the three defects in #244: it renders
  * React (jsdom, not node), it lives in a `.tsx` file (testMatch must collect it)
  * and it resolves `@/…` (moduleNameMapper).
+ *
+ * It also guards the StrKey laboratory's discoverability requirement: the tool
+ * must be reachable from the command palette, so the palette's catalogue
+ * integration is exercised here alongside the state machine.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
@@ -19,6 +23,7 @@ import {
   useCommandPalette,
 } from '@/components/command-palette/command-palette-context';
 import { USER_PREFERENCES_STORAGE_KEY } from '@/lib/preferences';
+import { TOOLS } from '@/lib/tools';
 
 /** Exposes the context state machine as observable DOM. */
 function PaletteProbe() {
@@ -143,6 +148,14 @@ describe('CommandPaletteProvider', () => {
 
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(runAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes the StrKey laboratory through the tools catalogue', () => {
+    const strKeyTool = TOOLS.find((tool) => tool.slug === 'strkey');
+
+    expect(strKeyTool).toBeDefined();
+    expect(strKeyTool?.name).toMatch(/strkey/i);
+    expect(strKeyTool?.href).toBe('/tools/strkey');
   });
 
   it('does not hijack the native copy shortcut while text is selected', () => {

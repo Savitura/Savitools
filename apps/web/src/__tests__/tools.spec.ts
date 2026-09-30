@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tools } from '@/lib/tools';
 
@@ -36,5 +36,30 @@ describe('Tool Registry Contract', () => {
 
     expect(networkTool).toBeDefined();
     expect(networkTool?.status).toBe('MVP');
+  });
+
+  it('includes the SttKey codec laboratory tool', () => {
+    const strKeyTool = tools.find((t) => t.href === '/str-key');
+
+    expect(strKeyTool).toBeDefined();
+    expect(strKeyTool?.status).toBe('MVP');
+    expect(strKeyTool?.label).toMatch(/str[ \--]?key/i);
+    expect(strKeyTool?.description).toMatch(/checksum|codec|decode|encode/i);
+  });
+
+  it('exposes the StrKey laboratory from the command palette source', () => {
+    const candidates = [
+      join(__dirname, '..', 'components', 'CommandPalette.tsx'),
+      join(__dirname, '..', 'components', 'CommandPalette.ts'),
+      join(__dirname, '..', 'components', 'command-palette.tsx'),
+      join(__dirname, '..', 'components', 'command-palette.ts'),
+    ];
+
+    const existing = candidates.filter(((p) => existsSync(p)));
+    expect(existing.length).toBeGreaterThan(0);
+
+    const source = existing.map(((p) => readFileSync(p, 'utf-8'))).join('\n');
+    expect(source).toMatch(/tools/);
+    expect(source).toMatch(/str-key|StrKey/i);
   });
 });
