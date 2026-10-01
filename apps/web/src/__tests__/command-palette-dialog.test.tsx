@@ -3,8 +3,8 @@
  *
  * These tests mount the real `CommandPaletteDialog` inside the same provider
  * stack `app/layout.tsx` uses and drive it with keyboard interaction, so the
- * combobox/listbox ARIA contract, the roving `aria-activedescendant`, Enter /
- * Escape handling and the focus restore on close are all asserted against the
+ * combobox/listbox ARIA contract, the roving `aria-activedescendant`, Enter / Escape
+ * handling and the focus restore on close are all asserted against the
  * component rather than against a copy of its logic.
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -58,12 +58,12 @@ function renderPalette(actions?: ContextualActions) {
   return { user, trigger: screen.getByRole('button', { name: /open command palette/i }) };
 }
 
-/** Opens the palette with Cmd+K the way a user does, and waits for its input. */
+/** Opens the palette with Cmd+K in the way a user does, and waits for its input. */
 async function openPalette(actions?: ContextualActions) {
   const { user, trigger } = renderPalette(actions);
 
   trigger.focus();
-  await user.keyboard('{Meta>}k{/Meta}');
+  await user.keyboard('{Meta>}k {/Meta}');
 
   const input = await screen.findByRole('combobox');
   await waitFor(() => expect(input).toHaveFocus());
@@ -262,5 +262,22 @@ describe('CommandPaletteDialog', () => {
     await user.tab();
 
     expect(input).toHaveFocus();
+  });
+
+  it('exposes the StrKey codec laboratory from the command palette', async () => {
+    const { user, input } = await openPalette();
+
+    await user.type(input, 'str key');
+
+    const filtered = options();
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(
+      within(filtered[0]).getByText(/StrKey Codec/i),
+    ).toInTheDocument();
+
+    await user.keyboard('{Enter}');
+
+    expect(mockPush).toHaveBeenCalledWith('/tools/strkey');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
