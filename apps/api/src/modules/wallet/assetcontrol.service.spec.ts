@@ -333,7 +333,7 @@ describe('AssetControlService', () => {
       expect(tx.source).toBe(ISSUER);
       expect(tx.signatures).toHaveLength(0);
       expect(tx.operations[0]).toMatchObject({
-        type: 'setTrustlineFlags',
+        type: 'setTrustLineFlags',
         trustor: HOLDER_A,
         flags: { authorized: false },
       });
@@ -349,7 +349,7 @@ describe('AssetControlService', () => {
 
       const tx = decode(result.xdr);
       expect(tx.operations[0]).toMatchObject({
-        type: 'setTrustlineFlags',
+        type: 'setTrustLineFlags',
         trustor: HOLDER_A,
         flags: {
           authorized: true,
@@ -369,7 +369,7 @@ describe('AssetControlService', () => {
         authorized: true,
       });
 
-      expect(decode(result.xdr).operations[0].type).toBe('setTrustlineFlags');
+      expect(decode(result.xdr).operations[0].type).toBe('setTrustLineFlags');
     });
   });
 

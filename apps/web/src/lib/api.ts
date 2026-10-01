@@ -623,10 +623,8 @@ export interface NetworkProfileInput {
 export type NetworkProfileExport = NetworkProfileInput;
 
 export interface NetworkPassphraseVerificationResult {
-  horizonUrl: string;
-  networkPassphrase: string;
-  expectedPassphrase?: string;
   match: boolean;
+  actualPassphrase: string;
 }
 
 export async function listNetworkProfiles() {
@@ -1052,7 +1050,7 @@ export interface WebhookHistoryEntry {
   statusCode?: number | null;
   responseStatus?: number | null;
   responseHeaders: Record<string, string>;
-  responseBody: any;
+  responseBody: string;
   latencyMs: number;
   timestamp: number;
   error?: string;
@@ -1109,18 +1107,6 @@ export async function replayWebhook(id: string) {
 
 /* ─── Wallet ─────────────────────────────────────────────────────────────── */
 
-export interface GenerateKeypairResult {
-  publicKey: string;
-  secretKey: string;
-}
-
-export interface FundResult {
-  publicKey: string;
-  funded: boolean;
-  txHash: string | null;
-  startingBalance: string;
-}
-
 export interface Balance {
   assetType: string;
   assetCode: string | null;
@@ -1129,49 +1115,6 @@ export interface Balance {
   limit?: string;
 }
 
-export interface BalancesResult {
-  publicKey: string;
-  balances: Balance[];
-}
-
-export interface SendPaymentResult {
-  success: boolean;
-  txHash: string;
-  destination: string;
-  asset: string;
-  amount: string;
-}
-
-export async function generateKeypair() {
-  return apiFetch<GenerateKeypairResult>("/wallet/generate", {
-    method: "POST",
-  });
-}
-
-export async function fundFromFriendbot(publicKey: string) {
-  return apiFetch<FundResult>("/wallet/fund", {
-    method: "POST",
-    body: JSON.stringify({ publicKey }),
-  });
-}
-
-export async function getBalances(publicKey: string) {
-  return apiFetch<BalancesResult>(
-    `/wallet/balances?publicKey=${encodeURIComponent(publicKey)}`,
-  );
-}
-
-export async function sendPayment(
-  sourceSecret: string,
-  destination: string,
-  asset: string,
-  amount: string,
-) {
-  return apiFetch<SendPaymentResult>("/wallet/payment", {
-    method: "POST",
-    body: JSON.stringify({ sourceSecret, destination, asset, amount }),
-  });
-}
 
 /* ─── Sandbox ─────────────────────────────────────────────────────────────── */
 
@@ -1190,6 +1133,7 @@ export interface SandboxAccountDetails {
     authRevocable: boolean;
     authImmutable: boolean;
   };
+  network?: string;
 }
 
 export interface SandboxFundResult {
@@ -1198,12 +1142,22 @@ export interface SandboxFundResult {
   txHash: string | null;
   confirmationStatus: string;
   startingBalance: string;
+  network?: string;
+}
+
+export interface SandboxResetResult {
+  publicKey: string;
+  reset: boolean;
+  network: string;
+  startingBalance: string;
+  txHash: string | null;
+  message: string;
 }
 
 export interface SandboxPaymentResult {
   success: boolean;
   txHash: string;
-  feeCharged: number;
+  feeCharged: string; // Fixed: was number, server returns string
   resultCode: string;
   destination: string;
   /** Underlying G… account a muxed destination pays into. */
@@ -1212,18 +1166,33 @@ export interface SandboxPaymentResult {
   muxedId?: string | null;
   asset: string;
   amount: string;
+  network?: string;
 }
 
-export async function sandboxFund(publicKey: string) {
+export async function sandboxGenerateKeypair(network: string = 'testnet') {
+  return apiFetch<{ publicKey: string; secretKey: string; network: string }>(
+    `/sandbox/keypair?network=${encodeURIComponent(network)}`,
+    { method: "POST" },
+  );
+}
+
+export async function sandboxFund(publicKey: string, network: string = 'testnet') {
   return apiFetch<SandboxFundResult>("/sandbox/fund", {
     method: "POST",
-    body: JSON.stringify({ publicKey }),
+    body: JSON.stringify({ publicKey, network }),
   });
 }
 
-export async function sandboxGetAccount(publicKey: string) {
+export async function sandboxResetAccount(publicKey: string, network: string = 'testnet') {
+  return apiFetch<SandboxResetResult>("/sandbox/reset", {
+    method: "POST",
+    body: JSON.stringify({ publicKey, network }),
+  });
+}
+
+export async function sandboxGetAccount(publicKey: string, network: string = 'testnet') {
   return apiFetch<SandboxAccountDetails>(
-    `/sandbox/account/${encodeURIComponent(publicKey)}`,
+    `/sandbox/account/${encodeURIComponent(publicKey)}?network=${encodeURIComponent(network)}`,
   );
 }
 
@@ -1233,10 +1202,11 @@ export async function sandboxSendPayment(
   asset: string,
   amount: string,
   memo?: string,
+  network: string = 'testnet',
 ) {
   return apiFetch<SandboxPaymentResult>("/sandbox/payment", {
     method: "POST",
-    body: JSON.stringify({ fromSecret, toPublicKey, asset, amount, memo }),
+    body: JSON.stringify({ fromSecret, toPublicKey, asset, amount, memo, network }),
   });
 }
 
@@ -1328,6 +1298,204 @@ export async function simulateFee(operations: number, network: string) {
   return apiFetch<SimulateFeeResult>(
     `/simulator/fee?operations=${operations}&network=${network}`,
   );
+}
+
+/* ─── Path-payment simulation lab (Savitura/Savitools#351) ──────────────── */
+
+export type SlippageDirection = "strict_send" | "strict_receive";
+
+export type SlippageVerdict = "pass" | "fail" | "exact";
+
+/** Mirrors `apps/api/src/modules/simulator/slippage-lab.ts`. */
+export interface SlippageScenarioOutcome {
+  /** Tolerance this row prices, as a percentage. */
+  slippagePercent: number;
+  /** `destinationMin` (strict send) or `sendMax` (strict receive), to submit. */
+  guarantee: string;
+  /** The variable leg once the simulated adverse move is applied. */
+  adverseAmount: string;
+  /** Positive when the tolerance clears the move, negative when it fails. */
+  headroom: string;
+  headroomPercent: number;
+  /** The adverse move this tolerance absorbs, as a percentage. */
+  tolerableMovePercent: number;
+  verdict: SlippageVerdict;
+}
+
+export interface SlippageComparison {
+  direction: SlippageDirection;
+  guaranteeField: "destinationMin" | "sendMax";
+  fixedAmount: string;
+  quotedVariableAmount: string;
+  adverseMovePercent: number;
+  adverseVariableAmount: string;
+  scenarios: SlippageScenarioOutcome[];
+  tightestSlippagePercent: number;
+  widestSlippagePercent: number;
+  recommendedSlippagePercent: number | null;
+  recommendedHeadroomPercent: number | null;
+  exceededByEveryScenario: boolean;
+  routeDispersionPercent: number | null;
+}
+
+export interface PathPaymentLabHop {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+}
+
+export interface PathPaymentLabRoute {
+  index: number;
+  pathLength: number;
+  sourceAmount: string;
+  destinationAmount: string;
+  exchangeRate: string;
+  fixedAmount: string;
+  variableAmount: string;
+  hops: PathPaymentLabHop[];
+}
+
+export interface PathPaymentLabResult {
+  network: NetworkChoice;
+  direction: SlippageDirection;
+  sourceAsset: string;
+  destinationAsset: string;
+  routeCount: number;
+  route: PathPaymentLabRoute;
+  comparison: SlippageComparison;
+}
+
+export interface PathPaymentLabParams {
+  direction: Direction;
+  sourceAsset: string;
+  destinationAsset: string;
+  amount: string;
+  /** Tolerances to compare, as percentages. */
+  slippageScenarios: number[];
+  /** Adverse rate move to simulate, as a percentage. */
+  adverseMovePercent?: number;
+  /** Which route to simulate, zero-based. Defaults to the best one. */
+  routeIndex?: number;
+  network?: NetworkChoice;
+}
+
+export async function runPathPaymentLab(
+  params: PathPaymentLabParams,
+): Promise<PathPaymentLabResult> {
+  return apiFetch<PathPaymentLabResult>("/simulator/path-payment-lab", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+/* ─── Multisig signer-weight and threshold simulator (#352) ─────────────── */
+
+export type MultisigRiskCode =
+  | "THRESHOLD_UNREACHABLE"
+  | "THRESHOLD_ZERO"
+  | "SINGLE_SIGNER_CONTROLS"
+  | "REQUIRES_EVERY_SIGNER"
+  | "REQUIRED_SIGNER_MISSING"
+  | "REQUIRED_SIGNER_UNSIGNED"
+  | "ZERO_WEIGHT_SIGNERS"
+  | "REDUNDANT_SIGNER"
+  | "QUORUM_SINGLE_POINT_OF_FAILURE"
+  | "DUPLICATE_SIGNER"
+  | "THRESHOLD_ABOVE_TOTAL_WEIGHT";
+
+export type MultisigRiskSeverity = "critical" | "warning" | "info";
+
+export type OperationThresholdKind = "low" | "medium" | "high";
+
+export interface MultisigRisk {
+  code: MultisigRiskCode;
+  severity: MultisigRiskSeverity;
+  message: string;
+  signers?: string[];
+}
+
+export interface MultisigSignerOutcome {
+  key: string;
+  weight: number;
+  signed: boolean;
+  required: boolean;
+  shareOfTotalPercent: number;
+  shareOfThresholdPercent: number;
+  controlsAccount: boolean;
+  indispensable: boolean;
+  redundant: boolean;
+}
+
+export interface MultisigThresholdOutcome {
+  kind: OperationThresholdKind;
+  requiredWeight: number;
+  collectedWeight: number;
+  deficit: number;
+  cleared: boolean;
+}
+
+export interface MultisigSimulationResult {
+  threshold: number;
+  lowThreshold: number;
+  mediumThreshold: number;
+  highThreshold: number;
+  totalWeight: number;
+  signedWeight: number;
+  deficit: number;
+  surplus: number;
+  progressPercent: number;
+  satisfied: boolean;
+  canSubmit: boolean;
+  signers: MultisigSignerOutcome[];
+  operationThresholds: MultisigThresholdOutcome[];
+  outstandingRequiredSigners: string[];
+  minimumSignersNeeded: string[] | null;
+  minimumSetWeight: number;
+  duplicateSigners: string[];
+  risks: MultisigRisk[];
+  timeBounds: {
+    minTime: number | null;
+    maxTime: number | null;
+    notYetActive: boolean;
+    expired: boolean;
+    invalid: boolean;
+  };
+}
+
+export interface MultisigLimits {
+  maxSigners: number;
+  maxSignerWeight: number;
+  maxThreshold: number;
+  operationThresholds: { kind: OperationThresholdKind; gates: string }[];
+}
+
+export interface MultisigSignerInput {
+  key: string;
+  weight: number;
+  signed: boolean;
+  required?: boolean;
+}
+
+export interface MultisigSimulateParams {
+  threshold: number;
+  signers: MultisigSignerInput[];
+  lowThreshold?: number;
+  highThreshold?: number;
+  minTime?: string;
+  maxTime?: string;
+}
+
+export async function getMultisigLimits(): Promise<MultisigLimits> {
+  return apiFetch<MultisigLimits>("/multisig/limits");
+}
+
+export async function simulateMultisig(
+  params: MultisigSimulateParams,
+): Promise<MultisigSimulationResult> {
+  return apiFetch<MultisigSimulationResult>("/multisig/simulate", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }
 
 /* ─── Inspector ──────────────────────────────────────────────────────────── */
@@ -1527,16 +1695,25 @@ export interface TomlResult {
   validationWarnings: string[];
 }
 
+export interface HomeDomainValidationResult {
+  valid: boolean;
+  domain: string;
+  issuer: string;
+  reason: 'issuer_not_declared' | 'home_domain_mismatch' | null;
+}
+
 export interface SepInfo {
   number: number;
   name: string;
   supported: boolean;
   endpoint: string | null;
-  probeStatus: "green" | "yellow" | "red" | "none";
+  probeStatus: "green" | "yellow" | "red" | "none" | "timeout"; // Fixed: added 'timeout' member
 }
 
 export interface SepResult {
   seps: SepInfo[];
+  /** Additive TOML state, so an unavailable or malformed document is not hidden. */
+  tomlStatus?: "available" | "unavailable" | "malformed";
 }
 
 export async function resolveFederation(address: string) {
@@ -1549,6 +1726,18 @@ export async function fetchStellarToml(domain: string) {
   return apiFetch<TomlResult>(
     `/federation/toml?domain=${encodeURIComponent(domain)}`,
   );
+}
+
+export async function validateHomeDomain(domain: string, issuer: string) {
+  const params = new URLSearchParams({ domain, issuer });
+  return apiFetch<HomeDomainValidationResult>(
+    `/federation/validate-home-domain?${params.toString()}`,
+  );
+}
+
+export async function fetchAssetMetadata(domain: string, code: string, issuer: string) {
+  const params = new URLSearchParams({ domain, code, issuer });
+  return apiFetch<TomlCurrency>(`/federation/asset-metadata?${params.toString()}`);
 }
 
 export async function fetchSepSupport(domain: string) {
@@ -1589,6 +1778,50 @@ export async function previewTransferLink(input: {
   );
 }
 
+/* ─── Federation server diagnostics (Savitura/Savitools#341) ────────────── */
+
+export type DiagnosticStageName =
+  | "toml"
+  | "http"
+  | "forward-lookup"
+  | "reverse-lookup";
+
+export type DiagnosticFailureKind =
+  | "dns"
+  | "toml"
+  | "tls"
+  | "http"
+  | "timeout"
+  | "schema"
+  | "ssrf";
+
+export interface DiagnosticStage {
+  stage: DiagnosticStageName;
+  ok: boolean;
+  latencyMs?: number;
+  error?: DiagnosticFailureKind;
+  details: Record<string, unknown>;
+  redirectChain?: string[];
+}
+
+export interface FederationDiagnosticsReport {
+  domain: string;
+  checkedAt: string;
+  ok: boolean;
+  totalLatencyMs: number;
+  serverUrl?: string;
+  serverStatus?: number | null;
+  forwardStatus?: number | null;
+  stages: DiagnosticStage[];
+  failures: DiagnosticFailureKind[];
+}
+
+export async function fetchFederationDiagnostics(domain: string) {
+  return apiFetch<FederationDiagnosticsReport>(
+    `/federation/diagnostics?domain=${encodeURIComponent(domain)}`,
+  );
+}
+
 /* ─── Account Relationship Graph ───────────────────────────────────────── */
 
 export type GraphMode = "signers" | "offers" | "payments" | "all";
@@ -1623,6 +1856,11 @@ export interface GraphResult {
   mode: GraphMode;
   nodeCount: number;
   edgeCount: number;
+  /** True when a traversal limit stopped the graph early (#260). */
+  truncated?: boolean;
+  truncatedBy?: "node_limit" | "horizon_request_limit" | null;
+  horizonRequests?: number;
+  limits?: { maxDepth: number; maxNodes: number; maxHorizonRequests: number };
 }
 
 export interface GraphQuery {
@@ -1897,4 +2135,173 @@ export function assetControlComposerLink(input: {
   params.set("assetIssuer", input.issuer);
 
   return `/composer?${params.toString()}`;
+}
+
+// ─── Soroban RPC console (Savitura/Savitools#358) ────────────────────────
+
+export type SorobanRpcNetwork = "testnet" | "mainnet";
+
+export type SorobanRpcParamType =
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "object";
+
+/** One named parameter of a whitelisted method, as served by the API. */
+export interface SorobanRpcParamSpec {
+  name: string;
+  type: SorobanRpcParamType;
+  required: boolean;
+  description: string;
+  example?: unknown;
+  itemType?: "string" | "integer";
+  /** RegExp source the value must match (hashes, envelopes…). */
+  pattern?: string;
+  patternHint?: string;
+  /** Closed set of accepted values — rendered as a select. */
+  enum?: string[];
+  min?: number;
+  max?: number;
+  maxItems?: number;
+}
+
+export interface SorobanRpcMethodSpec {
+  name: string;
+  summary: string;
+  description: string;
+  params: SorobanRpcParamSpec[];
+}
+
+export interface SorobanRpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+export interface SorobanRpcExecuteResult {
+  method: string;
+  network: SorobanRpcNetwork;
+  tookMs: number;
+  result?: unknown;
+  error?: SorobanRpcError;
+}
+
+/** Read-only catalog + JSON schema for every method the console can call. */
+export async function listSorobanRpcMethods() {
+  return apiFetch<{ methods: SorobanRpcMethodSpec[] }>("/soroban-rpc/methods");
+}
+
+export async function getSorobanRpcMethod(method: string) {
+  return apiFetch<SorobanRpcMethodSpec>(`/soroban-rpc/methods/${method}`);
+}
+
+/* ─── Liquidity Pools ─────────────────────────────────────────────────────── */
+
+export type NetworkChoice = 'mainnet' | 'testnet';
+
+export interface PoolDetails {
+  poolId: string;
+  network: string;
+  assetA: string;
+  assetB: string;
+  reserveA: string;
+  reserveB: string;
+  totalShares: string;
+  feePct: string;
+  totalTrustlines: number;
+  type: string;
+  spotPriceAperB: string;
+  spotPriceBperA: string;
+}
+
+export interface ShareValueResult {
+  poolId: string;
+  network: string;
+  shares: string;
+  valueA: string;
+  valueB: string;
+  totalValueUsd?: string;
+  sharePercentage: string;
+  assetA: string;
+  assetB: string;
+}
+
+export interface WatchedPoolItem {
+  id: string;
+  poolId: string;
+  network: string;
+  assetA: string;
+  assetB: string;
+  label: string | null;
+  createdAt: string;
+}
+
+export async function searchPools(
+  assetA: string,
+  assetB: string,
+  network: NetworkChoice = 'testnet',
+) {
+  const params = new URLSearchParams({ assetA, assetB, network });
+  return apiFetch<PoolDetails[]>(`/liquidity-pools/search?${params}`);
+}
+
+export async function getPoolDetails(
+  poolId: string,
+  network: NetworkChoice = 'testnet',
+) {
+  const params = new URLSearchParams({ poolId, network });
+  return apiFetch<PoolDetails>(`/liquidity-pools/details?${params}`);
+}
+
+export async function calculateShareValue(dto: {
+  poolId: string;
+  shares: string;
+  network?: NetworkChoice;
+}) {
+  return apiFetch<ShareValueResult>('/liquidity-pools/share-value', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function watchPool(dto: {
+  poolId: string;
+  assetA: string;
+  assetB: string;
+  label?: string;
+  network?: NetworkChoice;
+}) {
+  return apiFetch<WatchedPoolItem>('/liquidity-pools/watch', {
+    method: 'POST',
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function unwatchPool(id: string) {
+  return apiFetch<void>('/liquidity-pools/unwatch', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  });
+}
+
+export async function getWatchedPools() {
+  return apiFetch<WatchedPoolItem[]>('/liquidity-pools/watched');
+}
+
+/**
+ * Invoke one whitelisted method. The API validates `params` against the
+ * method schema and only ever forwards the call to its configured endpoint;
+ * write methods such as `sendTransaction` are not exposed.
+ */
+export async function executeSorobanRpc(input: {
+  method: string;
+  params?: Record<string, unknown>;
+  network?: SorobanRpcNetwork;
+}) {
+  return apiFetch<SorobanRpcExecuteResult>("/soroban-rpc/execute", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }

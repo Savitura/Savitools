@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BoundedTtlMap } from '../../common/bounded-ttl-map';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createDecipheriv, pbkdf2Sync } from 'crypto';
 import { Repository } from 'typeorm';
@@ -17,13 +18,20 @@ import { ApiKey, ApiKeyProvider } from './entities/api-key.entity';
 import { PlaygroundHistory } from './entities/playground-history.entity';
 import { ProxyRequestDto } from './dto/proxy-request.dto';
 import { AuthService } from '../auth/auth.service';
-import { assertRelativePath, assertSafeDestination, MAX_PROXY_REDIRECTS } from './ssrf-guard';
+import { assertRelativePath, assertSafeDestination, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guard';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';
 
 interface CachedSpec {
   spec: Record<string, unknown>;
   fetchedAt: number;
 }
+
+/**
+ * One entry per provider, plus headroom for the custom-provider origin split.
+ * A stale copy outlives its freshness window (see `specCache`).
+ */
+const MAX_CACHED_SPECS = 32;
+const CACHED_SPEC_STALE_WINDOWS = 10;
 
 export interface ProxyResult {
   status: number;
@@ -46,11 +54,102 @@ const KEY_LENGTH = 32;
 const PBKDF2_ITERATIONS = 100_000;
 const SPEC_SALT = 'savitools-playground-spec-cache';
 
+/** Default playground spec cache TTL (1 hour). */
+export const DEFAULT_SPEC_TTL_MS = 3_600_000;
+/** Maximum number of history entries retained per user. */
+export const PLAYGROUND_HISTORY_LIMIT = 50;
+
+/**
+ * Parse `PLAYGROUND_SPEC_TTL_MS` into a number. Env values are strings, so a
+ * raw `get<number>()` would silently yield `NaN`. An absent value falls back to
+ * the default; anything else must be a positive integer (startup validation
+ * rejects invalid values at boot, and this throws as a defensive backstop).
+ */
+export function parseSpecTtlMs(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === '') {
+    return DEFAULT_SPEC_TTL_MS;
+  }
+
+  const invalid = (): never => {
+    throw new Error(
+      `PLAYGROUND_SPEC_TTL_MS must be a positive integer number of milliseconds (received "${raw}")`,
+    );
+  };
+
+  if (typeof raw === 'number') {
+    return Number.isInteger(raw) && raw > 0 ? raw : invalid();
+  }
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return invalid();
+    }
+    const parsed = Number(trimmed);
+    return parsed > 0 ? parsed : invalid();
+  }
+
+  return invalid();
+}
+
+/**
+ * Keep only the newest `keep` history rows for `userId` in a single bounded
+ * statement. Uses `DELETE ... WHERE id NOT IN (SELECT ... ORDER BY created_at
+ * DESC LIMIT keep)` instead of a full `count()`, and is correct for users with
+ * fewer than, exactly, or more than `keep` entries. Returns the number of rows
+ * deleted.
+ */
+export async function prunePlaygroundHistory(
+  repository: Repository<PlaygroundHistory>,
+  userId: string,
+  keep: number = PLAYGROUND_HISTORY_LIMIT,
+): Promise<number> {
+  // Subquery selecting the ids to keep. Built with a SELECT builder and embedded
+  // into the DELETE; the shared `:userId` parameter is registered on the delete
+  // builder below.
+  const newestIds = repository
+    .createQueryBuilder('history')
+    .select('history.id')
+    .where('history.userId = :userId', { userId })
+    .orderBy('history.createdAt', 'DESC')
+    .addOrderBy('history.id', 'DESC')
+    .limit(keep)
+    .getQuery();
+
+  const result = await repository
+    .createQueryBuilder()
+    .delete()
+    .from(PlaygroundHistory)
+    .where('user_id = :userId', { userId })
+    .andWhere(`id NOT IN (${newestIds})`)
+    .setParameter('userId', userId)
+    .execute();
+
+  return result.affected ?? 0;
+}
+
 @Injectable()
 export class PlaygroundService {
   private readonly logger = new Logger(PlaygroundService.name);
-  private readonly specCache = new Map<string, CachedSpec>();
+  /**
+   * Provider OpenAPI documents, keyed by provider. The freshness window is
+   * `specTtlMs` and is checked per read; the map itself is bounded and keeps a
+   * stale copy for a few windows, which is what the refresh-failure fallback
+   * below serves (Savitura/Savitools#291).
+   */
+  private readonly specCache: BoundedTtlMap<string, CachedSpec>;
   private readonly specTtlMs: number;
+
+  /**
+   * Compute a display mask for an API key: first 8 chars + '...' + last 4 chars.
+   * Extracted to a single helper to avoid duplication and ensure consistency.
+   */
+  private static maskApiKey(plaintext: string): string {
+    if (plaintext.length <= 12) {
+      return plaintext; // Too short to mask meaningfully
+    }
+    return plaintext.slice(0, 8) + '...' + plaintext.slice(-4);
+  }
 
   constructor(
     @InjectRepository(ApiKey)
@@ -61,7 +160,11 @@ export class PlaygroundService {
     private readonly authService: AuthService,
     private readonly encryptionService: EncryptionService,
   ) {
-    this.specTtlMs = this.configService.get<number>('PLAYGROUND_SPEC_TTL_MS', 3_600_000);
+    this.specTtlMs = parseSpecTtlMs(this.configService.get('PLAYGROUND_SPEC_TTL_MS'));
+    this.specCache = new BoundedTtlMap({
+      maxEntries: MAX_CACHED_SPECS,
+      ttlMs: this.specTtlMs * CACHED_SPEC_STALE_WINDOWS,
+    });
   }
 
   async getSpec(provider: ApiKeyProvider): Promise<Record<string, unknown>> {
@@ -113,6 +216,9 @@ export class PlaygroundService {
         );
       }
       baseUrl = this.getProviderBaseUrl(dto.provider, { providerOrigin: key.providerOrigin });
+      if (!baseUrl) {
+        throw new BadRequestException(`${dto.provider} provider origin is not configured`);
+      }
     } else {
       baseUrl = this.getProviderBaseUrl(dto.provider);
       if (!baseUrl) {
@@ -130,6 +236,10 @@ export class PlaygroundService {
         }
         return this.executeProxyRequest(userId, dto, vaultKey, baseUrl);
       }
+    }
+
+    if (!baseUrl) {
+      throw new BadRequestException(`${dto.provider} API URL is not configured`);
     }
 
     const decryptedKey = await this.decryptAndUpgrade(userId, key!);
@@ -186,7 +296,7 @@ export class PlaygroundService {
 
       let hops = 0;
       while ([301, 302, 303, 307, 308].includes(response.status) && response.headers.has('location')) {
-        if (++hops > MAX_PROXY_REDIRECTS) {
+        if (++hops > MAX_SAFE_REDIRECTS) {
           throw new BadGatewayException(`Too many redirects from ${dto.provider}`);
         }
 
@@ -272,18 +382,10 @@ export class PlaygroundService {
       });
       await this.historyRepository.save(entry);
 
-      // Limit history to 50 items per user
-      const count = await this.historyRepository.count({ where: { userId } });
-      if (count > 50) {
-        const oldest = await this.historyRepository.find({
-          where: { userId },
-          order: { createdAt: 'ASC' },
-          take: count - 50,
-        });
-        if (oldest.length > 0) {
-          await this.historyRepository.remove(oldest);
-        }
-      }
+      // Keep only the newest PLAYGROUND_HISTORY_LIMIT entries for this user in a
+      // single bounded statement: no full-table count, and correct whether the
+      // user has fewer than, exactly, or more than the limit.
+      await prunePlaygroundHistory(this.historyRepository, userId);
     } catch (error) {
       this.logger.warn(`Failed to record playground history: ${error}`);
     }
@@ -351,6 +453,10 @@ export class PlaygroundService {
       iv,
       authTag,
       keyVersion: 2,
+      // Persist the mask up front so the list endpoints never decrypt a key
+      // that was created after this change.
+      maskedKey: PlaygroundService.maskApiKey(dto.apiKey),
+      keyPreview: PlaygroundService.maskApiKey(dto.apiKey),
     });
 
     const saved = await this.apiKeysRepository.save(key);
@@ -363,19 +469,26 @@ export class PlaygroundService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(
+    // Use Promise.allSettled so one undecryptable key doesn't break the entire listing
+    const results = await Promise.allSettled(
       keys.map(async (key) => {
-        const decrypted = await this.decryptAndUpgrade(userId, key);
-        const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+        // The mask is resolved by `maskFor`, which is the single reader of the
+        // `maskedKey` column: it serves the stored mask when there is one and
+        // otherwise pays exactly one decrypt and persists the mask.
         return {
           id: key.id,
           label: key.label,
           provider: key.provider,
-          maskedKey: masked,
+          maskedKey: await this.maskFor(userId, key),
           createdAt: key.createdAt,
         };
       }),
     );
+
+    // Return only fulfilled results, filtering out rejected ones
+    return results
+      .filter((result): result is PromiseFulfilledResult<{ id: string; label: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
+      .map(result => result.value);
   }
 
   async deleteKey(id: string, userId: string): Promise<void> {
@@ -417,18 +530,18 @@ export class PlaygroundService {
       iv,
       authTag,
       keyVersion: 2,
+      keyPreview: PlaygroundService.maskApiKey(dto.apiKey),
       providerOrigin: dto.origin,
       openApiSpec: spec,
+      maskedKey: maskApiKey(dto.apiKey),
     });
 
     const saved = await this.apiKeysRepository.save(key);
-    const decrypted = await this.decryptAndUpgrade(userId, saved);
-    const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
     return {
       id: saved.id,
       name: saved.label,
       provider: saved.provider,
-      maskedKey: masked,
+      maskedKey: saved.keyPreview!,
       createdAt: saved.createdAt,
     };
   }
@@ -447,21 +560,26 @@ export class PlaygroundService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(
+    // Use Promise.allSettled to prevent one bad key from breaking the entire listing
+    const results = await Promise.allSettled(
       keys.map(async (key) => {
-        const decrypted = await this.decryptAndUpgrade(userId, key);
-        const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+        // Same single reader as `listKeys`; see the note there.
         return {
           id: key.id,
           name: key.label,
           provider: key.provider,
           origin: key.providerOrigin,
           hasSpec: !!key.openApiSpec,
-          maskedKey: masked,
+          maskedKey: await this.maskFor(userId, key),
           createdAt: key.createdAt,
         };
       }),
     );
+
+    // Return only fulfilled results
+    return results
+      .filter((result): result is PromiseFulfilledResult<{ id: string; name: string; provider: ApiKeyProvider; origin: string | null; hasSpec: boolean; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
+      .map(result => result.value);
   }
 
   async renameProvider(
@@ -519,6 +637,10 @@ export class PlaygroundService {
       key.iv = iv;
       key.authTag = authTag;
       key.keyVersion = 2;
+      // Refresh both mask columns: `maskedKey` is what `maskFor` reads, and
+      // leaving a stale one behind would show a previous key's mask.
+      key.maskedKey = PlaygroundService.maskApiKey(dto.apiKey);
+      key.keyPreview = key.maskedKey;
     }
 
     const saved = await this.apiKeysRepository.save(key);
@@ -565,6 +687,31 @@ export class PlaygroundService {
   }
 
   /**
+   * The display mask for a stored key.
+   *
+   * Rows written before the `maskedKey` column existed have no mask; they pay
+   * for exactly one decrypt (which also re-encrypts legacy material and, on that
+   * path, persists the mask in the same update) and every later read is
+   * decrypt-free. This is what keeps the list endpoints O(1) decrypts instead of
+   * O(keys per request).
+   */
+  private async maskFor(userId: string, key: ApiKey): Promise<string> {
+    if (key.maskedKey) {
+      return key.maskedKey;
+    }
+
+    const plaintext = await this.decryptAndUpgrade(userId, key);
+    if (key.maskedKey) {
+      return key.maskedKey;
+    }
+
+    const masked = maskApiKey(plaintext);
+    await this.apiKeysRepository.update(key.id, { maskedKey: masked });
+    key.maskedKey = masked;
+    return masked;
+  }
+
+  /**
    * Decrypt an API key, transparently re-encrypting it under the new
    * per-user, purpose-bound scheme if it is still on the legacy global key.
    * Idempotent and safe to retry: once a row is `keyVersion: 2` this is a
@@ -586,15 +733,25 @@ export class PlaygroundService {
       plaintext,
       ENCRYPTION_PURPOSES.PLAYGROUND_API_KEY,
     );
+    const masked = maskApiKey(plaintext);
     await this.apiKeysRepository.update(key.id, {
       encryptedKey: upgraded.encrypted,
       iv: upgraded.iv,
       authTag: upgraded.authTag,
       keyVersion: 2,
+      // The plaintext is in hand here, so the mask rides along with the
+      // re-encryption instead of costing a decrypt on the next list call.
+      maskedKey: masked,
     });
+    key.maskedKey = masked;
 
     return plaintext;
   }
+}
+
+/** `first8...last4` of the plaintext — the only part of a stored key we display. */
+export function maskApiKey(plaintext: string): string {
+  return plaintext.slice(0, 8) + '...' + plaintext.slice(-4);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

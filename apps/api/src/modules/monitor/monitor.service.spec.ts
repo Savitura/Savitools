@@ -7,6 +7,7 @@ import { MonitorQueueService } from './monitor-queue.service';
 import { MonitorService } from './monitor.service';
 import { StreamManager } from './stream-manager.service';
 import { WatchRegistry } from './watch-registry.service';
+import { AlertRuleDto } from './dto/create-watch.dto';
 
 describe('MonitorService', () => {
   it('closes the stream after deleting the last watch for a public key', async () => {
@@ -98,5 +99,80 @@ describe('MonitorService', () => {
     expect(streamManager.start).toHaveBeenCalledWith(
       'testnet:account:GAAAAAAAA',
     );
+  });
+
+  it('copies topic from DTO to alert rule definition', async () => {
+    const watchRepository = {
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => ({ id: 'watch-three', ...value })),
+    } as unknown as Repository<Watch>;
+    const registry = {
+      get: jest.fn().mockReturnValue([]),
+      add: jest.fn(),
+      keyFor: jest.fn().mockReturnValue('testnet:contract:CONTRACT'),
+    } as unknown as WatchRegistry;
+    const streamManager = {
+      start: jest.fn().mockResolvedValue(undefined),
+    } as unknown as StreamManager;
+    const service = new MonitorService(
+      watchRepository,
+      {} as Repository<WatchEvent>,
+      {} as Repository<AlertEvent>,
+      {} as Repository<MonitorWebhook>,
+      registry,
+      streamManager,
+      {} as MonitorQueueService,
+      {} as any,
+    );
+
+    const dto: AlertRuleDto = {
+      type: 'event_topic_equals',
+      topic: 'transfer',
+      channels: ['in_app'],
+    };
+
+    const created = await service.createWatch('user-three', {
+      publicKey: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
+      eventTypes: ['contract'],
+      network: 'testnet',
+      alertRules: [dto],
+    });
+
+    expect(created.alertRules).toHaveLength(1);
+    expect(created.alertRules[0].topic).toBe('transfer');
+  });
+
+  it('rejects event_topic_equals without a topic', async () => {
+    const watchRepository = {
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => ({ id: 'watch-four', ...value })),
+    } as unknown as Repository<Watch>;
+    const registry = {
+      get: jest.fn().mockReturnValue([]),
+      add: jest.fn(),
+      keyFor: jest.fn().mockReturnValue('testnet:contract:CONTRACT'),
+    } as unknown as WatchRegistry;
+    const streamManager = {
+      start: jest.fn().mockResolvedValue(undefined),
+    } as unknown as StreamManager;
+    const service = new MonitorService(
+      watchRepository,
+      {} as Repository<WatchEvent>,
+      {} as Repository<AlertEvent>,
+      {} as Repository<MonitorWebhook>,
+      registry,
+      streamManager,
+      {} as MonitorQueueService,
+      {} as any,
+    );
+
+    await expect(
+      service.createWatch('user-four', {
+        publicKey: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
+        eventTypes: ['contract'],
+        network: 'testnet',
+        alertRules: [{ type: 'event_topic_equals', channels: ['in_app'] }],
+      }),
+    ).rejects.toThrow('event_topic_equals requires a topic');
   });
 });

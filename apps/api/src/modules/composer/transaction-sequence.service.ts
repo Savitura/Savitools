@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   Account,
+  BASE_FEE,
   Memo,
   Networks,
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
-import { ComposerService, OPERATION_MANIFEST } from './composer.service';
+import { ComposerService } from './composer.service';
+import { OperationDto } from './dto/build-transaction.dto';
 import {
   OperationInputDto,
   RunTransactionSequenceDto,
@@ -51,7 +53,7 @@ export class TransactionSequenceService {
     const runId = `seq_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
     const results: StepResult[] = [];
     const destinationByStep = new Map<number, string>();
-    let sequencesBySource = new Map<string, string>();
+    const sequencesBySource = new Map<string, string>();
 
     for (let stepIndex = 0; stepIndex < dto.steps.length; stepIndex++) {
       const step = dto.steps[stepIndex];
@@ -81,7 +83,7 @@ export class TransactionSequenceService {
 
         for (const op of operations) {
           builder.addOperation(
-            this.composerService.mapOperation(op as any),
+            this.composerService.mapOperation(op as OperationDto),
           );
         }
 
@@ -154,13 +156,7 @@ export class TransactionSequenceService {
     sourceAccount: string,
     network: 'testnet' | 'mainnet',
   ): Promise<string> {
-    const build = await this.composerService.buildTransaction({
-      sourceAccount,
-      network,
-      sequenceNumber: undefined,
-      operations: [{ type: 'manage_data', name: 'savitools', value: 'seq' } as any],
-    });
-    return String(build.sequenceNumber);
+    return this.composerService.loadSequenceNumber(sourceAccount, network);
   }
 
   private validateStepOrder(steps: TransactionStepInputDto[]): void {
@@ -228,5 +224,5 @@ export class TransactionSequenceService {
 }
 
 function networksFee(): string {
-  return '100';
+  return String(BASE_FEE);
 }

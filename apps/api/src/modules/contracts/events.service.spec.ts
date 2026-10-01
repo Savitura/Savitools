@@ -263,6 +263,12 @@ describe('EventsService', () => {
       const { events } = await service.queryEvents({ contractId: CONTRACT_ID, startLedger: 1 });
       expect(service.filterEvents(events, [{ kind: 'topic_contains', value: 'burn' }]).count).toBe(0);
     });
+
+    it('rejects semantically invalid criteria before filtering', () => {
+      expect(() =>
+        service.filterEvents([], [{ kind: 'ledger_range', from: 20, to: 10 }]),
+      ).toThrow(BadRequestException);
+    });
   });
 
   describe('replayEvents', () => {
@@ -548,6 +554,81 @@ describe('EventsService', () => {
 
       expect(filtered.map((e) => e.id)).toEqual(['b']);
       expect(filtered[0].contractId).toBe(OTHER_CONTRACT);
+    });
+  });
+
+  describe('Soroban RPC metrics labelling', () => {
+    function instrumentedService() {
+      const metricsService = {
+        timeSorobanRpc: jest.fn(
+          (_operation: string, _network: string, fn: () => Promise<unknown>) => fn(),
+        ),
+      };
+      return {
+        metricsService,
+        instrumented: new EventsService(configService, metricsService as never),
+      };
+    }
+
+    beforeEach(() => {
+      getEvents.mockResolvedValue(response([]));
+      getLatestLedger.mockResolvedValue({ sequence: 1 });
+      rpcServerMock.mockReturnValue({ getEvents, getLatestLedger });
+    });
+
+    it('labels each RPC call with the requested network, never the operation name', async () => {
+      const { metricsService, instrumented } = instrumentedService();
+
+      await instrumented.queryEvents({
+        contractId: CONTRACT_ID,
+        startLedger: 1,
+        network: 'mainnet',
+      });
+      await instrumented.queryEvents({
+        contractId: CONTRACT_ID,
+        startLedger: 1,
+        network: 'testnet',
+      });
+
+      expect(metricsService.timeSorobanRpc).toHaveBeenCalledWith(
+        'get_events',
+        'mainnet',
+        expect.any(Function),
+      );
+      expect(metricsService.timeSorobanRpc).toHaveBeenCalledWith(
+        'get_events',
+        'testnet',
+        expect.any(Function),
+      );
+      // Regression guard for the "events" label bug: the metric's network
+      // dimension must never be the operation name.
+      expect(metricsService.timeSorobanRpc.mock.calls.map((call) => call[1])).not.toContain(
+        'events',
+      );
+    });
+
+    it('defaults an unspecified network to testnet in the label', async () => {
+      const { metricsService, instrumented } = instrumentedService();
+
+      await instrumented.queryEvents({ contractId: CONTRACT_ID, startLedger: 1 });
+
+      expect(metricsService.timeSorobanRpc).toHaveBeenCalledWith(
+        'get_events',
+        'testnet',
+        expect.any(Function),
+      );
+    });
+
+    it('stays a no-op when no metrics service is injected', async () => {
+      const { instrumented } = instrumentedService();
+      const bare = new EventsService(configService);
+
+      await expect(
+        bare.queryEvents({ contractId: CONTRACT_ID, startLedger: 1 }),
+      ).resolves.toMatchObject({ count: 0 });
+      await expect(
+        instrumented.queryEvents({ contractId: CONTRACT_ID, startLedger: 1 }),
+      ).resolves.toMatchObject({ count: 0 });
     });
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * @jest-environment node
+ *
+ * These suites stub `window` wholesale (and delete it again) to stand in for a
+ * missing wallet extension, so they deliberately run outside jsdom's window.
+ */
 import {
   isWalletAvailable,
   requestWalletAccess,

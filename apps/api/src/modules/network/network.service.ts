@@ -67,11 +67,19 @@ export interface NetworkHistoryResponse {
   samples: NetworkHistoryBucket[];
 }
 
+const MAX_HISTORY_SAMPLES = 20_000;
+const HISTORY_CACHE_TTL_MS = 15_000;
+const MAX_HISTORY_CACHE_ENTRIES = 100;
+
 @Injectable()
 export class NetworkService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NetworkService.name);
   private pollInterval: NodeJS.Timeout;
   private pollInProgress = false;
+  private readonly historyCache = new Map<
+    string,
+    { expiresAt: number; response: NetworkHistoryResponse }
+  >();
 
   private readonly passphrases = {
     mainnet: StellarSdk.Networks.PUBLIC,
@@ -186,14 +194,6 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     return this.networkProfileRepository.save(profile);
   }
 
-  async getDefaultNetworkProfile(
-    ownerId: string,
-  ): Promise<NetworkProfile | null> {
-    return this.networkProfileRepository.findOne({
-      where: { ownerId, isDefault: true },
-    });
-  }
-
   async exportNetworkProfile(
     ownerId: string,
     id: string,
@@ -234,14 +234,6 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async fetchCurrentStatusForProfile(
-    ownerId: string,
-    profileId: string,
-  ): Promise<NetworkStatus> {
-    return this.fetchCurrentStatus(
-      await this.getNetworkProfile(ownerId, profileId),
-    );
-  }
 
   private async assertHorizonPassphrase(horizonUrl: string, expectedPassphrase: string) {
     const actualPassphrase = await this.fetchNetworkPassphrase(horizonUrl);
@@ -256,6 +248,36 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async fetchNetworkPassphrase(horizonUrl: string): Promise<string> {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(horizonUrl);
+    } catch {
+      throw new BadRequestException("Invalid Horizon URL");
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      throw new BadRequestException("Invalid protocol for Horizon URL");
+    }
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("172.16.") ||
+      hostname.startsWith("172.17.") ||
+      hostname.startsWith("172.18.") ||
+      hostname.startsWith("172.19.") ||
+      hostname.startsWith("172.2") ||
+      hostname.startsWith("172.30.") ||
+      hostname.startsWith("172.31.") ||
+      hostname.endsWith(".local") ||
+      hostname === "metadata.google.internal"
+    ) {
+      throw new BadRequestException("Forbidden local or private network address");
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
@@ -378,17 +400,35 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     to?: string,
   ): Promise<NetworkHistoryResponse> {
     const range = this.parseHistoryRange(from, to);
+    const cacheKey = `${network}:${from ? range.from.getTime() : 'default-from'}:${to ? range.to.getTime() : 'default-to'}`;
+    const now = Date.now();
+    for (const [key, entry] of this.historyCache) {
+      if (entry.expiresAt <= now) this.historyCache.delete(key);
+    }
+    const cached = this.historyCache.get(cacheKey);
+    if (cached) {
+      this.historyCache.delete(cacheKey);
+      this.historyCache.set(cacheKey, cached);
+      return structuredClone(cached.response);
+    }
+
     const samples = await this.sampleRepository.find({
       where: {
         network,
         sampledAt: Between(range.from, range.to),
       },
       order: { sampledAt: "ASC" },
+      take: MAX_HISTORY_SAMPLES + 1,
     });
+    if (samples.length > MAX_HISTORY_SAMPLES) {
+      throw new BadRequestException(
+        `history range contains more than ${MAX_HISTORY_SAMPLES} samples; narrow the date range`,
+      );
+    }
 
     const buckets = this.bucketSamples(samples);
 
-    return {
+    const response: NetworkHistoryResponse = {
       network,
       from: range.from.toISOString(),
       to: range.to.toISOString(),
@@ -396,6 +436,17 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
       summary: this.summarizeBuckets(buckets),
       samples: buckets,
     };
+
+    while (this.historyCache.size >= MAX_HISTORY_CACHE_ENTRIES) {
+      const oldestKey = this.historyCache.keys().next().value;
+      if (!oldestKey) break;
+      this.historyCache.delete(oldestKey);
+    }
+    this.historyCache.set(cacheKey, {
+      expiresAt: now + HISTORY_CACHE_TTL_MS,
+      response,
+    });
+    return structuredClone(response);
   }
 
   async pruneRetention(now = new Date()) {
@@ -478,7 +529,12 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
 
     for (const sample of samples) {
       const bucket = Math.floor(sample.sampledAt.getTime() / 60000) * 60000;
-      grouped.set(bucket, [...(grouped.get(bucket) ?? []), sample]);
+      const bucketSamples = grouped.get(bucket);
+      if (bucketSamples) {
+        bucketSamples.push(sample);
+      } else {
+        grouped.set(bucket, [sample]);
+      }
     }
 
     return [...grouped.entries()].map(([timestamp, bucketSamples]) => {

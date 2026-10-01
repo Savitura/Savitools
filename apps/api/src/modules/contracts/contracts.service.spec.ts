@@ -12,15 +12,12 @@ jest.mock('dns/promises', () => ({
   lookup: (...args: unknown[]) => lookupMock(...args),
 }));
 
-const execFileSyncMock = jest.fn();
+const execFileMock = jest.fn();
 jest.mock('child_process', () => ({
-  execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
+  execFile: (...args: unknown[]) => execFileMock(...args),
 }));
 
 describe('ContractsService', () => {
-  let service: ContractsService;
-  let configService: ConfigService;
-
   const mockSecretKey = Keypair.random().secret();
   const mockRpcUrl = 'https://soroban-testnet.stellar.org';
 
@@ -133,6 +130,7 @@ describe('ContractsService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
   });
 
   describe('getInfo', () => {
@@ -233,9 +231,9 @@ describe('ContractsService', () => {
 
     const simulateGitCheckout = () => {
       sparseArtifact = null;
-      execFileSyncMock.mockReset();
-      execFileSyncMock.mockImplementation(
-        (cmd: string, args: string[], opts?: { cwd?: string }) => {
+      execFileMock.mockReset();
+      execFileMock.mockImplementation(
+        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error: Error | null, stdout: Buffer, stderr: Buffer) => void) => {
           if (cmd !== 'git') throw new Error('unexpected command');
           if (args[0] === 'sparse-checkout' && args[1] === 'set') {
             sparseArtifact = args[2] as string;
@@ -243,15 +241,16 @@ describe('ContractsService', () => {
           if (args[0] === 'checkout' && sparseArtifact && opts?.cwd) {
             const target = nodePath.join(opts.cwd, sparseArtifact);
             if (sparseArtifact === 'link.wasm') {
-              // Point at a path that exists on every OS so existsSync is true
-              // and the non-regular-file check is what rejects the symlink.
               fs.symlinkSync(process.execPath, target);
             } else {
               fs.mkdirSync(nodePath.dirname(target), { recursive: true });
               fs.writeFileSync(target, Buffer.from('wasm-bytes'));
             }
           }
-          return Buffer.alloc(0);
+          if (callback) {
+            callback(null, Buffer.alloc(0), Buffer.alloc(0));
+          }
+          return undefined;
         },
       );
     };
@@ -262,7 +261,7 @@ describe('ContractsService', () => {
     });
 
     afterEach(() => {
-      execFileSyncMock.mockReset();
+      execFileMock.mockReset();
     });
 
     it('passes attacker-controlled URLs and paths as argv elements without a shell', async () => {
@@ -273,12 +272,55 @@ describe('ContractsService', () => {
       const buffer = await service.fetchWasmFromGit(hostileUrl, 'contracts/a$(id).wasm');
 
       expect(buffer.toString()).toBe('wasm-bytes');
-      const calls = execFileSyncMock.mock.calls as Array<[string, string[], { cwd?: string }]>;
+      const calls = execFileMock.mock.calls as Array<[string, string[], { cwd?: string }]>
       const cloneCall = calls.find(([, args]) => args[0] === 'clone');
       expect(cloneCall?.[0]).toBe('git');
       expect(cloneCall?.[1]?.[4]).toContain('$(touch)');
       const setCall = calls.find(([, args]) => args[0] === 'sparse-checkout' && args[1] === 'set');
       expect(setCall?.[1]?.[2]).toContain('$(id)');
+    });
+
+    it('serves concurrent fetches without blocking the event loop while cloning', async () => {
+      const { service } = await createModule();
+      const sparseArtifacts = new Map<string, string>();
+      const writtenArtifacts = new Set<string>();
+      execFileMock.mockImplementation(
+        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error: Error | null, stdout: Buffer, stderr: Buffer) => void) => {
+          if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set' && opts?.cwd) {
+            sparseArtifacts.set(opts.cwd, args[2] as string);
+          }
+          if (cmd === 'git' && args[0] === 'checkout' && opts?.cwd) {
+            const artifact = sparseArtifacts.get(opts.cwd);
+            if (artifact) {
+              const target = nodePath.join(opts.cwd, artifact);
+              fs.mkdirSync(nodePath.dirname(target), { recursive: true });
+              fs.writeFileSync(target, Buffer.from('wasm-bytes'));
+            }
+          }
+          setTimeout(() => {
+            if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set') {
+              writtenArtifacts.add(args[2] as string);
+            }
+            if (args[0] === 'checkout' && opts?.cwd) {
+              for (const artifact of writtenArtifacts) {
+                fs.mkdirSync(nodePath.join(opts.cwd, nodePath.dirname(artifact)), { recursive: true });
+                fs.writeFileSync(nodePath.join(opts.cwd, artifact), Buffer.from('wasm-bytes'));
+              }
+            }
+            if (callback) callback(null, Buffer.alloc(0), Buffer.alloc(0));
+          }, 50);
+          return undefined;
+        },
+      );
+
+      const before = Date.now();
+      await Promise.all([
+        service.fetchWasmFromGit('https://github.com/o/r.git', 'a.wasm'),
+        service.fetchWasmFromGit('https://github.com/o/r.git', 'b.wasm'),
+      ]);
+      const elapsed = Date.now() - before;
+
+      expect(elapsed).toBeLessThan(250);
     });
 
     it('rejects traversal artifact paths before invoking git', async () => {
@@ -288,7 +330,7 @@ describe('ContractsService', () => {
       await expect(
         service.fetchWasmFromGit('https://github.com/o/r.git', '../../etc/passwd'),
       ).rejects.toThrow(BadRequestException);
-      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(execFileMock).not.toHaveBeenCalled();
     });
 
     it('rejects absolute artifact paths', async () => {
@@ -298,7 +340,7 @@ describe('ContractsService', () => {
       await expect(
         service.fetchWasmFromGit('https://github.com/o/r.git', '/etc/passwd'),
       ).rejects.toThrow(BadRequestException);
-      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(execFileMock).not.toHaveBeenCalled();
     });
 
     it('rejects artifacts that resolve outside the checkout root or are symlinks', async () => {
@@ -324,7 +366,7 @@ describe('ContractsService', () => {
       await expect(
         service.fetchWasmFromGit('/srv/git/repo', 'c.wasm'),
       ).rejects.toThrow(BadRequestException);
-      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(execFileMock).not.toHaveBeenCalled();
     });
 
     it('rejects unallowlisted git hosts', async () => {
@@ -334,7 +376,7 @@ describe('ContractsService', () => {
       await expect(
         service.fetchWasmFromGit('https://evil.example.com/o/r.git', 'c.wasm'),
       ).rejects.toThrow(/not allowlisted/);
-      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(execFileMock).not.toHaveBeenCalled();
     });
 
     it('rejects git hosts resolving to private addresses', async () => {
@@ -345,7 +387,7 @@ describe('ContractsService', () => {
       await expect(
         service.fetchWasmFromGit('https://github.com/o/r.git', 'c.wasm'),
       ).rejects.toThrow(BadRequestException);
-      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(execFileMock).not.toHaveBeenCalled();
     });
   });
 

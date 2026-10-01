@@ -1,5 +1,9 @@
 jest.mock('redis', () => {
   const mockRedisClient = {
+    // The service checks `isReady` before issuing commands and `isOpen` before
+    // quitting, so the mock has to model connection state (#291).
+    isReady: false,
+    isOpen: false,
     connect: jest.fn(),
     quit: jest.fn(),
     lPush: jest.fn(),
@@ -20,7 +24,9 @@ jest.mock('redis', () => {
 
 import { BadRequestException } from '@nestjs/common';
 import { OrderbookService } from './orderbook.service';
-const { __mockRedisClient: mockRedisClient } = require('redis');
+const { __mockRedisClient: mockRedisClient } = jest.requireMock('redis') as {
+  __mockRedisClient: Record<string, jest.Mock> & { isReady: boolean; isOpen: boolean };
+};
 
 function horizonOrderBookResponse() {
   return {
@@ -74,6 +80,10 @@ describe('OrderbookService', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+    // Suites that drive the cached paths directly expect a connected client;
+    // the `onModuleInit` suite below flips this back to a cold client.
+    mockRedisClient.isReady = true;
+    mockRedisClient.isOpen = true;
     service = new OrderbookService({ get: jest.fn(() => 'redis://localhost:6379') } as any);
   });
 
@@ -122,7 +132,7 @@ describe('OrderbookService', () => {
         'orderbook:active_pairs:testnet',
         [
           expect.objectContaining({
-            value: expect.stringContaining('native|USDC'),
+            value: expect.stringContaining('XLM|USDC'),
           }),
         ],
       );
@@ -205,11 +215,88 @@ describe('OrderbookService', () => {
       const result = await service.getHistory('XLM', 'USDC:ISSUER', 'testnet');
       expect(result).toEqual([]);
     });
+
+    // ── #285: the sampler's key and this lookup must agree ───────────────────
+
+    it('looks up history under the canonical key for either native spelling', async () => {
+      (service as any).redisClient = mockRedisClient;
+      mockRedisClient.lRange.mockReset();
+      const entries = [JSON.stringify({ timestamp: 1, midPrice: '0.10' })];
+      mockRedisClient.lRange.mockResolvedValue(entries);
+
+      await service.getHistory('XLM', 'USDC:ISSUER', 'testnet');
+      expect(mockRedisClient.lRange).toHaveBeenCalledTimes(1);
+      expect(mockRedisClient.lRange).toHaveBeenNthCalledWith(
+        1,
+        'orderbook:history:testnet:XLM|USDC:ISSUER',
+        0,
+        expect.any(Number),
+      );
+
+      // The spelling earlier versions wrote into the active-pair set resolves to
+      // the same key, so both land on one read.
+      mockRedisClient.lRange.mockClear();
+      await service.getHistory('native', 'USDC:ISSUER', 'testnet');
+      expect(mockRedisClient.lRange).toHaveBeenCalledTimes(1);
+      expect(mockRedisClient.lRange).toHaveBeenNthCalledWith(
+        1,
+        'orderbook:history:testnet:XLM|USDC:ISSUER',
+        0,
+        expect.any(Number),
+      );
+    });
+
+    it('registers the polled pair under the canonical key the sampler uses', async () => {
+      (service as any).redisClient = mockRedisClient;
+      mockRedisClient.zAdd.mockResolvedValue(undefined);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => horizonOrderBookResponse(),
+      });
+
+      await service.getOrderbook('XLM', `USDC:${COUNTER_ACCOUNT}`, 'testnet');
+
+      expect(mockRedisClient.zAdd).toHaveBeenCalledWith('orderbook:active_pairs:testnet', [
+        { score: expect.any(Number), value: `XLM|USDC:${COUNTER_ACCOUNT}` },
+      ]);
+    });
+
+    it('still serves history written under the legacy native|… key', async () => {
+      (service as any).redisClient = mockRedisClient;
+      mockRedisClient.lRange.mockReset();
+      mockRedisClient.lRange
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([JSON.stringify({ timestamp: 1, midPrice: '0.09' })]);
+
+      const result = await service.getHistory('XLM', 'USDC:ISSUER', 'testnet');
+
+      expect(mockRedisClient.lRange).toHaveBeenNthCalledWith(
+        1,
+        'orderbook:history:testnet:XLM|USDC:ISSUER',
+        0,
+        expect.any(Number),
+      );
+      expect(mockRedisClient.lRange).toHaveBeenNthCalledWith(
+        2,
+        'orderbook:history:testnet:native|USDC:ISSUER',
+        0,
+        expect.any(Number),
+      );
+      expect(result).toEqual([{ timestamp: 1, midPrice: '0.09' }]);
+    });
   });
 
   describe('onModuleInit / onModuleDestroy', () => {
+    beforeEach(() => {
+      mockRedisClient.isReady = false;
+      mockRedisClient.isOpen = false;
+      mockRedisClient.connect.mockImplementation(async () => {
+        mockRedisClient.isReady = true;
+        mockRedisClient.isOpen = true;
+      });
+    });
+
     it('connects to Redis, seeds the default pair, and polls', async () => {
-      mockRedisClient.connect.mockResolvedValue(undefined);
       mockRedisClient.zAdd.mockResolvedValue(undefined);
       mockRedisClient.zCard.mockResolvedValue(1);
       mockRedisClient.zRange.mockResolvedValue([
@@ -229,15 +316,56 @@ describe('OrderbookService', () => {
       expect(mockRedisClient.lPush).toHaveBeenCalled();
     });
 
+    it('retries a failed connection on the next tick instead of degrading for the process lifetime', async () => {
+      mockRedisClient.connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      jest.spyOn((service as any).logger, 'error').mockImplementation(() => undefined);
+      mockRedisClient.zRange.mockResolvedValue([]);
+
+      await service.onModuleInit();
+
+      // Nothing could be written while Redis was down...
+      expect(mockRedisClient.zAdd).not.toHaveBeenCalled();
+      // ...but the poller is running, so the next tick retries.
+      expect((service as any).pollInterval).toBeDefined();
+
+      await (service as any).pollActivePairs();
+
+      expect(mockRedisClient.connect).toHaveBeenCalledTimes(2);
+      expect(mockRedisClient.zRange).toHaveBeenCalled();
+      expect(mockRedisClient.isReady).toBe(true);
+    });
+
+    it('says out loud that polling is degraded when Redis is unavailable at boot', async () => {
+      mockRedisClient.connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const errorSpy = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      await service.onModuleInit();
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('degraded'));
+    });
+
     it('clears interval and quits Redis on destroy', async () => {
       (service as any).redisClient = mockRedisClient;
       const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
       (service as any).pollInterval = setInterval(() => {}, 60000);
+      mockRedisClient.isOpen = true;
 
       await service.onModuleDestroy();
 
       expect(clearIntervalSpy).toHaveBeenCalled();
       expect(mockRedisClient.quit).toHaveBeenCalled();
+    });
+
+    it('does not quit a client that never opened', async () => {
+      (service as any).redisClient = mockRedisClient;
+      mockRedisClient.quit.mockClear();
+      mockRedisClient.isOpen = false;
+
+      await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+
+      expect(mockRedisClient.quit).not.toHaveBeenCalled();
     });
   });
 

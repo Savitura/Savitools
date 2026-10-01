@@ -1,3 +1,9 @@
+# Shared local infrastructure only: Postgres + Redis.
+#
+# For the full stack (infra + api + web containers) use docker-compose.dev.yml
+# via `make dev` - see the README's "Two compose files" note.
+name: savitools-infra
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,7 +13,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: ${POSTGRES_DB:-savitools}
     ports:
-      - '5432:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +26,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
     volumes:
       - redis_data:/data
     healthcheck:

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ComposerService } from './composer.service';
 import { TransactionSequenceService } from './transaction-sequence.service';
@@ -57,6 +58,7 @@ export class ComposerController {
   }
 
   @Post('sequence/run')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run a transaction sequence with automatic sequence numbers' })
   @ApiResponse({ status: 200, description: 'Sequence executed' })
@@ -65,6 +67,7 @@ export class ComposerController {
   }
 
   @Get('sequence')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List transaction sequence runs' })
   @ApiResponse({ status: 200, description: 'Sequence history' })

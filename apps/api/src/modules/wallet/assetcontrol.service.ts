@@ -500,7 +500,12 @@ export class AssetControlService {
 
     const xdr = await this.assembleXdr(
       issuerAccount,
-      Operation.setOptions({ setFlags, clearFlags }),
+      Operation.setOptions({
+        /* eslint-disable @typescript-eslint/no-explicit-any -- SDK int32 flag unions accept runtime-validated numbers */
+        setFlags: setFlags as any,
+        clearFlags: clearFlags as any,
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+      }),
     );
 
     return {

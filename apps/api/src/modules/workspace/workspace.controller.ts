@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
@@ -23,14 +24,25 @@ export class WorkspaceController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List workspaces for the current user' })
   @ApiQuery({ name: 'tool', required: false, enum: ['sandbox', 'inspector', 'webhooks', 'composer'] })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: '1-based page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows per page, 1-100 (default 25)' })
   @ApiResponse({ status: 200, description: 'Workspaces listed' })
   async listWorkspaces(
     @CurrentUser() user: { id: string },
     @Query('tool') tool?: string,
+    @Query() query: PaginationQueryDto = new PaginationQueryDto(),
   ) {
-    const workspaces = await this.workspaceService.listWorkspaces(user.id, tool);
+    const { items, page, limit, total } = await this.workspaceService.listWorkspaces(
+      user.id,
+      tool,
+      query,
+    );
+
     return {
-      workspaces: workspaces.map((w) => this.toWorkspaceSummary(w)),
+      workspaces: items.map((w) => this.toWorkspaceSummary(w)),
+      page,
+      limit,
+      total,
     };
   }
 

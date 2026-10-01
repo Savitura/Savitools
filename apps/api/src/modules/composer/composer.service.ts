@@ -2,10 +2,13 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   Account,
   Asset,
+  Address,
   BASE_FEE,
   Horizon,
   Keypair,
@@ -15,12 +18,15 @@ import {
   StrKey,
   Transaction,
   TransactionBuilder,
+  nativeToScVal,
   xdr,
 } from '@stellar/stellar-sdk';
 import { BuildTransactionDto, OperationDto } from './dto/build-transaction.dto';
 import { SimulateTransactionDto } from './dto/simulate-transaction.dto';
 import { BenchmarkTransactionDto } from './dto/benchmark-transaction.dto';
 import { FeeBumpDto } from './dto/fee-bump.dto';
+import { PartialSignatureDto } from './dto/partial-signature.dto';
+import { ContractsService } from '../contracts/contracts.service';
 
 // ---------------------------------------------------------------------------
 // Static operation-type manifest returned by GET /composer/operations
@@ -198,10 +204,44 @@ export const OPERATION_MANIFEST = [
       { name: 'value', label: 'Data Value (up to 64 bytes, empty to delete)', type: 'text', required: false, placeholder: 'my-value' },
     ],
   },
+  {
+    type: 'liquidity_pool_deposit',
+    label: 'Liquidity Pool Deposit',
+    description: 'Deposit both pool assets using the pool ID’s canonical Asset A/B order',
+    fields: [
+      { name: 'liquidityPoolId', label: 'Liquidity Pool ID', type: 'text', required: true, placeholder: '64-character hexadecimal pool ID' },
+      { name: 'maxAmountA', label: 'Maximum Asset A (pool order)', type: 'number', required: true, placeholder: '10' },
+      { name: 'maxAmountB', label: 'Maximum Asset B (pool order)', type: 'number', required: true, placeholder: '20' },
+      { name: 'minPrice.n', label: 'Minimum Price Numerator (B per A)', type: 'number', required: true, placeholder: '1' },
+      { name: 'minPrice.d', label: 'Minimum Price Denominator', type: 'number', required: true, placeholder: '2' },
+      { name: 'maxPrice.n', label: 'Maximum Price Numerator (B per A)', type: 'number', required: true, placeholder: '2' },
+      { name: 'maxPrice.d', label: 'Maximum Price Denominator', type: 'number', required: true, placeholder: '1' },
+    ],
+  },
+  {
+    type: 'liquidity_pool_withdraw',
+    label: 'Liquidity Pool Withdraw',
+    description: 'Withdraw pool shares for both assets using the pool ID’s canonical Asset A/B order',
+    fields: [
+      { name: 'liquidityPoolId', label: 'Liquidity Pool ID', type: 'text', required: true, placeholder: '64-character hexadecimal pool ID' },
+      { name: 'amount', label: 'Pool Share Amount', type: 'number', required: true, placeholder: '1' },
+      { name: 'minAmountA', label: 'Minimum Received Asset A (pool order)', type: 'number', required: true, placeholder: '0' },
+      { name: 'minAmountB', label: 'Minimum Received Asset B (pool order)', type: 'number', required: true, placeholder: '0' },
+    ],
+  },
 ];
 
+export interface SimulationResult {
+  success: boolean;
+  hash: string;
+  fee: string | null;
+  resultCodes: string | null;
+  operationResults: unknown | null;
+  ledger: number | null;
+}
+
 interface CachedSimulation {
-  result: any;
+  result: SimulationResult;
   expiresAt: number;
 }
 
@@ -242,6 +282,74 @@ function resolveAsset(code: string | undefined, issuer?: string): Asset {
   return new Asset(code, issuer);
 }
 
+function validateLiquidityPoolId(value: unknown): string {
+  const poolId = String(value ?? '');
+  if (!/^[0-9a-fA-F]{64}$/.test(poolId)) {
+    throw new BadRequestException('liquidityPoolId must be a 64-character hexadecimal pool ID');
+  }
+  return poolId;
+}
+
+function validatePoolAmount(field: string, value: unknown, allowZero = false): string {
+  const amount = String(value ?? '');
+  if (!/^\d+(?:\.\d{1,7})?$/.test(amount)) {
+    throw new BadRequestException(`${field} must be a decimal with at most 7 fractional digits`);
+  }
+  const [whole, fraction = ''] = amount.split('.');
+  const scaled = BigInt(whole) * 10_000_000n + BigInt((fraction + '0000000').slice(0, 7));
+  if (scaled > 9223372036854775807n) {
+    throw new BadRequestException(`${field} exceeds the maximum Stellar amount`);
+  }
+  if (allowZero ? scaled < 0n : scaled === 0n) {
+    throw new BadRequestException(`${field} must be ${allowZero ? 'non-negative' : 'positive'}`);
+  }
+  return amount;
+}
+
+function validatePriceRatio(field: string, value: any): { n: number; d: number } {
+  const numerator = String(value?.n ?? '');
+  const denominator = String(value?.d ?? '');
+  if (!/^\d+$/.test(numerator) || !/^\d+$/.test(denominator)) {
+    throw new BadRequestException(`${field} numerator and denominator must be positive integers`);
+  }
+  const n = BigInt(numerator);
+  const d = BigInt(denominator);
+  if (n <= 0n || d <= 0n || n > 2147483647n || d > 2147483647n) {
+    throw new BadRequestException(`${field} numerator and denominator must be positive 32-bit integers`);
+  }
+  return { n: Number(n), d: Number(d) };
+}
+
+function validateLiquidityPoolPriceBounds(dto: any): { minPrice: { n: number; d: number }; maxPrice: { n: number; d: number } } {
+  const minPrice = validatePriceRatio('minPrice', dto.minPrice);
+  const maxPrice = validatePriceRatio('maxPrice', dto.maxPrice);
+  if (BigInt(minPrice.n) * BigInt(maxPrice.d) > BigInt(maxPrice.n) * BigInt(minPrice.d)) {
+    throw new BadRequestException('minPrice must be less than or equal to maxPrice');
+  }
+  return { minPrice, maxPrice };
+}
+
+function liquidityPoolOperationError(operation: any): string | null {
+  try {
+    if (operation.type === 'liquidityPoolDeposit') {
+      validateLiquidityPoolId(operation.liquidityPoolId);
+      validatePoolAmount('maxAmountA', operation.maxAmountA);
+      validatePoolAmount('maxAmountB', operation.maxAmountB);
+      validateLiquidityPoolPriceBounds(operation);
+    } else if (operation.type === 'liquidityPoolWithdraw') {
+      validateLiquidityPoolId(operation.liquidityPoolId);
+      validatePoolAmount('amount', operation.amount);
+      validatePoolAmount('minAmountA', operation.minAmountA, true);
+      validatePoolAmount('minAmountB', operation.minAmountB, true);
+    } else {
+      return null;
+    }
+    return null;
+  } catch (error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 @Injectable()
 export class ComposerService {
   private readonly logger = new Logger(ComposerService.name);
@@ -250,6 +358,11 @@ export class ComposerService {
   private readonly MAX_CACHE_SIZE = 1000;
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private readonly SEQUENCE_TTL_MS = 30 * 1000; // 30 seconds
+
+  constructor(
+    @Inject(forwardRef(() => ContractsService))
+    private readonly contractsService?: ContractsService
+  ) {}
 
   getOperations() {
     return OPERATION_MANIFEST;
@@ -267,7 +380,7 @@ export class ComposerService {
     return network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
   }
 
-  private async loadSequenceNumber(
+  async loadSequenceNumber(
     sourceAccount: string,
     network: 'testnet' | 'mainnet',
   ): Promise<string> {
@@ -481,13 +594,18 @@ export class ComposerService {
       }
 
       const hash = tx.hash().toString('hex');
+      const operationResults = tx.operations.flatMap((operation, index) => {
+        const error = liquidityPoolOperationError(operation);
+        return error ? [`op[${index}] ${operation.type}: ${error}`] : [];
+      });
+      const hasOperationFailure = operationResults.length > 0;
 
       const result = {
-        success: true,
+        success: !hasOperationFailure,
         hash,
         fee: null,
-        resultCodes: null,
-        operationResults: null,
+        resultCodes: hasOperationFailure ? 'tx_failed' : null,
+        operationResults: hasOperationFailure ? operationResults : null,
         ledger: null,
       };
 
@@ -532,7 +650,18 @@ export class ComposerService {
         ledger: (response as { ledger?: number }).ledger ?? null,
       };
     } catch (err: unknown) {
-      const errObj = err as any;
+      const errObj = err as {
+        response?: {
+          data?: {
+            extras?: {
+              result_codes?: {
+                transaction?: string;
+                operations?: unknown[];
+              };
+            };
+          };
+        };
+      };
       const resultCodes =
         errObj?.response?.data?.extras?.result_codes || null;
       const operationResults = resultCodes?.operations || null;
@@ -548,106 +677,6 @@ export class ComposerService {
         operationResults,
         ledger: null,
       };
-    }
-  }
-
-  async benchmarkTransaction(dto: BenchmarkTransactionDto) {
-    const network = dto.network || 'testnet';
-    const txCount = Math.min(Math.max(dto.transactionCount || 10, 1), 50);
-    const concurrency = Math.min(Math.max(dto.concurrency || 5, 1), 20);
-
-    try {
-      new Transaction(dto.xdr, this.networkPassphrase(network));
-
-      const runBatch = async (mode: 'sequential' | 'concurrent') => {
-        const latencies: number[] = [];
-        let successCount = 0;
-        let failureCount = 0;
-        let sequenceConflicts = 0;
-
-        const startTime = Date.now();
-
-        if (mode === 'sequential') {
-          for (let i = 0; i < txCount; i++) {
-            const t0 = Date.now();
-            try {
-              await new Promise((res) => setTimeout(res, 50 + Math.random() * 50));
-              successCount++;
-              latencies.push(Date.now() - t0);
-            } catch {
-              failureCount++;
-              latencies.push(Date.now() - t0);
-            }
-          }
-        } else {
-          const chunks = Math.ceil(txCount / concurrency);
-          for (let c = 0; c < chunks; c++) {
-            const batchSize = Math.min(concurrency, txCount - c * concurrency);
-            const promises = Array.from({ length: batchSize }).map(async (_, idx) => {
-              const t0 = Date.now();
-              try {
-                await new Promise((res) => setTimeout(res, 30 + Math.random() * 40));
-                if (idx > 0 && Math.random() < 0.65) {
-                  sequenceConflicts++;
-                  failureCount++;
-                  throw new Error('tx_bad_seq');
-                }
-                successCount++;
-                latencies.push(Date.now() - t0);
-              } catch (err: any) {
-                if (!err.message.includes('tx_bad_seq')) {
-                  failureCount++;
-                }
-                latencies.push(Date.now() - t0);
-              }
-            });
-            await Promise.all(promises);
-          }
-        }
-
-        const totalDurationMs = Date.now() - startTime;
-        const throughputTxPerSec =
-          totalDurationMs > 0
-            ? parseFloat(((txCount / totalDurationMs) * 1000).toFixed(2))
-            : txCount;
-
-        latencies.sort((a, b) => a - b);
-        const avgLatency = latencies.length
-          ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
-          : 0;
-        const p50 = latencies.length ? latencies[Math.floor(latencies.length * 0.5)] : 0;
-        const p95 = latencies.length ? latencies[Math.floor(latencies.length * 0.95)] : 0;
-        const p99 = latencies.length ? latencies[Math.floor(latencies.length * 0.99)] : 0;
-
-        return {
-          mode,
-          transactionCount: txCount,
-          concurrency,
-          successCount,
-          failureCount,
-          sequenceConflicts,
-          totalDurationMs,
-          throughputTxPerSec,
-          latencies: {
-            average: avgLatency,
-            p50,
-            p95,
-            p99,
-          },
-        };
-      };
-
-      const sequentialResult = await runBatch('sequential');
-      const concurrentResult = await runBatch('concurrent');
-
-      return {
-        network,
-        timestamp: Date.now(),
-        sequential: sequentialResult,
-        concurrent: concurrentResult,
-      };
-    } catch (error: any) {
-      throw new BadRequestException(`Benchmark failed: ${error.message}`);
     }
   }
 
@@ -694,6 +723,8 @@ export class ComposerService {
           price: { n: Number(dto.price.n), d: Number(dto.price.d) },
         });
       case 'set_options':
+        // Validate multisig configuration if thresholds are being set
+        this.validateMultisigConfiguration(dto);
         return Operation.setOptions({
           inflationDest: dto.inflationDest,
           clearFlags: dto.clearFlags,
@@ -703,6 +734,10 @@ export class ComposerService {
           medThreshold: dto.medThreshold,
           highThreshold: dto.highThreshold,
           homeDomain: dto.homeDomain,
+          signer: dto.signer ? {
+            ed25519PublicKey: dto.signer.ed25519PublicKey,
+            weight: dto.signer.weight,
+          } : undefined,
         });
       case 'account_merge':
         return Operation.accountMerge({
@@ -779,8 +814,288 @@ export class ComposerService {
           name: dto.name,
           value: dto.value ? Buffer.from(dto.value) : null,
         });
+      case 'liquidity_pool_deposit': {
+        const liquidityPoolId = validateLiquidityPoolId(dto.liquidityPoolId);
+        const { minPrice, maxPrice } = validateLiquidityPoolPriceBounds(dto);
+        return Operation.liquidityPoolDeposit({
+          liquidityPoolId,
+          maxAmountA: validatePoolAmount('maxAmountA', dto.maxAmountA),
+          maxAmountB: validatePoolAmount('maxAmountB', dto.maxAmountB),
+          minPrice,
+          maxPrice,
+        });
+      }
+      case 'liquidity_pool_withdraw':
+        return Operation.liquidityPoolWithdraw({
+          liquidityPoolId: validateLiquidityPoolId(dto.liquidityPoolId),
+          amount: validatePoolAmount('amount', dto.amount),
+          minAmountA: validatePoolAmount('minAmountA', dto.minAmountA, true),
+          minAmountB: validatePoolAmount('minAmountB', dto.minAmountB, true),
+        });
+      case 'invoke_host_function':
+        return this.buildInvokeHostFunctionOperation(dto);
       default:
-        throw new BadRequestException(`Unknown operation type: ${(dto as any).type}`);
+        throw new BadRequestException(
+          `Unknown operation type: ${(dto as { type?: string }).type}`,
+        );
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private buildInvokeHostFunctionOperation(dto: any): any {
+    if (!StrKey.isValidContract(dto.contractId)) {
+      throw new BadRequestException('Invalid contract ID format');
+    }
+
+    if (!dto.functionName || typeof dto.functionName !== 'string') {
+      throw new BadRequestException('Function name is required');
+    }
+
+    const args = dto.arguments || [];
+    const useAbi = dto.useAbi !== false; // Default to true
+    const rawMode = dto.rawMode === true; // Default to false
+
+    let scVals: xdr.ScVal[];
+
+    if (rawMode) {
+      // Raw mode: arguments are already ScVal objects or will be converted directly
+      scVals = this.convertRawArgumentsToScVals(args);
+    } else if (useAbi && this.contractsService) {
+      // ABI mode: validate and convert using ABI catalog
+      try {
+        const encodedArgs = this.contractsService.encodeAbiArguments(
+          dto.contractId,
+          dto.functionName,
+          args,
+          dto.wasmId
+        );
+        scVals = encodedArgs.map((arg: any) => xdr.ScVal.fromXDR(arg.xdrBase64, 'base64'));
+      } catch (error) {
+        // Fall back to native conversion if ABI is not available
+        this.logger.warn(`ABI validation failed for ${dto.contractId}.${dto.functionName}, falling back to native conversion: ${error.message}`);
+        scVals = args.map((arg: any) => nativeToScVal(arg));
+      }
+    } else {
+      // Native mode: convert using nativeToScVal
+      scVals = args.map((arg: any) => nativeToScVal(arg));
+    }
+
+    return Operation.invokeContractFunction({
+      contract: dto.contractId,
+      function: dto.functionName,
+      args: scVals,
+    });
+  }
+
+  private convertRawArgumentsToScVals(args: any[]): xdr.ScVal[] {
+    return args.map((arg) => {
+      if (typeof arg === 'object' && arg !== null) {
+        if (arg.type && arg.value !== undefined) {
+          // Structured ScVal format: { type: 'Address', value: 'G...' }
+          return this.buildScValFromType(arg.type, arg.value);
+        } else if (arg.xdr) {
+          // XDR format: { xdr: 'base64...' }
+          return xdr.ScVal.fromXDR(arg.xdr, 'base64');
+        }
+      }
+      // Fallback to native conversion
+      return nativeToScVal(arg);
+    });
+  }
+
+  private buildScValFromType(type: string, value: any): xdr.ScVal {
+    try {
+      switch (type.toLowerCase()) {
+        case 'address':
+          return Address.fromString(value).toScVal();
+        case 'bool':
+        case 'boolean':
+          return nativeToScVal(Boolean(value));
+        case 'bytes':
+          if (typeof value === 'string') {
+            return nativeToScVal(Buffer.from(value, 'hex'));
+          }
+          return nativeToScVal(Buffer.from(value));
+        case 'string':
+          return nativeToScVal(String(value));
+        case 'symbol':
+          return xdr.ScVal.scvSymbol(String(value));
+        case 'i32':
+          return nativeToScVal(parseInt(value));
+        case 'i64':
+        case 'i128':
+        case 'i256':
+          return nativeToScVal(BigInt(value));
+        case 'u32':
+          return nativeToScVal(parseInt(value));
+        case 'u64':
+        case 'u128':
+        case 'u256':
+          return nativeToScVal(BigInt(value));
+        case 'vec':
+        case 'array':
+          if (Array.isArray(value)) {
+            const elements = value.map(item => 
+              typeof item === 'object' && item.type 
+                ? this.buildScValFromType(item.type, item.value)
+                : nativeToScVal(item)
+            );
+            return xdr.ScVal.scvVec(elements);
+          }
+          throw new BadRequestException('Vec/Array type requires an array value');
+        case 'map':
+        case 'object':
+          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            const entries = Object.entries(value).map(([key, val]) => {
+              const keyScVal = nativeToScVal(key);
+              const valScVal = typeof val === 'object' && (val as any).type
+                ? this.buildScValFromType((val as any).type, (val as any).value)
+                : nativeToScVal(val);
+              return new xdr.ScMapEntry({ key: keyScVal, val: valScVal });
+            });
+            return xdr.ScVal.scvMap(entries);
+          }
+          throw new BadRequestException('Map/Object type requires an object value');
+        default:
+          // Fallback to native conversion for unknown types
+          return nativeToScVal(value);
+      }
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to convert ${type} value to ScVal: ${error.message}`
+      );
+    }
+  }
+
+  private validateMultisigConfiguration(dto: any): void {
+    const masterWeight = dto.masterWeight !== undefined ? Number(dto.masterWeight) : undefined;
+    const lowThreshold = dto.lowThreshold !== undefined ? Number(dto.lowThreshold) : undefined;
+    const medThreshold = dto.medThreshold !== undefined ? Number(dto.medThreshold) : undefined;
+    const highThreshold = dto.highThreshold !== undefined ? Number(dto.highThreshold) : undefined;
+
+    // Validate threshold hierarchy
+    if (lowThreshold !== undefined && medThreshold !== undefined && lowThreshold > medThreshold) {
+      throw new BadRequestException('Low threshold cannot be greater than medium threshold');
+    }
+
+    if (medThreshold !== undefined && highThreshold !== undefined && medThreshold > highThreshold) {
+      throw new BadRequestException('Medium threshold cannot be greater than high threshold');
+    }
+
+    if (lowThreshold !== undefined && highThreshold !== undefined && lowThreshold > highThreshold) {
+      throw new BadRequestException('Low threshold cannot be greater than high threshold');
+    }
+
+    // Validate threshold ranges
+    const thresholds = [lowThreshold, medThreshold, highThreshold].filter(t => t !== undefined);
+    for (const threshold of thresholds) {
+      if (threshold < 0 || threshold > 255) {
+        throw new BadRequestException('Thresholds must be between 0 and 255');
+      }
+    }
+
+    // Validate master weight
+    if (masterWeight !== undefined && (masterWeight < 0 || masterWeight > 255)) {
+      throw new BadRequestException('Master weight must be between 0 and 255');
+    }
+
+    // Validate signer weight
+    if (dto.signer?.weight !== undefined) {
+      const signerWeight = Number(dto.signer.weight);
+      if (signerWeight < 0 || signerWeight > 255) {
+        throw new BadRequestException('Signer weight must be between 0 and 255');
+      }
+    }
+
+    // Warning: Check if thresholds can be satisfied
+    if (masterWeight !== undefined && highThreshold !== undefined && masterWeight < highThreshold) {
+      this.logger.warn(`Master weight (${masterWeight}) is less than high threshold (${highThreshold}). Additional signers will be required.`);
+    }
+  }
+
+  async benchmarkTransaction(dto: BenchmarkTransactionDto) {
+    const network = dto.network || 'testnet';
+    const txCount = Math.min(Math.max(dto.transactionCount || 10, 1), 50);
+    const concurrency = Math.min(Math.max(dto.concurrency || 5, 1), 20);
+
+    const baseTx = 
+      new Transaction(dto.xdr, this.networkPassphrase(network));
+    const server = this.getHorizonServer(dto.network);
+
+    // Benchmark metrics
+    const results: {
+      transactionIndex: number;
+      submissionTime: number;
+      success: boolean;
+      hash?: string;
+      errorMessage?: string;
+    }[] = [];
+
+    let successCount = 0;
+    let failureCount = 0;
+    let totalSubmissionTime = 0;
+
+    const startTime = Date.now();
+
+    // Process transactions in batches for concurrency control
+    const batchSize = concurrency;
+    for (let batchStart = 0; batchStart < txCount; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, txCount);
+      const batchPromises = [];
+
+      for (let i = batchStart; i < batchEnd; i++) {
+        const promise = (async (transactionIndex: number) => {
+          const txStartTime = Date.now();
+          try {
+            const submissionResult = await server.submitTransaction(baseTx);
+            const submissionTime = Date.now() - txStartTime;
+            totalSubmissionTime += submissionTime;
+            successCount++;
+            
+            results.push({
+              transactionIndex,
+              submissionTime,
+              success: true,
+              hash: submissionResult.hash,
+            });
+          } catch (error) {
+            const submissionTime = Date.now() - txStartTime;
+            totalSubmissionTime += submissionTime;
+            failureCount++;
+            
+            results.push({
+              transactionIndex,
+              submissionTime,
+              success: false,
+              errorMessage: error instanceof Error ? error.message : String(error),
+            });
+          }
+        })(i);
+
+        batchPromises.push(promise);
+      }
+
+      // Wait for the current batch to complete before starting the next
+      await Promise.all(batchPromises);
+    }
+
+    const totalTime = Date.now() - startTime;
+
+    try {
+      return {
+        summary: {
+          totalTransactions: txCount,
+          successCount,
+          failureCount,
+          totalTime,
+          averageSubmissionTime: totalSubmissionTime / txCount,
+          transactionsPerSecond: (successCount / totalTime) * 1000,
+        },
+        results: results.sort((a, b) => a.transactionIndex - b.transactionIndex),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Benchmark failed: ${message}`);
     }
   }
 
@@ -844,7 +1159,7 @@ export class ComposerService {
         }
         default:
           throw new BadRequestException(
-            `Unknown precondition type: ${(precondition as any).type}`,
+            `Unknown precondition type: ${(precondition as { type?: string }).type}`,
           );
       }
     }

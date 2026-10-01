@@ -30,6 +30,21 @@ export interface GraphEdge {
   metadata: Record<string, unknown>;
 }
 
+/** Deepest traversal a query may ask for; mirrors `GraphQueryDto.depth`'s `@Max(3)`. */
+export const GRAPH_MAX_DEPTH = 3;
+/** Default ceiling on nodes in one graph (override with `GRAPH_MAX_NODES`). */
+export const DEFAULT_GRAPH_MAX_NODES = 150;
+/** Default ceiling on Horizon calls per graph (override with `GRAPH_MAX_HORIZON_REQUESTS`). */
+export const DEFAULT_GRAPH_MAX_HORIZON_REQUESTS = 60;
+
+export type GraphTruncation = 'node_limit' | 'horizon_request_limit';
+
+export interface GraphLimits {
+  maxDepth: number;
+  maxNodes: number;
+  maxHorizonRequests: number;
+}
+
 export interface GraphResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -38,6 +53,48 @@ export interface GraphResult {
   mode: GraphMode;
   nodeCount: number;
   edgeCount: number;
+  /** True when a limit stopped the traversal early, so the graph is partial. */
+  truncated: boolean;
+  /** The first limit hit, or null for a complete graph. */
+  truncatedBy: GraphTruncation | null;
+  /** Horizon calls this graph actually made. */
+  horizonRequests: number;
+  limits: GraphLimits;
+}
+
+/**
+ * Per-request accounting for one `buildGraph` call (#260). Every Horizon call
+ * reserves a request first and every new node checks for room, so one query can
+ * no longer fan out into an unbounded crawl; the first limit hit is recorded.
+ */
+class TraversalBudget {
+  requests = 0;
+  truncatedBy: GraphTruncation | null = null;
+
+  constructor(private readonly limits: GraphLimits) {}
+
+  /** Reserve one Horizon request; false once the budget is spent. */
+  takeRequest(): boolean {
+    if (this.requests >= this.limits.maxHorizonRequests) {
+      this.truncatedBy ??= 'horizon_request_limit';
+      return false;
+    }
+    this.requests += 1;
+    return true;
+  }
+
+  /** Whether a graph that already holds `current` nodes may take `extra` more. */
+  hasRoomFor(current: number, extra = 1): boolean {
+    if (current + extra > this.limits.maxNodes) {
+      this.truncatedBy ??= 'node_limit';
+      return false;
+    }
+    return true;
+  }
+
+  get exhausted(): boolean {
+    return this.truncatedBy !== null;
+  }
 }
 
 interface HorizonSigner {
@@ -67,6 +124,18 @@ export class GraphService {
   private readonly logger = new Logger(GraphService.name);
 
   constructor(private readonly configService: ConfigService) {}
+
+  private limits(): GraphLimits {
+    const positive = (key: string, fallback: number) => {
+      const value = Number(this.configService.get<string | number>(key));
+      return Number.isInteger(value) && value > 0 ? value : fallback;
+    };
+    return {
+      maxDepth: GRAPH_MAX_DEPTH,
+      maxNodes: positive('GRAPH_MAX_NODES', DEFAULT_GRAPH_MAX_NODES),
+      maxHorizonRequests: positive('GRAPH_MAX_HORIZON_REQUESTS', DEFAULT_GRAPH_MAX_HORIZON_REQUESTS),
+    };
+  }
 
   private horizon(network: 'mainnet' | 'testnet'): StellarSdk.Horizon.Server {
     const url =
@@ -126,13 +195,16 @@ export class GraphService {
     }
   }
 
-  /** Caches account lookups so each account is only fetched once per query. */
-  private createAccountCache(server: StellarSdk.Horizon.Server) {
+  /**
+   * Caches account lookups so each account is only fetched once per query, and
+   * charges each real fetch to the budget; once it is spent, lookups return null.
+   */
+  private createAccountCache(server: StellarSdk.Horizon.Server, budget: TraversalBudget) {
     const cache = new Map<string, Promise<AccountSnapshot | null>>();
     return (publicKey: string): Promise<AccountSnapshot | null> => {
       let p = cache.get(publicKey);
       if (!p) {
-        p = this.fetchAccount(server, publicKey);
+        p = budget.takeRequest() ? this.fetchAccount(server, publicKey) : Promise.resolve(null);
         cache.set(publicKey, p);
       }
       return p;
@@ -164,13 +236,16 @@ export class GraphService {
     return publicKey;
   }
 
+  /** Returns the node, or null when the node limit leaves no room for a new one. */
   private buildNode(
     publicKey: string,
     account: AccountSnapshot | null,
     seenNodes: Map<string, GraphNode>,
-  ): GraphNode {
+    budget: TraversalBudget,
+  ): GraphNode | null {
     const existing = seenNodes.get(publicKey);
     if (existing) return existing;
+    if (!budget.hasRoomFor(seenNodes.size)) return null;
     const type = this.classifyNode(publicKey, account);
     const node: GraphNode = {
       id: publicKey,
@@ -196,24 +271,29 @@ export class GraphService {
     loadAccount: (pk: string) => Promise<AccountSnapshot | null>,
     nodes: Map<string, GraphNode>,
     edges: GraphEdge[],
+    budget: TraversalBudget,
   ): Promise<void> {
-    // BFS over signer relationships.
+    // BFS over signer relationships, stopping as soon as a limit is hit.
     const visited = new Set<string>();
     const queue: Array<{ pk: string; level: number }> = [
       { pk: rootAccount, level: 0 },
     ];
     visited.add(rootAccount);
 
-    while (queue.length > 0) {
+    while (queue.length > 0 && !budget.exhausted) {
       const { pk, level } = queue.shift()!;
       const account = await loadAccount(pk);
-      this.buildNode(pk, account, nodes);
+      if (!this.buildNode(pk, account, nodes, budget)) break;
 
       if (level >= depth || !account || account.signers.length === 0) continue;
 
-      const signerKeys = account.signers
-        .filter((s) => s.key && s.key.startsWith('G'))
-        .map((s) => s.key);
+      // Only signers that fit under the node limit get nodes and edges.
+      const signerKeys: string[] = [];
+      for (const s of account.signers) {
+        if (!s.key || !s.key.startsWith('G')) continue;
+        if (!this.buildNode(s.key, null, nodes, budget)) break;
+        signerKeys.push(s.key);
+      }
 
       for (const signer of signerKeys) {
         // signer signs_for pk
@@ -225,8 +305,6 @@ export class GraphService {
             weight: account.signers.find((s) => s.key === signer)?.weight ?? 1,
           },
         });
-        this.buildNode(signer, null, nodes);
-
         if (!visited.has(signer) && level + 1 < depth + 1) {
           visited.add(signer);
           queue.push({ pk: signer, level: level + 1 });
@@ -252,7 +330,9 @@ export class GraphService {
   private async fetchOffers(
     server: StellarSdk.Horizon.Server,
     rootAccount: string,
+    budget: TraversalBudget,
   ): Promise<PendingOffer[]> {
+    if (!budget.takeRequest()) return [];
     try {
       const page = await server.offers().forAccount(rootAccount).limit(200).call();
       return page.records.map((o) => ({
@@ -284,18 +364,20 @@ export class GraphService {
     loadAccount: (pk: string) => Promise<AccountSnapshot | null>,
     nodes: Map<string, GraphNode>,
     edges: GraphEdge[],
+    budget: TraversalBudget,
   ): Promise<void> {
-    const offers = await this.fetchOffers(server, rootAccount);
-    if (offers.length === 0) {
-      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
-      return;
-    }
+    const offers = await this.fetchOffers(server, rootAccount, budget);
+    this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
+    if (offers.length === 0) return;
 
-    this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
-
-    // Find counterparties whose offers match each of the root's offers.
+    // Find counterparties whose offers match each of the root's offers. Each
+    // counter-offer query costs a request, and each new seller needs node room.
     const matchedSellers = new Set<string>();
-    for (const offer of offers) {
+    // Sellers not yet in the graph; only these need node room (an ALL query may
+    // already hold a seller from the signers pass).
+    const pendingNew = new Set<string>();
+    counterOffers: for (const offer of offers) {
+      if (!budget.takeRequest()) break;
       // Counter-offers sell what we buy and buy what we sell.
       const sellingAsset = this.sdkAsset(offer.selling);
       const buyingAsset = this.sdkAsset(offer.buying);
@@ -314,6 +396,10 @@ export class GraphService {
 
       for (const counter of page.records) {
         if (counter.seller === rootAccount) continue;
+        if (!nodes.has(counter.seller) && !pendingNew.has(counter.seller)) {
+          if (!budget.hasRoomFor(nodes.size + pendingNew.size)) break counterOffers;
+          pendingNew.add(counter.seller);
+        }
         matchedSellers.add(counter.seller);
         const rel = edges.some(
           (e) =>
@@ -337,7 +423,7 @@ export class GraphService {
     }
 
     for (const seller of matchedSellers) {
-      this.buildNode(seller, await loadAccount(seller), nodes);
+      this.buildNode(seller, await loadAccount(seller), nodes, budget);
     }
   }
 
@@ -347,7 +433,12 @@ export class GraphService {
     loadAccount: (pk: string) => Promise<AccountSnapshot | null>,
     nodes: Map<string, GraphNode>,
     edges: GraphEdge[],
+    budget: TraversalBudget,
   ): Promise<void> {
+    if (!budget.takeRequest()) {
+      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
+      return;
+    }
     let page: StellarSdk.Horizon.ServerApi.CollectionPage<
       StellarSdk.Horizon.ServerApi.PaymentOperationRecord | StellarSdk.Horizon.ServerApi.PathPaymentOperationRecord
     >;
@@ -359,27 +450,32 @@ export class GraphService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('404') || msg.includes('not found')) {
-        this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
+        this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
         return;
       }
       this.logger.warn(`payments.forAccount(${rootAccount}) failed: ${msg}`);
-      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
+      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
       return;
     }
 
     const paymentOps = page.records.filter((r) => r.type === 'payment');
     if (paymentOps.length === 0) {
-      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
+      this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
       return;
     }
 
-    this.buildNode(rootAccount, await loadAccount(rootAccount), nodes);
+    this.buildNode(rootAccount, await loadAccount(rootAccount), nodes, budget);
 
     const connected = new Set<string>();
+    // Endpoints not yet in the graph; only these need node room.
+    const pendingNew = new Set<string>();
     for (const op of paymentOps) {
       const from = (op as StellarSdk.Horizon.ServerApi.PaymentOperationRecord).from;
       const to = (op as StellarSdk.Horizon.ServerApi.PaymentOperationRecord).to;
       if (!from || !to) continue;
+      const fresh = [...new Set([from, to])].filter((pk) => !nodes.has(pk) && !pendingNew.has(pk));
+      if (!budget.hasRoomFor(nodes.size + pendingNew.size, fresh.length)) break;
+      fresh.forEach((pk) => pendingNew.add(pk));
       connected.add(from);
       connected.add(to);
       edges.push({
@@ -395,7 +491,7 @@ export class GraphService {
     }
 
     for (const pk of connected) {
-      this.buildNode(pk, await loadAccount(pk), nodes);
+      this.buildNode(pk, await loadAccount(pk), nodes, budget);
     }
   }
 
@@ -404,7 +500,9 @@ export class GraphService {
   async buildGraph(dto: GraphQueryDto): Promise<GraphResult> {
     const network = dto.network ?? 'testnet';
     const server = this.horizon(network);
-    const loadAccount = this.createAccountCache(server);
+    const limits = this.limits();
+    const budget = new TraversalBudget(limits);
+    const loadAccount = this.createAccountCache(server, budget);
     const nodes = new Map<string, GraphNode>();
     const edges: GraphEdge[] = [];
 
@@ -425,24 +523,29 @@ export class GraphService {
           loadAccount,
           nodes,
           edges,
+          budget,
         );
       }
-      if (dto.mode === GraphMode.OFFERS || dto.mode === GraphMode.ALL) {
+      // Once a limit has cut the graph short, later modes would only spend
+      // Horizon calls on nodes that can no longer be added.
+      if (!budget.exhausted && (dto.mode === GraphMode.OFFERS || dto.mode === GraphMode.ALL)) {
         await this.buildOffersGraph(
           server,
           dto.rootAccount,
           loadAccount,
           nodes,
           edges,
+          budget,
         );
       }
-      if (dto.mode === GraphMode.PAYMENTS || dto.mode === GraphMode.ALL) {
+      if (!budget.exhausted && (dto.mode === GraphMode.PAYMENTS || dto.mode === GraphMode.ALL)) {
         await this.buildPaymentsGraph(
           server,
           dto.rootAccount,
           loadAccount,
           nodes,
           edges,
+          budget,
         );
       }
     } catch (err: unknown) {
@@ -460,6 +563,10 @@ export class GraphService {
       mode: dto.mode,
       nodeCount: nodeList.length,
       edgeCount: edges.length,
+      truncated: budget.exhausted,
+      truncatedBy: budget.truncatedBy,
+      horizonRequests: budget.requests,
+      limits,
     };
   }
 }

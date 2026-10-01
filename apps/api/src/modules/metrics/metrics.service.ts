@@ -1,28 +1,24 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import {
+  Counter,
+  Gauge,
+  Histogram,
+  Registry,
+  collectDefaultMetrics,
+} from "prom-client";
 
 @Injectable()
 export class MetricsService {
-  readonly registry: any;
-  private readonly httpRequestsTotal: any;
-  private readonly httpRequestDuration: any;
-  private readonly sorobanRpcDuration: any;
-  private readonly sorobanContractInvocations: any;
-  private readonly horizonConnections: any;
-  private readonly redisConnections: any;
+  readonly registry: Registry;
+  private readonly httpRequestsTotal: Counter;
+  private readonly httpRequestDuration: Histogram;
+  private readonly sorobanRpcDuration: Histogram;
+  private readonly sorobanContractInvocations: Counter;
+  private readonly horizonConnections: Gauge;
+  private readonly redisConnections: Gauge;
 
   constructor(private readonly configService: ConfigService) {
-    // Loaded at runtime so test environments without installed optional workspace
-    // dependencies can still compile modules that do not instantiate MetricsService.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const {
-      Counter,
-      Gauge,
-      Histogram,
-      Registry,
-      collectDefaultMetrics,
-    } = require("prom-client");
-
     this.registry = new Registry();
     this.registry.setDefaultLabels({
       service: this.configService.get<string>(

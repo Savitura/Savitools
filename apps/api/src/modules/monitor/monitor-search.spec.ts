@@ -7,7 +7,7 @@ import { MonitorQueueService } from './monitor-queue.service';
 import { MonitorService } from './monitor.service';
 import { StreamManager } from './stream-manager.service';
 import { WatchRegistry } from './watch-registry.service';
-import { EXPORT_MAX_ROWS, SearchEventsQueryDto } from './dto/search-events.dto';
+import { EXPORT_CHUNK_SIZE, EXPORT_MAX_ROWS, SearchEventsQueryDto } from './dto/search-events.dto';
 
 function makeEvent(overrides: Partial<WatchEvent> = {}): WatchEvent {
   return {
@@ -37,6 +37,7 @@ function fakeQueryBuilder(events: WatchEvent[]) {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     skip: jest.fn((value: number) => {
       skip = value;
       return qb;
@@ -44,6 +45,9 @@ function fakeQueryBuilder(events: WatchEvent[]) {
     take: jest.fn((value: number) => {
       take = value;
       return qb;
+    }),
+    getMany: jest.fn().mockImplementation(() => {
+      return Promise.resolve(events.slice(skip, skip + take));
     }),
     getManyAndCount: jest.fn().mockImplementation(() => {
       const page = events.slice(skip, skip + take);
@@ -54,8 +58,9 @@ function fakeQueryBuilder(events: WatchEvent[]) {
 }
 
 function makeService(watchEvents: WatchEvent[]) {
+  const builder = fakeQueryBuilder(watchEvents);
   const watchEventRepository = {
-    createQueryBuilder: jest.fn().mockReturnValue(fakeQueryBuilder(watchEvents)),
+    createQueryBuilder: jest.fn().mockReturnValue(builder),
   } as unknown as Repository<WatchEvent>;
   return {
     service: new MonitorService(
@@ -68,6 +73,7 @@ function makeService(watchEvents: WatchEvent[]) {
       {} as MonitorQueueService,
       {} as any,
     ),
+    builder,
   };
 }
 
@@ -176,5 +182,63 @@ describe('MonitorService search & CSV export', () => {
       () => undefined,
     );
     expect(rows).toHaveLength(2);
+  });
+
+  // ── #288: stable page boundaries and no COUNT per chunk ──────────────────
+
+  it('orders by a tiebreaker so rows with equal timestamps keep their order', async () => {
+    const { service, builder } = makeService([
+      makeEvent({ id: 'event-a' }),
+      makeEvent({ id: 'event-b' }),
+    ]);
+
+    await service.searchEvents('user-1', { page: 1, limit: 25 } as SearchEventsQueryDto);
+
+    expect(builder.orderBy).toHaveBeenCalledWith('event.occurred_at', 'DESC');
+    expect(builder.addOrderBy).toHaveBeenCalledWith('event.id', 'DESC');
+  });
+
+  it('exports every row exactly once across chunks without a COUNT per chunk', async () => {
+    // Three chunks: two full pages plus a short one.
+    const total = EXPORT_CHUNK_SIZE * 2 + 7;
+    const events = Array.from({ length: total }, (_, i) =>
+      makeEvent({
+        id: `event-${i}`,
+        // Every row shares one timestamp, so only the id tiebreaker keeps the
+        // pages from overlapping.
+        occurredAt: new Date('2026-08-31T12:00:00.000Z'),
+        payload: {
+          amount: '1',
+          asset_type: 'native',
+          from: 'GFROM',
+          to: 'GTO',
+          transaction_hash: `hash-${i}`,
+        },
+      }),
+    );
+    const { service, builder } = makeService(events);
+
+    const seen: string[] = [];
+    let written = -1;
+    await service.streamSearchEventsCsv(
+      'user-1',
+      { page: 1, limit: EXPORT_MAX_ROWS } as SearchEventsQueryDto,
+      (values) => {
+        seen.push(String(values[6]));
+      },
+      (count) => {
+        written = count;
+      },
+    );
+
+    expect(written).toBe(total);
+    expect(new Set(seen).size).toBe(total);
+    expect(builder.getManyAndCount).not.toHaveBeenCalled();
+    expect(builder.getMany).toHaveBeenCalledTimes(3);
+    expect(builder.skip.mock.calls.map((call: number[]) => call[0])).toEqual([
+      0,
+      EXPORT_CHUNK_SIZE,
+      EXPORT_CHUNK_SIZE * 2,
+    ]);
   });
 });

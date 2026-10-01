@@ -3,12 +3,13 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Worker } from 'bullmq';
 import { signatureHeaders } from '../webhook/signature';
-import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../webhook/ssrf-guard';
+import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../../common/ssrf-guard';
 import { Resend } from 'resend';
 import { Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
@@ -24,10 +25,22 @@ import {
   NotificationJobData,
 } from './monitor.types';
 import { MonitorGateway } from './monitor.gateway';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';
+import { MonitorDigestService } from './monitor-digest.service';
 
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 
+/**
+ * Consumer half of the alert pipeline.
+ *
+ * BullMQ hands each job to exactly one worker, so running the consumer in every
+ * replica is safe and is what keeps delivery throughput scaling with the
+ * deployment — provided the *producer* runs once, which is what
+ * {@link MonitorLeaderService} and `MonitorQueueService` guarantee
+ * (Savitura/Savitools#255). `MONITOR_ROLE=api` disables the consumer entirely
+ * for deployments that run a dedicated monitor worker.
+ */
 @Injectable()
 export class NotificationWorkerService
   implements OnModuleInit, OnModuleDestroy
@@ -37,6 +50,7 @@ export class NotificationWorkerService
   private resend?: Resend;
 
   constructor(
+    private readonly runtime: MonitorRuntimeConfig,
     private readonly configService: ConfigService,
     @InjectRepository(AlertEvent)
     private readonly alertEventRepository: Repository<AlertEvent>,
@@ -46,9 +60,18 @@ export class NotificationWorkerService
     private readonly userRepository: Repository<User>,
     private readonly gateway: MonitorGateway,
     private readonly encryptionService: EncryptionService,
+    @Optional()
+    private readonly digestService?: MonitorDigestService,
   ) {}
 
   onModuleInit(): void {
+    if (!this.runtime.consumerEnabled) {
+      this.logger.log(
+        `Monitor role "${this.runtime.role}": notification worker is disabled on this instance`,
+      );
+      return;
+    }
+
     const redisUrl = this.configService.get<string>('REDIS_URL');
     if (!redisUrl) {
       return;
@@ -109,13 +132,33 @@ export class NotificationWorkerService
 
     const attempts = [...alertEvent.deliveryAttempts];
     const failures: Error[] = [];
+    let hasHeldChannel = false;
+
     for (const channel of rule.channels) {
       if (
         attempts.some(
           (attempt) =>
-            attempt.channel === channel && attempt.status === 'delivered',
+            attempt.channel === channel &&
+            (attempt.status === 'delivered' || attempt.status === 'held'),
         )
       ) {
+        continue;
+      }
+
+      // Webhooks are never held (webhook path keeps its immediate semantics)
+      const isDigestChannel = channel === 'in_app' || channel === 'email';
+      const shouldHold =
+        isDigestChannel &&
+        this.digestService &&
+        (await this.digestService.shouldHoldAlert(user.id));
+
+      if (shouldHold) {
+        hasHeldChannel = true;
+        this.replaceAttempt(attempts, {
+          channel,
+          status: 'held',
+          attemptedAt: new Date().toISOString(),
+        });
         continue;
       }
 
@@ -141,12 +184,14 @@ export class NotificationWorkerService
 
     alertEvent.deliveryAttempts = attempts;
     alertEvent.deliveryStatus =
-      failures.length === 0
-        ? 'delivered'
-        : this.hasRetriesLeft(job)
+      failures.length > 0
+        ? this.hasRetriesLeft(job)
           ? 'retrying'
-          : 'failed';
-    alertEvent.deliveredAt = failures.length === 0 ? new Date() : null;
+          : 'failed'
+        : hasHeldChannel
+          ? 'held'
+          : 'delivered';
+    alertEvent.deliveredAt = failures.length === 0 && !hasHeldChannel ? new Date() : null;
     await this.alertEventRepository.save(alertEvent);
 
     this.gateway.emitToUser(user.id, 'alert_status', {
@@ -225,9 +270,10 @@ export class NotificationWorkerService
       ruleId: alertEvent.ruleId,
       event: alertEvent.payload,
     });
-    // Same timestamped wire format as WebhookService and event replay, and the
-    // signature pair is computed once so every redirect hop carries the
-    // timestamp the signature was made for.
+    // `signatureHeaders` is the one wire contract every signed webhook path uses
+    // (WebhookService and event replay call it too), and the signature pair is
+    // computed once so every redirect hop carries the timestamp the signature
+    // was made for.
     const signedHeaders = signatureHeaders({ secret, body });
     let currentUrl = destination;
     let response: Response;

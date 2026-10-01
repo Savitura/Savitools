@@ -256,6 +256,143 @@ export const toolDocs: ToolDocs[] = [
     ],
   },
   {
+    slug: 'path-payment-lab',
+    name: 'Slippage Lab',
+    href: '/simulator/path-payment-lab',
+    tagline: 'Price several slippage tolerances against one adverse rate move and see which would survive it.',
+    overview: [
+      'A path payment does not lock a rate. Your transaction carries a tolerance — destinationMin for strict send, sendMax for strict receive — and the payment fails if the live route cannot fill inside it. The Slippage Lab takes one asset pair, one amount, and up to ten tolerances, then prices every one of them against a single simulated adverse rate move.',
+      'That turns “how much slippage is safe?” from a guess into a table: each row shows the value you would submit, what the route delivers once the move happens, how much headroom is left, and whether the payment clears. The narrowest tolerance that survives is called out as the recommendation, and the lab tells you when every tolerance you compared is too tight.',
+      'All arithmetic runs on exact stroop integers and rounds the way the network rounds, so a tolerance the lab reports is always one the network will accept.',
+    ],
+    prerequisites: [
+      'The source and destination assets, as “XLM” or “CODE:ISSUER”.',
+      'An amount with at most 7 decimal places.',
+      'Network access to Horizon, which supplies the live route table.',
+    ],
+    setup: [
+      'Open the Slippage Lab from the home page or go directly to /simulator/path-payment-lab.',
+      'Pick strict send if you are fixing the amount leaving your account, or strict receive if you are fixing the amount arriving.',
+    ],
+    usage: [
+      {
+        title: 'Run a comparison',
+        steps: [
+          'Choose the network, the direction, the two assets and the amount, then press “Run the lab”.',
+          'Each tolerance row shows the destinationMin or sendMax to submit, the amount at the simulated move, the headroom, and whether it clears.',
+          'Read the summary below the table: the narrowest tolerance that survives the move, and how much unused headroom it leaves.',
+          'If every row says it would fail, widen a tolerance or wait for the route to recover — as written, the payment would not land.',
+        ],
+      },
+      {
+        title: 'Stress a tolerance',
+        steps: [
+          'Set the adverse rate move to the worst deterioration you are willing to accept, for example 1 or 2 percent.',
+          'Compare tolerances that bracket it, such as 0.5 and 5 percent.',
+          'Anything narrower than the move fails; the narrowest row above the move is your recommendation.',
+        ],
+      },
+      {
+        title: 'Price a non-best route',
+        steps: [
+          'Run once to discover how many routes Horizon returned for the pair.',
+          'Switch the Route selector to a higher index to simulate a worse route.',
+          'The dispersion figure shows how far that route already sits below the best one before any move is applied.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: 'Every tolerance would fail',
+        cause: 'The adverse rate move you set is wider than every tolerance compared.',
+        fix: 'Widen a tolerance past the move, or reduce the move to the deterioration you actually expect before the transaction lands.',
+      },
+      {
+        issue: 'A row reads “exactly at the limit”',
+        cause: 'The tolerance and the adverse move landed on the same amount, so the headroom is exactly zero.',
+        fix: 'Treat it as a failure. It clears only if the rate does not move by another stroop, which is not something to rely on.',
+      },
+      {
+        issue: '400 routeIndex is out of range',
+        cause: 'The route selector points past the routes Horizon returned for that pair and amount.',
+        fix: 'Run the lab once without changing the selector to see how many routes exist, then pick one of those.',
+      },
+      {
+        issue: '400 No path found',
+        cause: 'There is no order-book or liquidity-pool route connecting the two assets at that amount.',
+        fix: 'Try a different pair, or route through a liquid asset such as XLM or USDC by splitting the payment.',
+      },
+    ],
+  },
+  {
+    slug: 'multisig',
+    name: 'Multisig Simulator',
+    href: '/multisig',
+    tagline: 'Check whether the signatures collected so far clear the threshold, and name the signers still outstanding.',
+    overview: [
+      'A Stellar multisig is not “2 of 3 signers” — it is any subset of signers whose weights total at least the threshold. The Multisig Simulator makes that concrete. Enter the account’s signers and weights, tick the signatures you already hold, and see whether the operation is authorised, which of the low/medium/high weight classes are cleared, and exactly which signers still have to sign.',
+      'It also reports the risks an operator would otherwise only discover on-chain: a threshold no set of signatures can reach, one signer whose weight alone clears the quorum, a configuration where every signer is needed, an outstanding required signer, and signers that could be dropped without weakening the account.',
+      'The simulation is a pure function of what you type. Nothing is fetched from an account and nothing is submitted, so it is safe to try configurations that do not exist.',
+    ],
+    prerequisites: [
+      'The signer public keys and weights from the account’s `signers` list.',
+      'The account’s thresholds — the medium one is what gates payments and path payments.',
+      'Which signatures you have collected. Optional — leave every box unticked to plan an operation from scratch.',
+    ],
+    setup: [
+      'Open the Multisig Simulator from the home page or go directly to /multisig.',
+      'Leave Low and High threshold blank to let them default to the medium threshold, which is what Stellar itself does.',
+    ],
+    usage: [
+      {
+        title: 'Check a collected signature set',
+        steps: [
+          'Add each signer with its weight, and tick Signed for the signatures you hold.',
+          'Press “Simulate”.',
+          'Read the verdict: whether the operation is authorised, the weight still missing, and the smallest set of outstanding signers that would close the gap.',
+          'Check the weight classes to see whether the account can also submit trustlines, offers, settings, or clawbacks.',
+        ],
+      },
+      {
+        title: 'Design a quorum',
+        steps: [
+          'Leave every Signed box unticked to ask who would need to sign.',
+          'Use the findings to spot a single signer holding control, or a configuration where every signer is required.',
+          'Lower a weight and re-run to see which signers become droppable without dropping the account below the threshold.',
+        ],
+      },
+      {
+        title: 'Handle a required signer',
+        steps: [
+          'Tick Required for a master-weight-0 signer and leave its weight at 0.',
+          'The verdict stays “not authorised” until that signer signs, however much weight the others have collected.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: 'Total weight is below the threshold',
+        cause: 'The threshold exceeds the sum of every signer weight, so no combination of signatures can ever authorise the operation.',
+        fix: 'Lower the threshold or add weight. This is a critical finding, not a rounding issue.',
+      },
+      {
+        issue: 'A required signer must have weight 0',
+        cause: 'A master-weight-0 required signer is an account-existence guard, not a voting signer.',
+        fix: 'Set its weight to 0 and tick Required. Its signature is still required; it just contributes no weight.',
+      },
+      {
+        issue: 'The same key appears twice',
+        cause: 'The same public key was entered more than once.',
+        fix: 'Stellar counts each key once, so the simulation reports the duplicate rather than double-counting it silently. Remove the duplicate.',
+      },
+      {
+        issue: '400 Public key is not a Stellar account id',
+        cause: 'A signer field contains something other than a G… account id.',
+        fix: 'Use the exact account id from the account’s signer list. Contract addresses (C…) are not signers.',
+      },
+    ],
+  },
+  {
     slug: 'webhooks',
     name: 'Webhook Tester',
     href: '/webhooks',
@@ -558,6 +695,138 @@ export const toolDocs: ToolDocs[] = [
         issue: 'Empty history chart',
         cause: 'The dashboard only starts collecting after the first poll.',
         fix: 'Wait up to a minute — samples are collected on each refresh.',
+      },
+    ],
+  },
+  {
+    slug: 'rpc',
+    name: 'Soroban RPC Console',
+    href: '/rpc',
+    tagline: 'Call read-only Soroban RPC methods with schema-aware inputs and read the raw JSON-RPC response.',
+    overview: [
+      'The Soroban RPC Console turns the Soroban JSON-RPC surface into a form. The API publishes a catalog of whitelisted, read-only methods together with each method\u2019s parameter schema, and the console renders that schema as typed inputs: hashes get validated as 64 hex characters, limits are enforced before anything is sent, and enum values become dropdowns.',
+      'Every call is proxied by the API, which validates the parameters and then forwards exactly one JSON-RPC request to the configured endpoint. The browser never picks the host, and write methods such as sendTransaction are not exposed.',
+    ],
+    prerequisites: [
+      'A running SaviTools API (the console reads its catalog from /api/v1/soroban-rpc/methods).',
+      'Network access from the API server to the configured Soroban RPC endpoint.',
+      'For mainnet calls, a reachable STELLAR_RPC_PUBLIC_URL (defaults to the public mainnet endpoint).',
+    ],
+    setup: [
+      'Open the console from the home page or go directly to /rpc.',
+      'Pick the network (testnet by default) and the method you want to call.',
+    ],
+    usage: [
+      {
+        title: 'Run a parameter-less method',
+        steps: [
+          'Select getLatestLedger (or getHealth / getNetwork) in the Method dropdown.',
+          'Press Run.',
+          'Read the response in the Result panel; the header shows the method, network, and how long the upstream call took.',
+        ],
+      },
+      {
+        title: 'Run a method with parameters',
+        steps: [
+          'Select a method such as getTransaction or getEvents.',
+          'Fill in the required fields (marked with an asterisk); optional fields can be left blank.',
+          'Use "Load example" to prefill the schema\u2019s documented example values.',
+          'Press Run. Client-side checks catch malformed input before the request is sent; anything that slips through is rejected by the API with a message naming the parameter.',
+          'If the RPC server answers with a JSON-RPC error, it is shown verbatim in the red panel so codes and messages stay copy-pasteable.',
+        ],
+      },
+      {
+        title: 'Copy a response into an issue',
+        steps: [
+          'Select the JSON in the output panel and copy it, or use your browser\u2019s copy shortcut.',
+          'The panel shows result and error objects exactly as they came back, without reformatting values.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: '"Unknown Soroban RPC method \"x\""',
+        cause: 'The console only forwards methods in its read-only catalog.',
+        fix: 'Choose a method from the dropdown; sendTransaction and other write methods are intentionally unavailable.',
+      },
+      {
+        issue: '"Could not reach the Soroban RPC endpoint"',
+        cause: 'The API server cannot connect to STELLAR_RPC_URL / STELLAR_RPC_PUBLIC_URL, or the endpoint timed out.',
+        fix: 'Check that the configured endpoint is reachable from the API host and responds within 15 seconds.',
+      },
+      {
+        issue: 'Parameter errors such as "must match 64 hexadecimal characters"',
+        cause: 'The value does not satisfy the method schema.',
+        fix: 'Correct the highlighted field; the message names the exact parameter that failed.',
+      },
+    ],
+  },
+  {
+    slug: 'qr-handoff',
+    name: 'QR Handoff',
+    href: '/qr-handoff',
+    tagline: 'Move an unsigned or partially signed transaction across an air gap with checksummed animated QR frames.',
+    overview: [
+      'QR Handoff turns a base64 transaction envelope into a short animation of versioned QR frames. Every frame carries its index, the total frame count, the network, and two CRC32 checksums \u2014 one for the chunk and one for the complete payload \u2014 so the receiving device can scan frames out of order, drop duplicates, and refuse anything corrupt or from another session.',
+      'Before an import is accepted the tool decodes the envelope and shows the network, source account, sequence, fee, operation count and signature count. A body that matches the transaction you already loaded is merged (new signatures are highlighted); a body that changed is blocked until you explicitly confirm the replacement.',
+    ],
+    prerequisites: [
+      'A transaction envelope (base64 XDR) produced by the Composer, the SDK, or your own app.',
+      'A camera for scanning \u2014 or, when camera access is unavailable, the paste and file fallbacks.',
+      'Both devices agree on the network (testnet or mainnet); frames from the other network are refused.',
+    ],
+    setup: [
+      'Open QR Handoff from the home page or go directly to /qr-handoff.',
+      'Select the network the transaction was built for.',
+      'Paste the transaction XDR into the Transaction XDR box.',
+    ],
+    usage: [
+      {
+        title: 'Export frames',
+        steps: [
+          'Press "Generate frames". The animation cycles through the frames; pause it if the scanner needs a single code to hold still.',
+          'The status line under the frame shows the frame index, the session id, and the payload checksum.',
+          'On the receiving device press "Start camera" and point it at the animation.',
+          'Progress shows how many frames have arrived; duplicates and invalid frames are reported without losing what was already scanned.',
+        ],
+      },
+      {
+        title: 'Review and accept an import',
+        steps: [
+          'When the last frame arrives and the checksum verifies, the preview panel opens with network, source, sequence, fee, operations, signatures and hash.',
+          'If you already have a transaction loaded, the signature diff tells you whether signatures were added or the body changed.',
+          'Press "Merge signatures" to keep your transaction and adopt the new signatures, or "Import transaction" when nothing is loaded.',
+          'A changed body stays blocked until you tick the replace confirmation, then the button becomes "Replace transaction".',
+        ],
+      },
+      {
+        title: 'Hand off without a camera',
+        steps: [
+          'Use "Copy XDR" or "Download file" to move the envelope by another channel.',
+          'On the receiving side use the paste box or "Load file" \u2014 both run the same preview and validation as a scan.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: '"Camera permission was denied or no camera is available"',
+        cause: 'The browser blocked getUserMedia, the page is not in a secure context, or no camera exists.',
+        fix: 'Use the paste or file import below the video \u2014 it accepts the same transaction and runs the same checks.',
+      },
+      {
+        issue: '"Frame checksum failed"',
+        cause: 'The scanned frame was corrupted in transit or is not one of this session\u2019s frames.',
+        fix: 'Keep scanning; the frames already collected are kept. Point the camera at a single paused frame if it keeps failing.',
+      },
+      {
+        issue: '"Frames are for mainnet, but this handoff is on testnet"',
+        cause: 'The two sides selected different networks, so the session id does not match.',
+        fix: 'Set the same network on both devices and start over with Reset scan.',
+      },
+      {
+        issue: '"The imported envelope changes the transaction body"',
+        cause: 'The incoming XDR differs from the one loaded locally (amount, destination, memo, fee \u2026).',
+        fix: 'Confirm the details, then tick the replace confirmation if the change is intended.',
       },
     ],
   },

@@ -53,6 +53,52 @@ jobs:
       - run: npm ci
       - run: npx turbo test
 
+  web-coverage:
+    name: Web Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # `apps/web` owns its Jest toolchain, so this runs without the API
+      # workspace's devDependencies. The threshold in apps/web/jest.config.js
+      # gates the run.
+      - name: Run web tests with coverage
+        run: npm run test:coverage -w apps/web
+
+      - name: Report coverage in the job summary
+        if: always()
+        run: |
+          summary=apps/web/coverage/coverage-summary.json
+          if [ -f "$summary" ]; then
+            {
+              echo "### apps/web coverage"
+              echo
+              echo "| Metric | Coverage | Covered / Total |"
+              echo "| --- | --- | --- |"
+              jq -r '
+                .total
+                | to_entries[]
+                | select(.key | test("^(lines|statements|functions|branches)$"))
+                | "| \(.key) | \(.value.pct)% | \(.value.covered)/\(.value.total) |"
+              ' "$summary"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps-web-coverage
+          path: apps/web/coverage
+          if-no-files-found: warn
+
   route-contract:
     name: Route Contract (API <-> Web)
     runs-on: ubuntu-latest
@@ -73,12 +119,97 @@ jobs:
         run: npm test --workspace @savitools/web -- api-contract
 
   docker-build:
-    name: Docker Build (API)
+    name: Docker Build & Smoke (API)
     runs-on: ubuntu-latest
-    needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t savitools-api:latest -f apps/api/Dockerfile .
+        run: docker build -t savitools-api:ci -f apps/api/Dockerfile .
+
+      - name: Start API dependencies
+        run: docker compose -f docker-compose.yml up -d --wait
+
+      - name: Boot image and verify its HTTP health check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # All secrets below are generated for this disposable CI container.
+          deployer_key="$(docker run --rm --entrypoint node savitools-api:ci -e "console.log(require('@stellar/stellar-sdk').Keypair.random().secret())")"
+          jwt_secret="$(openssl rand -hex 32)"
+          encryption_secret="$(openssl rand -hex 32)"
+
+          docker run --detach --name savitools-api-smoke --network host \
+            --env-file apps/api/.env.example \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/savitools \
+            -e REDIS_URL=redis://127.0.0.1:6379 \
+            -e JWT_SECRET="$jwt_secret" \
+            -e ENCRYPTION_SECRET="$encryption_secret" \
+            -e DEPLOYER_SECRET_KEY="$deployer_key" \
+            -e RUN_MIGRATIONS=true \
+            -e MONITOR_ROLE=api \
+            savitools-api:ci
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --max-time 3 http://127.0.0.1:3001/api/v1/health > /dev/null \
+              && [ "$(docker inspect --format '{{.State.Health.Status}}' savitools-api-smoke)" = healthy ]; then
+              echo 'API returned HTTP 200 and the image health check is healthy'
+
+              # The bundled OpenAPI specs are build assets (see
+              # apps/api/nest-cli.json). If they are not copied into dist this
+              # endpoint 404s, so assert it actually generates code from the
+              # fluxa spec instead of only checking that the port answers.
+              sdk_response="$(curl --fail --silent --show-error --max-time 20 \
+                --header 'content-type: application/json' \
+                --data '{"spec":"fluxa","language":"typescript"}' \
+                http://127.0.0.1:3001/api/v1/sdkgen/generate)"
+              if ! printf '%s' "$sdk_response" | grep -q '/v1/transfers'; then
+                echo "sdkgen/generate did not return generated code: $sdk_response"
+                docker logs savitools-api-smoke
+                exit 1
+              fi
+              echo 'POST /api/v1/sdkgen/generate returned code generated from the bundled fluxa spec'
+              exit 0
+            fi
+            if [ "$(docker inspect --format '{{.State.Status}}' savitools-api-smoke)" != running ]; then
+              docker logs savitools-api-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker logs savitools-api-smoke
+          exit 1
+
+      - name: Stop smoke containers
+        if: always()
+        run: |
+          docker rm -f savitools-api-smoke || true
+          docker compose -f docker-compose.yml down -v || true
+
+  docker-compose-config:
+    name: Docker Compose Config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Provide the values Compose interpolates. DEPLOYER_SECRET_KEY is a
+      # throwaway testnet key: the api container is never started here, the
+      # value only has to satisfy the ${DEPLOYER_SECRET_KEY:?} guard.
+      - name: Create .env for Compose
+        run: |
+          cp .env.example .env
+          echo "DEPLOYER_SECRET_KEY=SDJNQ4TZWJ4RJZ6F3ZWQ4TZWJ4RJZ6F3ZWQ4TZWJ4RJZ6F3ZWQ4TZ" >> .env
+
+      - name: Validate both compose files
+        run: make config
+
+      # Smoke run: the infrastructure services must actually reach a healthy
+      # state, not merely parse.
+      - name: Smoke run infrastructure
+        run: |
+          docker compose -f docker-compose.yml up -d --wait
+          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml down -v

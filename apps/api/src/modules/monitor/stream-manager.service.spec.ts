@@ -3,6 +3,8 @@ import { Repository } from "typeorm";
 import { Watch } from "./entities/watch.entity";
 import { EventIngestionService } from "./event-ingestion.service";
 import { MonitorGateway } from "./monitor.gateway";
+import { MonitorLeaderService } from "./monitor-leader.service";
+import { MonitorRuntimeConfig } from "./monitor-runtime.config";
 import { StreamManager } from "./stream-manager.service";
 import { WatchRegistry } from "./watch-registry.service";
 
@@ -291,6 +293,14 @@ describe("StreamManager", () => {
     expect(setup.horizon.streamBuilders()).toHaveLength(50);
     expect(setup.horizon.transactionBuilders).toHaveLength(26);
     expect(setup.horizon.paymentBuilders).toHaveLength(26);
+    // The cap is the resolved configuration value, not a literal in the class.
+    expect(setup.manager.stats()).toEqual({
+      maxSseConnections: 50,
+      horizonSseConnections: 50,
+      streamGroups: 26,
+      sseGroups: 25,
+      pollingGroups: 1,
+    });
 
     await jest.advanceTimersByTimeAsync(60 * 60 * 1_000);
     expect(
@@ -304,6 +314,34 @@ describe("StreamManager", () => {
     expect(setup.horizon.paymentBuilders).toHaveLength(146);
 
     await setup.manager.onApplicationShutdown();
+  });
+
+  it("opens no Horizon connections while another replica is the producer", async () => {
+    const watches = [
+      makeWatch("one", "GACCOUNT1", "1", "1"),
+      makeWatch("two", "GACCOUNT2", "1", "1"),
+    ];
+    // Two in-process replicas: this one lost the lease, so it must stay idle.
+    const standby = createManager(watches, false);
+    const leader = createManager(watches, true);
+
+    await standby.manager.onApplicationBootstrap();
+    await standby.manager.startAll();
+    await standby.manager.start(standby.registry.keyFor(watches[0]));
+
+    expect(standby.horizon.streamBuilders()).toHaveLength(0);
+    expect(standby.horizon.transactionBuilders).toHaveLength(0);
+    expect(standby.manager.stats().streamGroups).toBe(0);
+
+    // The leader does the work exactly once.
+    await leader.manager.onApplicationBootstrap();
+    await leader.manager.startAll();
+    expect(leader.horizon.streamBuilders()).toHaveLength(4);
+
+    await standby.manager.onModuleDestroy();
+    await standby.manager.onApplicationShutdown();
+    await leader.manager.onModuleDestroy();
+    await leader.manager.onApplicationShutdown();
   });
 
   it("polls contract events and persists the page cursor", async () => {
@@ -346,7 +384,7 @@ describe("StreamManager", () => {
   });
 });
 
-function createManager(watches: Watch[]) {
+function createManager(watches: Watch[], isLeader = true) {
   const byKey = new Map<string, Watch[]>();
   const registry = {
     get: (key: string) => byKey.get(key) ?? [],
@@ -372,8 +410,19 @@ function createManager(watches: Watch[]) {
   const config = {
     get: jest.fn((_key: string, fallback: string) => fallback),
   } as unknown as ConfigService;
+  const runtime = new MonitorRuntimeConfig(config);
+  const leader = {
+    producerEnabled: true,
+    isLeader: () => isLeader,
+    onLeadershipChange: (listener: (leader: boolean) => void) => {
+      listener(isLeader);
+      return () => undefined;
+    },
+  } as unknown as MonitorLeaderService;
   const horizon = new FakeHorizonServer();
   const manager = new StreamManager(
+    runtime,
+    leader,
     config,
     watchRepository,
     registry,

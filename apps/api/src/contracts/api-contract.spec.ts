@@ -61,6 +61,7 @@ function createDependencyMock(): Record<string, jest.Mock> {
   return new Proxy(target, {
     get(object, property) {
       if (typeof property === 'symbol') return undefined;
+      if (property === 'then') return undefined;
       if (!(property in object)) object[property] = jest.fn();
       return object[property];
     },
@@ -80,12 +81,22 @@ interface ContractApp {
  */
 async function bootstrapContractApp(): Promise<ContractApp> {
   const controllers = collectRegisteredControllers(AppModule);
+  const guards = collectReferencedGuards(controllers);
+  // Nest instantiates guards as enhancers, so their constructor dependencies
+  // must be satisfiable too, not just the guards themselves.
+  const tokens = new Set<InjectionToken>([
+    ...(collectControllerDependencies(controllers) as InjectionToken[]),
+    ...guards.flatMap(
+      (guard) =>
+        (Reflect.getMetadata('design:paramtypes', guard) as InjectionToken[]) ?? [],
+    ),
+  ]);
   const providers: Provider[] = [
-    ...collectControllerDependencies(controllers).map((token) => ({
-      provide: token as InjectionToken,
+    ...[...tokens].map((token) => ({
+      provide: token,
       useValue: createDependencyMock(),
     })),
-    ...collectReferencedGuards(controllers).map((guard) => ({
+    ...guards.map((guard) => ({
       provide: guard,
       useValue: allowAllGuard,
     })),
