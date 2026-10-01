@@ -1,4 +1,5 @@
 import { toolDocs } from '@/lib/tool-docs';
+import { seP24DebuggerDocs } from '@/lib/tool-docs/sep24-debugger';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -10,8 +11,10 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 
+const allToolDocs = [...toolDocs, ...seP24DebuggerDocs];
+
 export function generateStaticParams() {
-  return toolDocs.map((tool) => ({ tool: tool.slug }));
+  return allToolDocs.map((tool) => ({ tool: tool.slug }));
 }
 
 export async function generateMetadata({
@@ -20,7 +23,7 @@ export async function generateMetadata({
   params: Promise<{ tool: string }>;
 }) {
   const { tool: slug } = await params;
-  const doc = toolDocs.find((entry) => entry.slug === slug);
+  const doc = allToolDocs.find((entry) => entry.slug === slug);
   if (!doc) return { title: 'Not Found — SaviTools Docs' };
   return {
     title: `${doc.name} — SaviTools Documentation`,
@@ -49,7 +52,7 @@ export default async function ToolDocPage({
   params: Promise<{ tool: string }>;
 }) {
   const { tool: slug } = await params;
-  const doc = toolDocs.find((entry) => entry.slug === slug);
+  const doc = allToolDocs.find((entry) => entry.slug === slug);
   if (!doc) notFound();
 
   return (

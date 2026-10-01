@@ -17,11 +17,28 @@ import { ValidateChallengeDto } from './dto/validate-challenge.dto';
 import { SignChallengeDto } from './dto/sign-challenge.dto';
 import { TokenExchangeDto } from './dto/token-exchange.dto';
 
-@ApiTags('sep10')
+/**
+ * SEP-24 interactive flow debugger controller.
+ *
+ * This controller exposes the SEP-24 debugger endpoints alongside the existing SEP-10
+ * debugger endpoints. It delegates all protocol work to the SEP-24 debugger
+ * service, which handles discovery, SEP-10 authentication handoff, interactive
+ * URL creation, timeline recording, status polling, redaction, and URL validation.
+ */
+import { Sep24DebuggerService } from './sep24-debugger.service';
+import { Sep24StartDto } from './dto/sep24-start.dto';
+import { Sep24PollDto } from './dto/sep24-poll.dto';
+import { Sep24CancelDto } from './dto/sep24-cancel.dto';
+import { Sep24ExportDto } from './dto/sep24-export.dto';
+
+@AxiTags('sep10')
 @Controller('sep10')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class Sep10DebuggerController {
-  constructor(private readonly sep10Service: Sep10DebuggerService) {}
+  constructor(
+    private readonly sep10Service: Sep10DebuggerService,
+    private readonly sep24Service: Sep24DebuggerService,
+  ) {}
 
   @Post('fetch-challenge')
   @ApiOperation({
@@ -96,7 +113,7 @@ export class Sep10DebuggerController {
     schema: {
       type: 'object',
       properties: {
-        signedXdr: {
+        signedXrr: {
           type: 'string',
           description: 'Signed transaction XDR',
         },
@@ -153,5 +170,92 @@ export class Sep10DebuggerController {
   })
   async exchangeToken(@Body() dto: TokenExchangeDto) {
     return await this.sep10Service.exchangeToken(dto);
+  }
+
+  @UndefinedDecorator()
+  @Post('sep24/start')
+  @ApiOperation({
+    summary: 'Start a SEP-24 interactive deposit or withdrawal flow',
+    description:
+      'Discovers TRANSFER_SERVER_SEP0024 from the anchor stellar.toml, builds and sends the interactive transaction request, and returns the interactive URL along with a redacted request/response timeline.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Interactive flow started successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Debugger session identifier' },
+        interactiveUrl: { type: 'string', description: 'Validated interactive URL' },
+        transactionId: { type: 'string', description: 'Anchor transaction identifier' },
+        timeline: { type: 'array', description: 'Redacted request/response timeline' },
+        warnings: { type: 'array', description: 'URL origin and safety warnings' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid request, discovery failure, or unsafe interactive URL',
+  })
+  async startSep24Flow(@Body() dto: Sep24StartDto) {
+    return await this.sep24Service.startFlow(dto);
+  }
+
+  @Post('sep24/poll')
+  @ApiOperation({
+    summary: 'Poll SEP-24 transaction status',
+    description:
+      'Polls the anchor transaction endpoint for status updates. Stops on terminal states, user cancellation, or the configured timeout. Records state transitions, timestamps, required fields, messages, and more_info_url.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Polling completed',
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Latest transaction status' },
+        transitions: { type: 'array', description: 'State transitions with timestamps' },
+        timeline: { type: 'array', description: 'Redacted request/response timeline' },
+        terminalReason: { type: 'string', description: 'Why polling stopped' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid request, expired token, or anchor error',
+  })
+  async pollSep24Status(@Body() dto: Sep24PollDto) {
+    return await this.sep24Service.pollStatus(dto);
+  }
+
+  @Post('sep24/cancel')
+  @ApiOperation({
+    summary: 'Cancel a SEP-24 debugger session',
+    description: 'Stops polling for the given session and marks it as user-cancelled.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Session cancelled',
+  })
+  @ApiBadRequestResponse({
+    description: 'Unknown session',
+  })
+  async cancelSep24Session(@Body() dto: Sep24CancelDto) {
+    return await this.sep24Service.cancelSession(dto);
+  }
+
+  @Post('sep24/export')
+  @ApiOperation({
+    summary: 'Export a redacted SEP-24 timeline',
+    description:
+      'Returns the redacted request/response timeline for a session so it can be attached to a support ticket. JWTs, account secrets, auth signatures, and personal field values are redacted.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Redacted timeline exported',
+  })
+  @ApiBadRequestResponse({
+    description: 'Unknown session',
+  })
+  async exportSep24Timeline(@Body() dto: Sep24ExportDto) {
+    return await this.sep24Service.exportTimeline(dto);
   }
 }
