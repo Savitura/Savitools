@@ -73,6 +73,13 @@ export interface PaymentRequest {
   memo?: string;
 }
 
+<<<<<<< HEAD
+import { ConfigService } from '@nestjs/config';
+
+const DEFAULT_HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
+const DEFAULT_FRIENDBOT_URL = 'https://friendbot.stellar.org';
+=======
+>>>>>>> upstream/main
 const FRIENDBOT_TIMEOUT_MS = 30000;
 const FRIENDBOT_STARTING_BALANCE = '10,000 XLM';
 
@@ -87,6 +94,19 @@ export class StellarTestnetService {
   private readonly logger = new Logger(StellarTestnetService.name);
   private readonly servers = new Map<string, StellarSdk.Horizon.Server>();
 
+<<<<<<< HEAD
+  readonly server: StellarSdk.Horizon.Server;
+  private readonly horizonUrl: string;
+  private readonly friendbotUrl: string;
+  private readonly networkPassphrase: string;
+
+  constructor(private readonly configService: ConfigService) {
+    this.horizonUrl = this.configService.get<string>('STELLAR_HORIZON_URL') || DEFAULT_HORIZON_TESTNET_URL;
+    this.friendbotUrl = this.configService.get<string>('FRIENDBOT_URL') || DEFAULT_FRIENDBOT_URL;
+    const network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
+    this.networkPassphrase = network.toLowerCase() === 'mainnet' || network.toLowerCase() === 'public' ? Networks.PUBLIC : Networks.TESTNET;
+    this.server = new StellarSdk.Horizon.Server(this.horizonUrl);
+=======
   serverFor(network: string = 'testnet', overrides?: any): StellarSdk.Horizon.Server {
     const endpoints = resolveStellarEndpoints(network, overrides);
     const cacheKey = `${endpoints.network}:${endpoints.horizonUrl}`;
@@ -102,6 +122,7 @@ export class StellarTestnetService {
 
   get server(): StellarSdk.Horizon.Server {
     return this.serverFor('testnet');
+>>>>>>> upstream/main
   }
 
   /**
@@ -216,6 +237,10 @@ export class StellarTestnetService {
    * Transport failures throw, because no caller can recover from them. An HTTP
    * failure is returned so the sandbox can treat "already funded" as success.
    */
+<<<<<<< HEAD
+  async requestFriendbotFunding(publicKey: string): Promise<FriendbotReply> {
+    const url = `${this.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`;
+=======
   async requestFriendbotFunding(
     publicKey: string,
     network: string = 'testnet',
@@ -230,6 +255,7 @@ export class StellarTestnetService {
     }
 
     const url = `${friendbotUrl}?addr=${encodeURIComponent(publicKey)}`;
+>>>>>>> upstream/main
 
     let response: Response;
     try {
@@ -396,7 +422,11 @@ export class StellarTestnetService {
 
     let builder = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
+<<<<<<< HEAD
+      networkPassphrase: this.networkPassphrase,
+=======
       networkPassphrase: endpoints.passphrase,
+>>>>>>> upstream/main
     }).addOperation(this.buildPaymentOperation(request, asset));
 
     if (request.memo) {

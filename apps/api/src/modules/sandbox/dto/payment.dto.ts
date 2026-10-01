@@ -9,27 +9,29 @@ export class PaymentDto {
   @ApiProperty({ description: 'Secret key of source account' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^S[A-Z2-7]{55}$/, {
+    message: 'Invalid Stellar secret key format',
+  })
   fromSecret!: string;
 
-  @ApiProperty({ description: 'Destination Stellar address (G… or M…)' })
   @IsString()
   @IsNotEmpty()
   @Matches(STELLAR_DESTINATION_PATTERN, {
     message: STELLAR_DESTINATION_MESSAGE,
   })
+  @ApiProperty({ description: 'Destination Stellar address (G… or M…)' })
   toPublicKey!: string;
 
-  @ApiProperty({ description: 'Asset to send ("XLM" or "CODE:ISSUER")' })
   @IsString()
   @IsNotEmpty()
+  @ApiProperty({ description: 'Asset to send ("XLM" or "CODE:ISSUER")' })
   asset!: string;
 
-  @ApiProperty({ description: 'Amount to send' })
   @IsString()
   @IsNotEmpty()
+  @ApiProperty({ description: 'Amount to send' })
   amount!: string;
 
-  @ApiPropertyOptional({ description: 'Optional transaction memo' })
   @IsString()
   @IsOptional()
   memo?: string;

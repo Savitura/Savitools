@@ -1,5 +1,7 @@
-import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { SandboxService } from './sandbox.service';
 import { FundDto } from './dto/fund.dto';
 import { PaymentDto } from './dto/payment.dto';
@@ -41,6 +43,7 @@ export class SandboxController {
   }
 
   @Post('payment')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
   @ApiOperation({ summary: 'Submit a test payment between sandbox accounts on the selected network' })
   sendPayment(@Body() dto: PaymentDto) {
     return this.sandboxService.sendPayment(dto);

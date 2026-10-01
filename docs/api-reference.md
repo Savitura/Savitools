@@ -396,7 +396,7 @@ curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAW
 
 #### POST `/wallet/payment`
 
-Send a payment from a sandbox wallet.
+Send a payment from a sandbox wallet (requires JWT authentication and rate limiting).
 
 **Request:**
 ```bash

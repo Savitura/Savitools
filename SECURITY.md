@@ -26,6 +26,7 @@ SaviTools implements the following security measures:
 - **CORS**: Restricted origins via `WEB_ORIGIN` environment variable
 - **Rate Limiting**: Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL`
 - **Input Validation**: All API inputs are validated using class-validator
+- **Authenticated Signing**: Testnet wallet and sandbox payment endpoints enforce JWT authentication and rate limiting for server-side secret key signing
 
 ### Webhook Security
 
