@@ -40,7 +40,7 @@ SaviTools implements the following security measures:
 
 ### Network Security
 
-- **SSRF Protection**: Guards on outbound requests from Playground, Webhook, and Contracts modules (omitting Network, which has none)
+- **SSRF Protection**: Guards on outbound requests from Playground, Webhook, and Network modules
 - **TLS**: All external API calls use HTTPS
 
 ### HTTP Security Headers (Configured in `apps/web/next.config.ts`)

@@ -12,6 +12,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { Between, LessThan, Repository } from "typeorm";
 import { MetricsService } from "../metrics/metrics.service";
+import { assertPublicHostname } from "../webhook/ssrf-guard";
 import { NetworkSample } from "./entities/network-sample.entity";
 import { NetworkProfile } from "./entities/network-profile.entity";
 
@@ -248,7 +249,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async fetchNetworkPassphrase(horizonUrl: string): Promise<string> {
-    let parsedUrl: URL;
+let parsedUrl: URL;
     try {
       parsedUrl = new URL(horizonUrl);
     } catch {
@@ -277,11 +278,33 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     ) {
       throw new BadRequestException("Forbidden local or private network address");
     }
+    await assertPublicHostname(hostname);
 
+    let currentUrl = horizonUrl;
+    let redirects = 0;
+    const maxRedirects = 5;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(horizonUrl, { signal: controller.signal });
+      let response = await fetch(currentUrl, { signal: controller.signal, redirect: "manual" });
+      while (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          break;
+        }
+        redirects++;
+        if (redirects > maxRedirects) {
+          throw new Error("Too many redirects");
+        }
+        const nextUrl = new URL(location, currentUrl);
+        if (nextUrl.protocol !== "http:" && nextUrl.protocol !== "https:") {
+          throw new BadRequestException("Only HTTP and HTTPS protocols are allowed in redirects");
+        }
+        await assertPublicHostname(nextUrl.hostname);
+        currentUrl = nextUrl.toString();
+        response = await fetch(currentUrl, { signal: controller.signal, redirect: "manual" });
+      }
+
       if (!response.ok) {
         throw new Error(`Horizon request failed with status ${response.status}`);
       }
