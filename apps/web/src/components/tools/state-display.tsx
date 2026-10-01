@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 
 // ─── Skeleton Primitives ──────────────────────────────────────────────────
 
-export function Skeleton({
+function Skeleton({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
@@ -21,23 +21,6 @@ export function Skeleton({
     <div
       className={cn('animate-pulse rounded-md bg-muted/60', className)}
       {...props}
-    />
-  );
-}
-
-export function SkeletonLine({
-  className,
-  width = 'w-full',
-  height = 'h-4',
-}: {
-  className?: string;
-  width?: string;
-  height?: string;
-}) {
-  return (
-    <Skeleton
-      className={cn(height, width, className)}
-      aria-hidden="true"
     />
   );
 }
@@ -118,21 +101,6 @@ export function SandboxAccountSkeleton() {
         <Skeleton className="h-3 w-16 mb-1" />
         <Skeleton className="h-7 w-full" />
       </div>
-    </div>
-  );
-}
-
-export function SandboxPaymentSkeleton() {
-  return (
-    <div className="space-y-3" aria-busy="true" aria-label="Processing payment">
-      <Skeleton className="h-7 w-full" />
-      <Skeleton className="h-7 w-full" />
-      <div className="grid grid-cols-2 gap-2">
-        <Skeleton className="h-7 w-full" />
-        <Skeleton className="h-7 w-full" />
-      </div>
-      <Skeleton className="h-7 w-full" />
-      <Skeleton className="h-8 w-full" />
     </div>
   );
 }
@@ -384,6 +352,10 @@ interface EmptyStateProps {
   className?: string;
 }
 
+/**
+ * Base empty state. Exported so a tool with a message that is specific to its
+ * own flow can render one without the per-tool wrappers below.
+ */
 export function EmptyState({
   title,
   message,
@@ -671,26 +643,6 @@ export function MonitorNoEventsState({
         </p>
       </div>
     </div>
-  );
-}
-
-export function MonitorConnectionErrorState({
-  error,
-  watchLabel,
-  onRetry,
-}: {
-  error: string;
-  watchLabel: string;
-  onRetry: () => void;
-}) {
-  return (
-    <ErrorState
-      title={`${watchLabel} stream disconnected`}
-      message="The live event stream dropped. Check the error details below and retry to reconnect."
-      details={error}
-      onRetry={onRetry}
-      retryLabel="Reconnect"
-    />
   );
 }
 

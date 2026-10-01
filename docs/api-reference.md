@@ -54,6 +54,30 @@ curl -X POST http://localhost:3001/api/v1/auth/refresh \
 
 ## Endpoint Catalog
 
+### Federation asset metadata and home-domain validation
+
+These public, read-only endpoints inspect the domain's `/.well-known/stellar.toml`. They do not store results or require a user session. TOML responses use the existing five-minute, bounded in-memory cache (up to 200 domains); concurrent requests for the same domain share a fetch. Fetches retain the federation module's timeout, response-size, redirect, and public-host SSRF limits. No secrets are accepted or returned.
+
+#### GET `/federation/validate-home-domain?domain=example.com&issuer=G...`
+
+Checks the issuer key appears in the domain's `ACCOUNTS` array. An optional account `HOME_DOMAIN` value must also match the normalized domain. A mismatch is returned as a successful validation result with `valid: false`; malformed inputs use the standard `400` error envelope and an unavailable TOML uses the existing federation error responses.
+
+**Response (200):**
+```json
+{ "valid": true, "domain": "example.com", "issuer": "G...", "reason": null }
+```
+
+#### GET `/federation/asset-metadata?domain=example.com&code=USDC&issuer=G...`
+
+Returns the matching `[[CURRENCIES]]` metadata only when the issuer passes the home-domain check. Asset codes must contain 1–12 ASCII letters or digits and issuer must be a Stellar public key. An undeclared currency returns `404`; an issuer that fails domain validation returns `400`.
+
+**Response (200):**
+```json
+{ "code": "USDC", "issuer": "G...", "name": "USD Coin", "display_decimals": 7 }
+```
+
+The existing `FEDERATION_TOML_CACHE_TTL_MS` and `FEDERATION_TOML_CACHE_MAX_ENTRIES` settings control cache behavior (defaults: 5 minutes and 200 domains). TOML fetches have a 15-second timeout. `FEDERATION_REQUEST_TIMEOUT_MS` (default 5 seconds) is the overall SEP inspection deadline; `FEDERATION_PROBE_TIMEOUT_MS` (default 3 seconds) bounds each endpoint probe. Invalid or non-positive setting values use their defaults. TOML payloads are limited to 512 KiB, nesting depth 64, and 10,000 parsed keys.
+
 ### Health & Status
 
 #### GET `/health`
@@ -551,6 +575,464 @@ curl "http://localhost:3001/api/v1/simulator/fee?operations=3&network=testnet"
 
 ---
 
+#### POST `/simulator/path-payment-lab`
+
+Price several slippage tolerances against a single simulated adverse rate move (Savitura/Savitools#351).
+
+A path payment carries a tolerance rather than a locked rate: `destinationMin` for `strict_send`, `sendMax` for `strict_receive`. The network fails the operation when the live route cannot fill inside it. This endpoint reads the live route table for a pair and prices up to ten tolerances against one adverse move, so they can be compared directly.
+
+**Request body:**
+- `direction` (required): `strict_send` or `strict_receive`
+- `sourceAsset` (required): `XLM` or `CODE:ISSUER`
+- `destinationAsset` (required): `XLM` or `CODE:ISSUER`
+- `amount` (required): the pinned leg — the source amount for `strict_send`, the destination amount for `strict_receive`. Up to 15 integer and 7 fractional digits
+- `slippageScenarios` (required): 1–10 tolerance percentages, each at least `0.01` and at most `100`
+- `adverseMovePercent` (optional, default `0`): the deterioration to simulate between quote and landing, `0`–`100`
+- `routeIndex` (optional, default `0`): which route to simulate, zero-based in the order Horizon returned them. `0` is the best route
+- `network` (optional, default `testnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl -X POST "http://localhost:3001/api/v1/simulator/path-payment-lab" \
+  -H "content-type: application/json" \
+  -d '{
+    "direction": "strict_send",
+    "sourceAsset": "XLM",
+    "destinationAsset": "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ",
+    "amount": "100.0000000",
+    "slippageScenarios": [0.1, 0.5, 1, 5],
+    "adverseMovePercent": 2,
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "network": "testnet",
+  "direction": "strict_send",
+  "sourceAsset": "XLM",
+  "destinationAsset": "USDC:GA5Z…JCJQ",
+  "routeCount": 2,
+  "route": {
+    "index": 0,
+    "pathLength": 1,
+    "sourceAmount": "100.0000000",
+    "destinationAmount": "98.0000000",
+    "exchangeRate": "0.98",
+    "fixedAmount": "100.0000000",
+    "variableAmount": "98.0000000",
+    "hops": [{ "assetType": "credit_alphanum4", "assetCode": "USDC", "assetIssuer": "GA5Z…JCJQ" }]
+  },
+  "comparison": {
+    "direction": "strict_send",
+    "guaranteeField": "destinationMin",
+    "fixedAmount": "100.0000000",
+    "quotedVariableAmount": "98.0000000",
+    "adverseMovePercent": 2,
+    "adverseVariableAmount": "96.0000000",
+    "scenarios": [
+      {
+        "slippagePercent": 0.1,
+        "guarantee": "97.9020000",
+        "adverseAmount": "96.0000000",
+        "headroom": "-1.9020000",
+        "headroomPercent": -1.9408,
+        "tolerableMovePercent": 0.1,
+        "verdict": "fail"
+      }
+    ],
+    "tightestSlippagePercent": 0.1,
+    "widestSlippagePercent": 5,
+    "recommendedSlippagePercent": 5,
+    "recommendedHeadroomPercent": 3,
+    "exceededByEveryScenario": false,
+    "routeDispersionPercent": null
+  }
+}
+```
+
+**How the arithmetic works:**
+
+| | `destinationMin` (strict send) | `sendMax` (strict receive) |
+|---|---|---|
+| Guarantee | `floor(variable × (1 − s))` | `ceil(variable × (1 + s))` |
+| Worst case at the move | `floor(variable × (1 − m))` | `ceil(variable × (1 + m))` |
+| Headroom | `worstCase − guarantee` | `guarantee − worstCase` |
+
+where `s` is the tolerance and `m` the adverse move, both as fractions. The two directions subtract differently because a `destinationMin` is a floor the fill must stay *above* while a `sendMax` is a ceiling it must stay *below*; in both cases a positive `headroom` means the payment clears.
+
+- `verdict` is `pass`, `fail`, or `exact`. `exact` means the tolerance and the move produced the same amount, so the payment clears only if the rate does not move by another stroop — treat it as a failure.
+- All amount arithmetic runs on exact stroop integers and rounds the way the network rounds, so a reported `destinationMin`/`sendMax` is always one the network accepts. No amount is ever held in a floating-point number.
+- `recommendedSlippagePercent` is the *narrowest* compared tolerance that still absorbs the move; anything tighter would fail. It is `null` and `exceededByEveryScenario` is `true` when every compared tolerance is exceeded.
+- `routeDispersionPercent` reports how far the selected route already sits below the best route, as a percentage of the best one. It is `null` when route `0` was simulated.
+
+**Limits:**
+- `slippageScenarios`: 1–10 entries, each `0.01`–`100`. A tolerance below `0.01%` would round to zero hundredths of a percent and mean "no tolerance", so it is rejected rather than silently accepted.
+- `adverseMovePercent`: `0`–`100`.
+- `routeIndex`: `0` to `routeCount − 1`.
+
+**Errors:**
+- `400`: invalid amount, asset format, or tolerance; `routeIndex` beyond the routes Horizon returned; no route for the pair
+- `429`: global rate limit exceeded
+
+**Operational notes:**
+- The call is not cached. A run is a pure function of the live route table plus the caller's tolerances, and any cached answer would describe a route table that has since moved.
+- `POST` answers `200`, not `201`: nothing is created.
+
+---
+
+### Liquidity Pools
+
+#### GET `/liquidity-pools/search?assetA=...&assetB=...&network=...`
+
+Search for liquidity pools by asset pair on Stellar.
+
+**Query Parameters:**
+- `assetA` (required): First asset in the pair. Use `XLM` for native or `CODE:ISSUER` for non-native.
+- `assetB` (required): Second asset in the pair. Use `XLM` for native or `CODE:ISSUER` for non-native.
+- `network` (optional, default `testnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/liquidity-pools/search?assetA=XLM&assetB=USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5&network=testnet"
+```
+
+**Response (200):**
+```json
+[
+  {
+    "poolId": "a468d41d61e...",
+    "network": "testnet",
+    "assetA": "native",
+    "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "reserveA": "1000000.0000000",
+    "reserveB": "500000.0000000",
+    "totalShares": "707106.7811865",
+    "feePct": "0.30%",
+    "totalTrustlines": 42,
+    "type": "constant_product",
+    "spotPriceAperB": "2.0000000",
+    "spotPriceBperA": "0.5000000"
+  }
+]
+```
+
+**Errors:**
+- `400`: Invalid asset format or network
+
+---
+
+#### GET `/liquidity-pools/details?poolId=...&network=...`
+
+Get detailed information about a specific pool.
+
+**Query Parameters:**
+- `poolId` (required): 64-character hex pool ID
+- `network` (optional, default `testnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/liquidity-pools/details?poolId=a468d41d61e...&network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "poolId": "a468d41d61e...",
+  "network": "testnet",
+  "assetA": "native",
+  "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  "reserveA": "1000000.0000000",
+  "reserveB": "500000.0000000",
+  "totalShares": "707106.7811865",
+  "feePct": "0.30%",
+  "totalTrustlines": 42,
+  "type": "constant_product",
+  "spotPriceAperB": "2.0000000",
+  "spotPriceBperA": "0.5000000"
+}
+```
+
+**Errors:**
+- `400`: Invalid pool ID or network
+- `404`: Pool not found
+
+---
+
+#### POST `/liquidity-pools/share-value`
+
+Calculate the value of LP shares.
+
+**Request Body:**
+```json
+{
+  "poolId": "a468d41d61e...",
+  "shares": "100.0000000",
+  "network": "testnet"
+}
+```
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/liquidity-pools/share-value \
+  -H "Content-Type: application/json" \
+  -d '{
+    "poolId": "a468d41d61e...",
+    "shares": "100.0000000",
+    "network": "testnet"
+  }'
+```
+
+**Response (201):**
+```json
+{
+  "poolId": "a468d41d61e...",
+  "network": "testnet",
+  "shares": "100.0000000",
+  "valueA": "141.4213562",
+  "valueB": "70.7106781",
+  "sharePercentage": "0.01414214",
+  "assetA": "native",
+  "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+}
+```
+
+**Errors:**
+- `400`: Invalid input or pool state (e.g., empty pool, shares exceed total)
+- `404`: Pool not found
+
+---
+
+#### POST `/liquidity-pools/watch` (Protected)
+
+Add a pool to your watchlist. Requires authentication.
+
+**Request Body:**
+```json
+{
+  "poolId": "a468d41d61e...",
+  "assetA": "XLM",
+  "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  "label": "My XLM/USDC Pool",
+  "network": "testnet"
+}
+```
+
+**Response (201):**
+```json
+{
+  "id": "uuid",
+  "poolId": "a468d41d61e...",
+  "network": "testnet",
+  "assetA": "XLM",
+  "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  "label": "My XLM/USDC Pool",
+  "createdAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**Errors:**
+- `400`: Invalid input or pool does not exist
+- `401`: Authentication required
+
+---
+
+#### POST `/liquidity-pools/unwatch` (Protected)
+
+Remove a pool from your watchlist. Requires authentication.
+
+**Request Body:**
+```json
+{
+  "id": "uuid"
+}
+```
+
+**Response (204):** No content
+
+**Errors:**
+- `401`: Authentication required
+- `404`: Watched pool not found
+
+---
+
+#### GET `/liquidity-pools/watched` (Protected)
+
+Get your watched pools. Requires authentication.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "uuid",
+    "poolId": "a468d41d61e...",
+    "network": "testnet",
+    "assetA": "XLM",
+    "assetB": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+    "label": "My XLM/USDC Pool",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+**Errors:**
+- `401`: Authentication required
+
+---
+
+### Multisig (Signer Weights & Thresholds)
+
+#### GET `/multisig/limits`
+
+Publishes the bounds `POST /multisig/simulate` accepts, so a client can validate a form before a round trip rather than after a 400 (Savitura/Savitools#352).
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/multisig/limits"
+```
+
+**Response (200):**
+```json
+{
+  "maxSigners": 21,
+  "maxSignerWeight": 255,
+  "maxThreshold": 255,
+  "operationThresholds": [
+    { "kind": "low", "gates": "Trustline and offer operations" },
+    { "kind": "medium", "gates": "Payments and path payments" },
+    { "kind": "high", "gates": "Account settings and clawbacks" }
+  ]
+}
+```
+
+`maxSigners` is 21 because SEP-0023 allows 20 additional signers plus the master key, and a request may describe the master key too. `maxSignerWeight` and `maxThreshold` are 255 because that is the `uint8` the XDR uses.
+
+---
+
+#### POST `/multisig/simulate`
+
+Evaluate a weighted multisig against the signatures collected so far.
+
+A Stellar multisig is not "2 of 3 signers" — it is any subset of signers whose weights total at least the threshold. This endpoint answers what that collected weight authorises, which weight classes are cleared, which signers are still outstanding, and which configuration risks apply.
+
+**Request body:**
+- `threshold` (required): the weight the operation needs, `0`–`255`. This is the account's `medium` threshold, which gates payments and path payments
+- `signers` (required): 1–21 entries, each with:
+  - `key` (required): a `G…` account id
+  - `weight` (required): `0`–`255`
+  - `signed` (optional, default `false`): whether a signature from this signer is collected
+  - `required` (optional, default `false`): a master-weight-0 required signer. Its weight must be `0`
+- `lowThreshold` / `highThreshold` (optional): the `low` and `high` weight classes. Both default to `threshold`, which is what Stellar itself defaults them to
+- `minTime` / `maxTime` (optional): the transaction validity window, as unix seconds or an ISO 8601 timestamp. Omit or send an empty value for "unbounded"
+
+**Request:**
+```bash
+curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
+  -H "content-type: application/json" \
+  -d '{
+    "threshold": 2,
+    "lowThreshold": 1,
+    "highThreshold": 3,
+    "signers": [
+      { "key": "GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ", "weight": 2, "signed": true },
+      { "key": "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H", "weight": 1, "signed": false },
+      { "key": "GBRPYHIL3CI3FNQ4BXNFMNDLFJUNSU2HY3ZMFSLONUCEOASW7QC7OX2H", "weight": 1, "signed": false }
+    ]
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "threshold": 2,
+  "lowThreshold": 1,
+  "mediumThreshold": 2,
+  "highThreshold": 3,
+  "totalWeight": 4,
+  "signedWeight": 2,
+  "deficit": 0,
+  "surplus": 0,
+  "progressPercent": 100,
+  "satisfied": true,
+  "canSubmit": true,
+  "signers": [
+    {
+      "key": "GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ",
+      "weight": 2,
+      "signed": true,
+      "required": false,
+      "shareOfTotalPercent": 50,
+      "shareOfThresholdPercent": 100,
+      "controlsAccount": true,
+      "indispensable": true,
+      "redundant": false
+    }
+  ],
+  "operationThresholds": [
+    { "kind": "low", "requiredWeight": 1, "collectedWeight": 2, "deficit": 0, "cleared": true },
+    { "kind": "medium", "requiredWeight": 2, "collectedWeight": 2, "deficit": 0, "cleared": true },
+    { "kind": "high", "requiredWeight": 3, "collectedWeight": 2, "deficit": 1, "cleared": false }
+  ],
+  "outstandingRequiredSigners": [],
+  "minimumSignersNeeded": [],
+  "minimumSetWeight": 0,
+  "duplicateSigners": [],
+  "risks": [
+    {
+      "code": "SINGLE_SIGNER_CONTROLS",
+      "severity": "warning",
+      "message": "Signer weight 2 alone reaches the threshold of 2.",
+      "signers": ["GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ"]
+    }
+  ],
+  "timeBounds": {
+    "minTime": null,
+    "maxTime": null,
+    "notYetActive": false,
+    "expired": false,
+    "invalid": false
+  }
+}
+```
+
+**Field notes:**
+- `satisfied` is `signedWeight >= threshold`. `canSubmit` additionally requires every `required` signer to have signed — a missing required signer blocks the account regardless of collected weight.
+- `progressPercent` is `min(signedWeight / threshold, 1)`, and is `100` when the threshold is `0`.
+- `minimumSignersNeeded` is the **smallest** set of outstanding signers that reaches the threshold, chosen on fewest signers and then the tightest fit, so the answer never commits more weight than the quorum needs. It is `null` when no combination of the remaining signers is enough. `null` and `[]` are therefore different answers: unreachable versus already satisfied.
+- `indispensable`/`redundant` describe the configured signer set — what happens if that key is removed — while `minimumSignersNeeded` answers who still has to sign.
+- `duplicateSigners` lists keys that appear more than once. The totals include them because the request did, but Stellar counts each key once; the finding is reported rather than silently deduplicated.
+
+**Risk codes:**
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `THRESHOLD_ZERO` | critical | A threshold of 0 authorises the operation without any signature |
+| `THRESHOLD_UNREACHABLE` | critical | No signer carries weight, so no signature set can reach a threshold of 1 or more |
+| `THRESHOLD_ABOVE_TOTAL_WEIGHT` | critical | Total weight is below the threshold |
+| `REQUIRED_SIGNER_UNSIGNED` | critical | A required signer has not signed, so the account cannot be modified |
+| `SINGLE_SIGNER_CONTROLS` | warning | One signer's weight alone reaches the threshold |
+| `REQUIRES_EVERY_SIGNER` | warning | Removing any weighted signer drops the account below the threshold |
+| `QUORUM_SINGLE_POINT_OF_FAILURE` | warning | One outstanding signature completes the quorum, so that signer can stall the account alone |
+| `DUPLICATE_SIGNER` | warning | The same key appears more than once |
+| `ZERO_WEIGHT_SIGNERS` | info | Zero-weight signers are recorded but add no weight |
+| `REDUNDANT_SIGNER` | info | These signers could be dropped without weakening the quorum |
+
+**Limits:**
+- `signers`: 1–21 entries
+- `weight`, `threshold`, `lowThreshold`, `highThreshold`: integers `0`–`255`
+- `minTime`/`maxTime`: unix seconds or ISO 8601; `minTime` must not be after `maxTime`
+
+**Errors:**
+- `400`: weight or threshold outside `0`–`255`, more than 21 signers, a `required` signer carrying weight, a window that closes before it opens, or an unreadable timestamp
+- `429`: global rate limit exceeded
+
+**Operational notes:**
+- The call is stateless: nothing is fetched and nothing is stored. The same request always yields the same answer, so it is safe to try configurations that do not exist.
+- `POST` answers `200`, not `201`: nothing is created.
+
+---
+
 ### Composer (Transaction Building)
 
 #### GET `/composer/operations`
@@ -903,6 +1385,30 @@ curl "http://localhost:3001/api/v1/network/status/history?network=testnet"
 
 ### Contracts (Soroban)
 
+#### GET `/contracts/events`
+
+Fetch and decode Soroban events for a contract. This read-only endpoint does not require authentication.
+
+**Query parameters:** `contractId` (required), `network` (`testnet` or `mainnet`, default `testnet`), `type` (`contract`, `system`, or `diagnostic`), `startLedger` or `cursor` (mutually exclusive), `endLedger`, and `limit` (1–200).
+
+#### POST `/contracts/events/filter`
+
+Filter decoded events in memory. The request accepts up to 1,000 events and 10 criteria. Criteria are ANDed. Text criteria (`topic_contains`, `value_type_is`, `value_equals`) require a non-empty `value` of at most 256 characters. A `ledger_range` requires `from` or `to`; supplied bounds must be non-negative safe integers and `from` must not exceed `to`. Invalid criteria return `400`.
+
+```json
+{
+  "events": [],
+  "criteria": [
+    { "kind": "topic_contains", "value": "transfer" },
+    { "kind": "ledger_range", "from": 100, "to": 200 }
+  ]
+}
+```
+
+#### POST `/contracts/events/replay`
+
+Replay filtered events to a webhook. This endpoint requires authentication; URLs are checked against SSRF protections. See the [Contract Events guide](contract-events.md).
+
 #### POST `/contracts/deploy`
 
 Deploy a Soroban smart contract from a WASM file.
@@ -993,59 +1499,19 @@ curl http://localhost:3001/api/v1/webhooks/templates
 
 **Response (200):**
 ```json
-{
-  "templates": [
+[
     {
       "eventType": "transaction.submitted",
       "description": "Emitted when a transaction is submitted",
-      "schema": {...},
-      "examplePayload": {...}
+    "schema": {},
+    "samplePayload": {}
     }
   ]
-}
 ```
 
 ---
 
-#### GET `/webhooks/signing`
 
-Whether outbound webhook signing is enabled and the exact signature wire format receivers
-should expect. Public — reveals configuration only, no secrets.
-
-**Request:**
-```bash
-curl http://localhost:3001/api/v1/webhooks/signing
-```
-
-**Response (200):**
-```json
-{
-  "enabled": true,
-  "algorithm": "hmac-sha256",
-  "signatureHeader": "X-SaviTools-Signature",
-  "timestampHeader": "X-SaviTools-Timestamp",
-  "replayWindowSeconds": 300,
-  "signedPayloadFormat": "<timestamp>.<body>",
-  "signatureFormat": "sha256=<hex>",
-  "signedPayloadEncoding": "utf-8",
-  "maxSkewSeconds": 60,
-  "perRequestSecretSupported": true
-}
-```
-
-`enabled` is `true` when `WEBHOOK_SIGNING_SECRET` is configured. When enabled (or when a
-per-request `secret` is supplied to `/webhooks/send` or the replay endpoint), every outbound
-request carries `X-SaviTools-Timestamp: <unix seconds>` and
-`X-SaviTools-Signature: sha256=<hex>`, where the hex is HMAC-SHA256 over the UTF-8 bytes of
-`<timestamp>.<body>` with the exact body bytes sent. Receivers should recompute that HMAC with
-the shared secret, compare in constant time, and reject signatures whose timestamp is older
-than `replayWindowSeconds` (replay) or more than `maxSkewSeconds` in the future (clock skew).
-The reference implementation lives in `apps/api/src/modules/webhook/signature.ts` (`signBody` /
-`verifySignature`).
-
-There is no body-only signature format. Deliveries recorded before the timestamped contract
-landed carry the legacy `X-Webhook-Signature`; replaying such an entry strips the stale headers
-and re-signs it, and the history entry is returned with `"legacySignature": true`.
 
 ---
 
@@ -1061,13 +1527,11 @@ curl -X POST http://localhost:3001/api/v1/webhooks/send \
   -d '{
     "endpointUrl": "https://example.com/webhook",
     "eventType": "transaction.submitted",
-    "payload": {...},
-    "secret": "shared-signing-secret"
+    "payload": {}
   }'
 ```
 
-**Response (201):** a `WebhookHistoryEntry` (see `/webhooks/history`). When a `secret` is in
-play, the entry carries the exact signing inputs:
+**Response (201):** a `WebhookHistoryEntry` (see `/webhooks/history`).
 
 ```json
 {
@@ -1076,19 +1540,13 @@ play, the entry carries the exact signing inputs:
   "endpointUrl": "https://example.com/webhook",
   "method": "POST",
   "requestHeaders": {
-    "Content-Type": "application/json",
-    "X-Webhook-Event": "transaction.submitted",
-    "X-SaviTools-Signature": "[REDACTED]",
-    "X-SaviTools-Timestamp": "1717243200"
+    "Content-Type": "application/json"
   },
-  "payload": {...},
-  "signature": {
-    "timestamp": "1717243200",
-    "body": "{\"event\":\"transaction.submitted\"}",
-    "signature": "sha256=8fdd98..."
-  },
+  "payload": {},
   "responseStatus": 200,
-  "latencyMs": 250
+  "responseBody": "ok",
+  "latencyMs": 250,
+  "timestamp": 1717243200000
 }
 ```
 
@@ -1428,30 +1886,25 @@ No content
 
 ---
 
-#### POST `/monitor/watches/:id/alerts`
+#### GET `/monitor/watches/:id/alerts`
 
-Create an alert for a watch (requires authentication).
+Get alerts for a watch (requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
-  -H "Content-Type: application/json" \
-  --cookie "access_token=YOUR_ACCESS_TOKEN" \
-  -d '{
-    "conditionType": "balance_threshold",
-    "threshold": "100.00",
-    "channel": "email",
-    "destination": "user@example.com"
-  }'
+curl http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
-**Response (201):**
+**Response (200):**
 ```json
+[
 {
   "id": "alert-456",
   "watchId": "watch-123",
   "conditionType": "balance_threshold"
 }
+]
 ```
 
 ---
@@ -1614,45 +2067,13 @@ For a complete list, refer to the [Stellar Horizon API documentation](http://web
 
 ## Caching Behavior
 
-### Redis-Cached Endpoints
-
-| Endpoint | TTL | Purpose | Cache Key |
-|----------|-----|---------|-----------|
-| `GET /network/status` | 60s | Network fees & reserves | `network:status:{network}` |
-| `GET /network/status/history` | 300s | Historical fee data | `network:history:{network}` |
-| `GET /simulator/paths` | 120s | Payment path results | `paths:{source}:{dest}:{amount}` |
-| `GET /playground/spec/:provider` | 3600s | OpenAPI specs | `spec:cache:{provider}` |
-| `GET /webhooks/templates` | 86400s | Webhook schema definitions | `webhook:templates` |
-
-### Cache Busting
-
-In development, to clear all cached data:
-
-```bash
-# If you have Redis CLI access:
-redis-cli FLUSHDB
-
-# Or via the API (clear specific cache):
-DELETE /api/v1/admin/cache/network:status:mainnet
-```
-
-### Cache Headers
-
-Responses include standard HTTP cache headers:
-```
-Cache-Control: public, max-age=60
-ETag: "abc123..."
-Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
-```
+Caching is not currently implemented in the API; all requests are processed dynamically against upstream services and databases.
 
 ---
 
 ## Rate Limiting
 
-**Current Status:** No rate limiting is enforced in development/testing. Production deployment will include:
-- 100 requests/minute per IP for public endpoints
-- 1000 requests/minute per user for authenticated endpoints
-- Custom limits for resource-intensive operations (e.g., `/composer/simulate`)
+**Current Status:** Rate limiting is enforced globally across all endpoints via NestJS ThrottlerGuard according to application configuration.
 
 ---
 
@@ -1660,7 +2081,7 @@ Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
 
 - **CORS Origin:** Controlled by `WEB_ORIGIN` environment variable (default: `http://localhost:3000`)
 - **HTTPS:** Enforced in production; cookies marked with `Secure` flag
-- **CSRF Protection:** HTTP-only cookies prevent client-side token theft
+- **Session Security:** HTTP-only cookies store authentication tokens securely.
 - **Input Validation:** All inputs are validated and sanitized server-side
 
 ---
@@ -1670,3 +2091,446 @@ Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
 - **API Status:** [Check Stellar Horizon Status](https://dashboard.stellar.org/)
 - **Bug Reports:** [GitHub Issues](https://github.com/Savitura/Savitools/issues)
 - **Questions:** Refer to [Stellar Docs](https://developers.stellar.org/)
+
+
+---
+
+### SEP-10 Web Authentication Debugger
+
+#### POST `/sep10/fetch-challenge`
+
+Fetches an authentication challenge from a SEP-10 server.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sep10/fetch-challenge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webAuthEndpoint": "https://testanchor.stellar.org/auth",
+    "clientAccountId": "GABC...",
+    "homeDomain": "testanchor.stellar.org"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "transaction": "AAAAAgAAAA...",
+  "network_passphrase": "Test SDF Network ; September 2015",
+  "parsed": {
+    "source": "GABC...",
+    "sequence": "0"
+  }
+}
+```
+
+---
+
+#### POST `/sep10/validate-challenge`
+
+Validates a SEP-10 challenge transaction.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sep10/validate-challenge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "challengeXdr": "AAAAAgAAAA...",
+    "serverSigningKey": "GABC...",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "isValid": true,
+  "clientAccountId": "GABC...",
+  "timeBounds": {
+    "minTime": "1234567890",
+    "maxTime": "1234567990",
+    "isValid": true
+  },
+  "issues": []
+}
+```
+
+---
+
+#### POST `/sep10/sign-challenge`
+
+Signs a challenge transaction with a keypair.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sep10/sign-challenge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "challengeXdr": "AAAAAgAAAA...",
+    "signerSecretKey": "SABC...",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "signedTransaction": "AAAAAgAAAA..."
+}
+```
+
+---
+
+#### POST `/sep10/token-exchange`
+
+Exchanges a signed challenge for a JWT token.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sep10/token-exchange \
+  -H "Content-Type: application/json" \
+  -d '{
+    "webAuthEndpoint": "https://testanchor.stellar.org/auth",
+    "signedChallengeXdr": "AAAAAgAAAA..."
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
+
+### Soroban Contract Storage Explorer
+
+#### POST `/soroban-storage/query`
+
+Queries contract storage for a specific key.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/soroban-storage/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contractId": "CABC...",
+    "key": "balance",
+    "network": "testnet",
+    "keyType": "symbol"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "key": "balance",
+  "value": {
+    "type": "u128",
+    "value": "1000000"
+  },
+  "lastModified": 12345
+}
+```
+
+---
+
+#### POST `/soroban-storage/compare`
+
+Compares storage between two contracts.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/soroban-storage/compare \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contractId1": "CABC...",
+    "contractId2": "CDEF...",
+    "key": "balance",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "key": "balance",
+  "contract1": {
+    "value": { "type": "u128", "value": "1000000" },
+    "exists": true
+  },
+  "contract2": {
+    "value": { "type": "u128", "value": "2000000" },
+    "exists": true
+  },
+  "differences": [...]
+}
+```
+
+---
+
+#### POST `/soroban-storage/typed-key`
+
+Generates a properly typed storage key.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/soroban-storage/typed-key \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keyType": "map",
+    "keyComponents": [
+      { "type": "symbol", "value": "balances" },
+      { "type": "address", "value": "GABC..." }
+    ]
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "key": "AAAADwAAAAhiYWxhbmNlcwAAAAEAAAATAAAA...",
+  "components": [...]
+}
+```
+
+---
+
+### Stellar.toml Editor
+
+#### POST `/stellar-toml/parse`
+
+Parses and validates stellar.toml content.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/stellar-toml/parse \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "VERSION=\"2.0.0\"\nNETWORK_PASSPHRASE=\"Test SDF Network ; September 2015\"",
+    "strict": true
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "parsed": {
+    "VERSION": "2.0.0",
+    "NETWORK_PASSPHRASE": "Test SDF Network ; September 2015"
+  },
+  "issues": [],
+  "isValid": true
+}
+```
+
+---
+
+#### POST `/stellar-toml/format`
+
+Formats stellar.toml content.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/stellar-toml/format \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "VERSION=\"2.0.0\"\n[DOCUMENTATION]\nORG_NAME=\"Example\"",
+    "indent": "spaces",
+    "indentSize": 2
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "formatted": "VERSION = \"2.0.0\"\n\n[DOCUMENTATION]\nORG_NAME = \"Example\""
+}
+```
+
+---
+
+#### POST `/stellar-toml/validate`
+
+Validates stellar.toml against SEP-1.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/stellar-toml/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "VERSION=\"2.0.0\"",
+    "level": "strict",
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "isValid": true,
+  "issues": [...],
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "infos": 0
+  }
+}
+```
+
+---
+
+#### GET `/stellar-toml/template`
+
+Gets a pre-configured template.
+
+**Query Parameters:**
+- `type`: `minimal`, `anchor`, `issuer`, or `validator`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/stellar-toml/template?type=anchor"
+```
+
+**Response (200):**
+```json
+{
+  "template": "VERSION=\"2.0.0\"\n..."
+}
+```
+
+---
+
+### Sequence Number Planner
+
+#### GET `/sequence-planner/account-sequence`
+
+Gets the current sequence number for an account.
+
+**Query Parameters:**
+- `account`: Account address
+- `network`: `testnet` or `mainnet`
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/sequence-planner/account-sequence?account=GABC...&network=testnet"
+```
+
+**Response (200):**
+```json
+{
+  "account": "GABC...",
+  "currentSequence": "12345",
+  "nextSequence": "12346"
+}
+```
+
+---
+
+#### POST `/sequence-planner/validate-sequence`
+
+Validates a proposed sequence number.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sequence-planner/validate-sequence \
+  -H "Content-Type: application/json" \
+  -d '{
+    "account": "GABC...",
+    "proposedSequence": 12346,
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "isValid": true,
+  "currentSequence": "12345",
+  "nextValidSequence": "12346",
+  "gap": 0,
+  "issues": ["Sequence number is valid and ready to use"]
+}
+```
+
+---
+
+#### POST `/sequence-planner/plan`
+
+Plans sequences for multiple transactions with conflict detection.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3001/api/v1/sequence-planner/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactions": [
+      {
+        "id": "payment-1",
+        "sourceAccount": "GABC...",
+        "description": "Payment transaction"
+      }
+    ],
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "plannedTransactions": [...],
+  "conflicts": [],
+  "accountSequences": [...],
+  "summary": {
+    "total": 1,
+    "valid": 1,
+    "conflicts": 0,
+    "warnings": 0
+  }
+}
+```
+
+---
+
+## Error Handling
+
+All endpoints return consistent error responses:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Error description",
+  "error": "BadRequest"
+}
+```
+
+Common status codes:
+- `200`: Success
+- `201`: Created
+- `400`: Bad Request (invalid parameters)
+- `401`: Unauthorized (authentication required)
+- `404`: Not Found
+- `500`: Internal Server Error
+
+---
+
+## Rate Limiting
+
+The API enforces rate limiting via throttling:
+- Default: 100 requests per 60 seconds per IP
+- Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL` environment variables
+
+Rate limit headers:
+- `X-RateLimit-Limit`: Maximum requests per window
+- `X-RateLimit-Remaining`: Remaining requests
+- `X-RateLimit-Reset`: Time when the limit resets
+
+---
+
+## Support
+
+For API support:
+- Documentation: https://docs.savitools.dev
+- GitHub Issues: https://github.com/your-org/savitools/issues
+- Email: support@savitools.dev

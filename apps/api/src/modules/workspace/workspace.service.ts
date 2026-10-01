@@ -2,12 +2,23 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import * as crypto from 'crypto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
 import { RenameWorkspaceDTO } from './dto/rename-workspace.dto';
 import { UpdateWorkspaceDTO } from './dto/update-workspace.dto';
 import { ComposerStateSchema } from './composer-state.schema';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspaceTool } from './workspace-tool.enum';
+
+/** PostgreSQL `unique_violation`. */
+const UNIQUE_VIOLATION = '23505';
+
+export interface PaginatedWorkspaces {
+  items: Workspace[];
+  page: number;
+  limit: number;
+  total: number;
+}
 
 @Injectable()
 export class WorkspaceService {
@@ -21,10 +32,7 @@ export class WorkspaceService {
   // -------------------------------------------------------------------------
 
   async getWorkspace(userId: string, tool: WorkspaceTool): Promise<Record<string, unknown>> {
-    const workspace = await this.workspacesRepository.findOne({
-      where: { userId, tool, name: IsNull() },
-    });
-
+    const workspace = await this.findDefaultWorkspace(userId, tool);
     return workspace?.data ?? {};
   }
 
@@ -33,23 +41,42 @@ export class WorkspaceService {
     tool: WorkspaceTool,
     dto: UpdateWorkspaceDTO,
   ): Promise<Record<string, unknown>> {
-    let workspace = await this.workspacesRepository.findOne({
-      where: { userId, tool, name: IsNull() },
-    });
+    const workspace = await this.findDefaultWorkspace(userId, tool);
 
     if (workspace) {
       workspace.data = dto.data;
-    } else {
-      workspace = this.workspacesRepository.create({
-        userId,
-        tool,
-        data: dto.data,
-        name: null,
-      });
+      const saved = await this.workspacesRepository.save(workspace);
+      return saved.data;
     }
 
-    const saved = await this.workspacesRepository.save(workspace);
-    return saved.data;
+    const created = this.workspacesRepository.create({
+      userId,
+      tool,
+      data: dto.data,
+      name: null,
+    });
+
+    try {
+      const saved = await this.workspacesRepository.save(created);
+      return saved.data;
+    } catch (error) {
+      // A concurrent upsert inserted the default row first. The partial unique
+      // index on (user_id, tool) WHERE name IS NULL rejected this insert, which
+      // is exactly the invariant we want — fold into the winner instead of
+      // surfacing a 500.
+      if (!this.isUniqueViolation(error)) {
+        throw error;
+      }
+
+      const winner = await this.findDefaultWorkspace(userId, tool);
+      if (!winner) {
+        throw error;
+      }
+
+      winner.data = dto.data;
+      const saved = await this.workspacesRepository.save(winner);
+      return saved.data;
+    }
   }
 
   async assertTool(tool: string): Promise<WorkspaceTool> {
@@ -64,17 +91,28 @@ export class WorkspaceService {
   //  Named composer workspace methods
   // ------------------------------------------------------------------------
 
-  async listWorkspaces(userId: string, tool?: string): Promise<Workspace[]> {
+  async listWorkspaces(
+    userId: string,
+    tool?: string,
+    query?: PaginationQueryDto,
+  ): Promise<PaginatedWorkspaces> {
     const where: Record<string, unknown> = { userId };
     if (tool) {
       const workspaceTool = await this.assertTool(tool);
       where.tool = workspaceTool;
     }
 
-    return this.workspacesRepository.find({
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 25;
+
+    const [items, total] = await this.workspacesRepository.findAndCount({
       where,
       order: { updatedAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
+    return { items, page, limit, total };
   }
 
   async createWorkspace(userId: string, dto: CreateWorkspaceDTO): Promise<Workspace> {
@@ -213,6 +251,39 @@ export class WorkspaceService {
     }
 
     return workspace;
+  }
+
+  /**
+   * The default workspace is the one whose `name IS NULL` for a (user, tool).
+   *
+   * Uses `find({ take: 1 })` rather than `findOne` on purpose: on a database
+   * that still holds duplicate default rows (pre-dating the partial unique
+   * index), `findOne` throws `NonUniqueResultError`, which surfaced as a 500 on
+   * this hot path. Returning the oldest row keeps the endpoint working and is
+   * what the migration converges to anyway.
+   */
+  private async findDefaultWorkspace(
+    userId: string,
+    tool: WorkspaceTool,
+  ): Promise<Workspace | null> {
+    const [workspace] = await this.workspacesRepository.find({
+      where: { userId, tool, name: IsNull() },
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
+
+    return workspace ?? null;
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const code = (error as { code?: unknown; driverError?: { code?: unknown } }).code
+      ?? (error as { driverError?: { code?: unknown } }).driverError?.code;
+
+    return code === UNIQUE_VIOLATION;
   }
 
   private async assertWorkspaceNameAvailable(

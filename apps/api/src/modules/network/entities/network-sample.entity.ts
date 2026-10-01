@@ -28,31 +28,3 @@ export class NetworkSample {
   })
   sampledAt: Date;
 }
-
-@Entity("network_profiles")
-@Index(["ownerId", "name"], { unique: true })
-export class NetworkProfile {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
-
-  @Column( { name: "owner_id" })
-  ownerId: string;
-
-  @Column()
-  name: string;
-
-  @Column({ name: "horizon_url" })
-  horizonUrl: string;
-
-  @Column({ name: "network_passphrase" })
-  networkPassphrase: string;
-
-  @Column({ name: "friendbot_url", type: "text", nullable: true })
-  friendbotUrl: string | null;
-
-  @Column({ name: "is_default", default: false })
-  isDefault: boolean;
-
-  @Column({ name: "is_shared", default: false })
-  isShared: boolean;
-}

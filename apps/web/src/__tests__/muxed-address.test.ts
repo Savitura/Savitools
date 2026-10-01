@@ -1,3 +1,9 @@
+/**
+ * @jest-environment node
+ *
+ * Builds M-addresses with Node `Buffer`s and the Stellar SDK, which does not
+ * survive the jsdom realm (cross-realm `Buffer`).
+ */
 import { StrKey } from '@stellar/stellar-sdk';
 import { accountExplorerUrl, previewDestination } from '@/lib/muxed-address';
 

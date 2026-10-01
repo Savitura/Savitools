@@ -2,7 +2,7 @@ import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundE
 import { ConfigService } from '@nestjs/config';
 import { SendWebhookDto } from './dto/send-webhook.dto';
 import { WEBHOOK_TEMPLATES, WebhookTemplate } from './webhook-templates';
-import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from './ssrf-guard';
+import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../../common/ssrf-guard';
 import {
   LEGACY_ISO_TIMESTAMP_HEADER,
   LEGACY_SIGNATURE_HEADER,
@@ -144,6 +144,7 @@ async function readBodyWithLimit(
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
   private historyByUser = new Map<string, WebhookHistoryEntry[]>();
+  private templatesByUser = new Map<string, WebhookTemplate[]>();
   private templates: WebhookTemplate[] = [...WEBHOOK_TEMPLATES];
 
   constructor(@Optional() private readonly configService?: ConfigService) {}
@@ -164,18 +165,31 @@ export class WebhookService {
     return signingStatus({ enabled: this.resolveSecret() !== undefined });
   }
 
-  getTemplates(): WebhookTemplate[] {
-    return this.templates;
+  /**
+   * Returns webhook templates for the user. Note: templates are stored in-memory
+   * and will be lost on service restart or when running across multiple replicas.
+   */
+  getTemplates(userId?: string): WebhookTemplate[] {
+    if (!userId) {
+      return this.templates;
+    }
+    let userTemplates = this.templatesByUser.get(userId);
+    if (!userTemplates) {
+      userTemplates = [...WEBHOOK_TEMPLATES];
+      this.templatesByUser.set(userId, userTemplates);
+    }
+    return userTemplates;
   }
 
-  saveTemplate(template: WebhookTemplate): WebhookTemplate {
-    const existingIndex = this.templates.findIndex(
+  saveTemplate(template: WebhookTemplate, userId?: string): WebhookTemplate {
+    const list = userId ? this.getTemplates(userId) : this.templates;
+    const existingIndex = list.findIndex(
       (t) => t.provider === template.provider && t.eventType === template.eventType,
     );
     if (existingIndex >= 0) {
-      this.templates[existingIndex] = template;
+      list[existingIndex] = template;
     } else {
-      this.templates.push(template);
+      list.push(template);
     }
     return template;
   }
@@ -266,7 +280,8 @@ export class WebhookService {
     if (dto.payload) {
       payload = dto.payload;
     } else {
-      const template = this.templates.find((t) => t.eventType === dto.eventType);
+      const userTemplates = this.getTemplates(userId);
+      const template = userTemplates.find((t) => t.eventType === dto.eventType);
       payload = template ? (template.samplePayload as Record<string, unknown>) : { event: dto.eventType, timestamp: new Date().toISOString() };
     }
 
@@ -297,13 +312,16 @@ export class WebhookService {
         ...stripRecordedSignatureHeaders(dto.headers ?? {}),
       };
 
-      // `body` above is the exact string handed to fetch below, so the bytes
-      // signed are the bytes sent — no re-serialisation in between.
+      // Sign exactly the bytes handed to fetch below — no re-serialisation in
+      // between. A GET carries no body, so it signs the empty string; signing
+      // `body` there produced a signature no receiver could reproduce.
+      const sentBody = method !== 'GET' ? body : undefined;
       let signatureInfo: WebhookSignatureInfo | undefined;
       if (secret) {
-        const signed = signatureHeaders({ secret, body });
+        const signedBody = sentBody ?? '';
+        const signed = signatureHeaders({ secret, body: signedBody });
         Object.assign(headers, signed);
-        signatureInfo = { timestamp: signed[TIMESTAMP_HEADER], body, signature: signed[SIGNATURE_HEADER] };
+        signatureInfo = { timestamp: signed[TIMESTAMP_HEADER], body: signedBody, signature: signed[SIGNATURE_HEADER] };
       }
 
       let responseStatus: number | null = null;
@@ -316,7 +334,7 @@ export class WebhookService {
           method,
           dto.endpointUrl,
           headers,
-          method !== 'GET' ? body : undefined,
+          sentBody,
         );
         responseStatus = outcome.status;
         Object.assign(responseHeaders, outcome.headers);
@@ -363,6 +381,10 @@ export class WebhookService {
     return repeatCount > 1 ? results : results[0];
   }
 
+  /**
+   * Returns recent webhook execution history. Note: history is kept in-memory
+   * per replica and does not survive restarts or sync across replicas.
+   */
   getHistory(userId: string): WebhookHistoryEntry[] {
     return this.annotateLegacyEntries(this.historyByUser.get(userId) ?? []);
   }
@@ -388,7 +410,7 @@ export class WebhookService {
     }
 
     // Redacted secret-shaped headers cannot be reconstructed; skip them
-    // instead of transmitting the placeholder value. Recorded signing headers go
+    // instead of transmitting the REDACTED marker. Recorded signing headers go
     // too, for the reasons in `stripRecordedSignatureHeaders`.
     const headers = stripRecordedSignatureHeaders(
       Object.fromEntries(

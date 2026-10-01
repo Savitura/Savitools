@@ -1,17 +1,4 @@
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
-
-export class PaginationQueryDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit = 25;
-}
+// The monitor module originally owned the only pagination DTO in the API. It is
+// now the shared CommonModule DTO, re-exported here so existing imports keep
+// working while every list endpoint shares one definition.
+export { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';

@@ -4,7 +4,9 @@ import { AlertEvaluator } from './alert-evaluator.service';
 import { AlertEvent } from './entities/alert-event.entity';
 import { Watch } from './entities/watch.entity';
 import { horizonServer } from './horizon';
+import { MonitorLeaderService } from './monitor-leader.service';
 import { MonitorQueueService } from './monitor-queue.service';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import { StateEvaluationService } from './state-evaluation.service';
 import { WatchRegistry } from './watch-registry.service';
 
@@ -17,7 +19,7 @@ const horizonServerMock = horizonServer as jest.MockedFunction<
 describe('StateEvaluationService', () => {
   const key = 'testnet:account:GACCOUNT';
 
-  function build(watch: Watch) {
+  function build(watch: Watch, isLeader = true) {
     const watchRepository = {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     } as unknown as Repository<Watch>;
@@ -34,8 +36,17 @@ describe('StateEvaluationService', () => {
     const queue = {
       enqueue: jest.fn().mockResolvedValue(undefined),
     } as unknown as MonitorQueueService;
+    const configService = {
+      get: (_key: string, fallback: unknown) => fallback,
+    } as ConfigService;
+    const runtime = new MonitorRuntimeConfig(configService);
+    const leader = {
+      isLeader: () => isLeader,
+    } as unknown as MonitorLeaderService;
     const service = new StateEvaluationService(
-      { get: (_key: string, fallback: unknown) => fallback } as ConfigService,
+      runtime,
+      leader,
+      configService,
       watchRepository,
       alertEventRepository,
       registry,
@@ -115,6 +126,17 @@ describe('StateEvaluationService', () => {
     stubHorizon('10.0000000');
     await service.evaluateAll();
     expect(queue.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not evaluate when this replica is not the leader', async () => {
+    const watch = accountWatch();
+    const { service, queue } = build(watch, false);
+
+    stubHorizon('40.0000000');
+    await service.evaluateAll();
+
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(horizonServerMock).not.toHaveBeenCalled();
   });
 
   it('records the observed value and rule details on the alert payload', async () => {

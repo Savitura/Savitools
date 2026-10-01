@@ -8,39 +8,39 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ACCESS_TOKEN_COOKIE } from '../auth/auth.constants';
+import {
+  isAllowedWebOrigin,
+  parseWebOrigins,
+} from '../../config/web-origins';
 
-@WebSocketGateway({
-  cors: {
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      const allowedOrigin = process.env.WEB_ORIGIN || 'http://localhost:3000';
-      if (!origin || origin === allowedOrigin) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
-    },
-    credentials: true,
-  },
-})
+/**
+ * CORS for this gateway is installed by `WebSocketCorsAdapter` in `main.ts`,
+ * which is the only place a decorator cannot reach `ConfigService`. Setting
+ * `cors` here as well would create the second source of truth this class used
+ * to have (Savitura/Savitools#255).
+ */
+@WebSocketGateway()
 export class MonitorGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
   server!: Server;
 
+  /** Resolved once at startup from the same `WEB_ORIGIN` list as HTTP CORS. */
+  private readonly allowedOrigins: string[];
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.allowedOrigins = parseWebOrigins(
+      configService.get<string>('WEB_ORIGIN'),
+    );
+  }
 
   async handleConnection(client: Socket) {
     try {
-      const allowedOrigin = this.configService.get<string>(
-        'WEB_ORIGIN',
-        'http://localhost:3000',
-      );
-      const requestOrigin = client.handshake.headers.origin;
-      if (requestOrigin && requestOrigin !== allowedOrigin) {
+      if (!isAllowedWebOrigin(client.handshake.headers.origin, this.allowedOrigins)) {
         client.disconnect();
         return;
       }

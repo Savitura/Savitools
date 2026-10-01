@@ -72,6 +72,20 @@ export const tools = [
     status: "MVP" as const,
   },
   {
+    href: "/simulator/path-payment-lab",
+    label: "Slippage Lab",
+    description:
+      "Price several slippage tolerances against one adverse rate move and see which would survive it.",
+    status: "MVP" as const,
+  },
+  {
+    href: "/multisig",
+    label: "Multisig Simulator",
+    description:
+      "Check whether collected signatures clear the threshold, and name the signers still outstanding.",
+    status: "MVP" as const,
+  },
+  {
     href: "/inspector/graph",
     label: "Account Graph",
     description:
@@ -97,6 +111,20 @@ export const tools = [
     label: "Network Status",
     description:
       "Live Stellar network health: ledger close time, fee tracker, Horizon latency.",
+    status: "MVP" as const,
+  },
+  {
+    href: "/rpc",
+    label: "Soroban RPC",
+    description:
+      "Call read-only Soroban RPC methods with schema-aware inputs and inspect the raw JSON-RPC response.",
+    status: "MVP" as const,
+  },
+  {
+    href: "/qr-handoff",
+    label: "QR Handoff",
+    description:
+      "Move an unsigned or partially signed transaction across an air gap with checksummed animated QR frames.",
     status: "MVP" as const,
   },
 ] as const;

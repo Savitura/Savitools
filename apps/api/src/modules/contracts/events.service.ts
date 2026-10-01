@@ -12,11 +12,12 @@ import { signatureHeaders } from "../webhook/signature";
 import {
   MAX_WEBHOOK_REDIRECTS,
   assertSafeWebhookDestination,
-} from "../webhook/ssrf-guard";
+} from "../../common/ssrf-guard";
 import {
   DecodedContractEvent,
   EventFilterCriterion,
   applyEventFilters,
+  eventFilterCriteriaError,
 } from "./event-filters";
 import { decodeScVal } from "./scval-decoder";
 import { EventQueryNetwork, QueryEventsDto } from "./dto/query-events.dto";
@@ -91,7 +92,10 @@ export class EventsService {
       );
     }
 
-    const server = this.server(dto.network);
+    // One resolved network drives both the RPC client and the metric label, so
+    // the recorded `network` can never disagree with the node that was queried.
+    const network: EventQueryNetwork = dto.network ?? "testnet";
+    const server = this.server(network);
     const request: rpc.Server.GetEventsRequest = {
       filters: [
         { type: dto.type ?? "contract", contractIds: [dto.contractId] },
@@ -105,14 +109,14 @@ export class EventsService {
       request.startLedger = dto.startLedger;
     } else {
       // Neither anchor given: start from the newest ledger the node holds.
-      request.startLedger = await this.latestLedger(server);
+      request.startLedger = await this.latestLedger(server, network);
     }
 
     if (dto.endLedger !== undefined) {
       request.endLedger = dto.endLedger;
     }
 
-    const response = await this.fetchEvents(server, request);
+    const response = await this.fetchEvents(server, request, network);
     const events = response.events.map((record) => this.decodeEvent(record));
 
     return {
@@ -123,9 +127,12 @@ export class EventsService {
     };
   }
 
-  private async latestLedger(server: rpc.Server): Promise<number> {
+  private async latestLedger(
+    server: rpc.Server,
+    network: EventQueryNetwork,
+  ): Promise<number> {
     try {
-      const result = await this.timeRpc("get_latest_ledger", () =>
+      const result = await this.timeRpc("get_latest_ledger", network, () =>
         server.getLatestLedger(),
       );
       return result.sequence;
@@ -137,9 +144,12 @@ export class EventsService {
   private async fetchEvents(
     server: rpc.Server,
     request: rpc.Server.GetEventsRequest,
+    network: EventQueryNetwork,
   ): Promise<rpc.Api.GetEventsResponse> {
     try {
-      return await this.timeRpc("get_events", () => server.getEvents(request));
+      return await this.timeRpc("get_events", network, () =>
+        server.getEvents(request),
+      );
     } catch (err) {
       throw this.upstreamError(
         err,
@@ -148,9 +158,13 @@ export class EventsService {
     }
   }
 
-  private timeRpc<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  private timeRpc<T>(
+    operation: string,
+    network: EventQueryNetwork,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     return this.metricsService
-      ? this.metricsService.timeSorobanRpc(operation, "events", fn)
+      ? this.metricsService.timeSorobanRpc(operation, network, fn)
       : fn();
   }
 
@@ -219,6 +233,8 @@ export class EventsService {
     events: DecodedContractEvent[],
     criteria: EventFilterCriterion[],
   ): { events: DecodedContractEvent[]; count: number } {
+    const validationError = eventFilterCriteriaError(criteria);
+    if (validationError) throw new BadRequestException(validationError);
     const filtered = applyEventFilters(events, criteria);
     return { events: filtered, count: filtered.length };
   }
@@ -226,9 +242,10 @@ export class EventsService {
   /**
    * Replays events at a user-supplied endpoint, one signed POST per event.
    *
-   * Deliberately does not go through WebhookService: that writes every send
-   * into a 50-entry Redis history, so a 200-event replay would evict the
-   * user's entire webhook history. Follows notification-worker's precedent of
+   * Deliberately does not go through WebhookService: that records every send
+   * in its in-memory per-user history, capped at MAX_HISTORY_PER_USER (50)
+   * entries, so a 200-event replay would evict the user's entire webhook
+   * history. Follows notification-worker's precedent of
    * importing the SSRF guard directly and running its own send loop.
    */
   async replayEvents(dto: ReplayEventsDto): Promise<ReplaySummary> {

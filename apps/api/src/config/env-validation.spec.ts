@@ -4,6 +4,10 @@ import {
   collectConfigurationErrors,
   validateEnvironment,
 } from './env-validation';
+import {
+  resolveStellarHorizonUrl,
+  resolveStellarRpcUrl,
+} from './stellar-endpoints';
 
 /** Minimal KEY=VALUE parser mirroring dotenv's basic semantics. */
 function parseEnvFile(content: string): Record<string, string> {
@@ -46,6 +50,19 @@ describe('environment configuration validation (Savitura/Savitools#197)', () => 
   it('accepts a fully populated development configuration', () => {
     const { errors } = collectConfigurationErrors(validBaseConfig());
     expect(errors).toEqual([]);
+  });
+
+  it('rejects a non-numeric PLAYGROUND_SPEC_TTL_MS at boot (Savitura/Savitools#247)', () => {
+    const config = { ...validBaseConfig(), PLAYGROUND_SPEC_TTL_MS: 'soon' };
+    const { errors } = collectConfigurationErrors(config);
+    expect(errors).toContain(
+      'PLAYGROUND_SPEC_TTL_MS must be a positive integer number of milliseconds',
+    );
+  });
+
+  it('accepts a positive integer PLAYGROUND_SPEC_TTL_MS', () => {
+    const config = { ...validBaseConfig(), PLAYGROUND_SPEC_TTL_MS: '2500' };
+    expect(collectConfigurationErrors(config).errors).toEqual([]);
   });
 
   it('requires the URLs that services read at startup', () => {
@@ -117,6 +134,44 @@ describe('environment configuration validation (Savitura/Savitools#197)', () => 
     expect(errors).not.toContain('WEB_ORIGIN must use HTTPS in production');
   });
 
+  it('validates each origin when WEB_ORIGIN is a comma-separated list', () => {
+    const validMulti = {
+      ...validBaseConfig(),
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://app.savitools.dev, https://staging.savitools.dev',
+    };
+    expect(collectConfigurationErrors(validMulti).errors).not.toContain(
+      'Every WEB_ORIGIN entry must use HTTPS in production',
+    );
+
+    const mixedMulti = {
+      ...validBaseConfig(),
+      NODE_ENV: 'production',
+      WEB_ORIGIN: 'https://app.savitools.dev, http://insecure.savitools.dev',
+    };
+    expect(collectConfigurationErrors(mixedMulti).errors).toContain(
+      'WEB_ORIGIN must use HTTPS in production',
+    );
+  });
+
+  it('validates MONITOR_ROLE allowed values', () => {
+    const validRole = {
+      ...validBaseConfig(),
+      MONITOR_ROLE: 'worker',
+    };
+    expect(collectConfigurationErrors(validRole).errors).not.toContain(
+      'MONITOR_ROLE must be one of all, api, worker (received "worker")',
+    );
+
+    const invalidRole = {
+      ...validBaseConfig(),
+      MONITOR_ROLE: 'supervisor',
+    };
+    expect(collectConfigurationErrors(invalidRole).errors).toContain(
+      'MONITOR_ROLE must be one of all, api, worker (received "supervisor")',
+    );
+  });
+
   it('enforces minimum secret lengths in production', () => {
     const config = {
       ...validBaseConfig(),
@@ -158,6 +213,38 @@ describe('environment configuration validation (Savitura/Savitools#197)', () => 
     delete config.DEPLOYER_SECRET_KEY;
 
     expect(() => validateEnvironment(config)).toThrow(/JWT_SECRET is required/);
+  });
+
+  it('resolves the same public Horizon/RPC URLs across the shared config contract', () => {
+    const config = {
+      STELLAR_HORIZON_URL: 'https://horizon-testnet.stellar.org',
+      STELLAR_RPC_URL: 'https://soroban-rpc-testnet.stellar.org',
+      STELLAR_HORIZON_PUBLIC_URL: 'https://horizon.example.com',
+      STELLAR_RPC_PUBLIC_URL: 'https://rpc.example.com',
+    } as Record<string, string>;
+
+    expect(resolveStellarHorizonUrl(config, 'public')).toBe('https://horizon.example.com');
+    expect(resolveStellarHorizonUrl(config, 'testnet')).toBe(
+      'https://horizon-testnet.stellar.org',
+    );
+    expect(resolveStellarRpcUrl(config, 'public')).toBe('https://rpc.example.com');
+    expect(resolveStellarRpcUrl(config, 'testnet')).toBe(
+      'https://soroban-rpc-testnet.stellar.org',
+    );
+
+    const legacyConfig = {
+      STELLAR_HORIZON_MAINNET_URL: 'https://legacy-horizon.example.com',
+      STELLAR_RPC_PUBLIC_URL: 'https://legacy-rpc.example.com',
+      STELLAR_HORIZON_URL: 'https://horizon-testnet.stellar.org',
+      STELLAR_RPC_URL: 'https://soroban-rpc-testnet.stellar.org',
+    } as Record<string, string>;
+
+    expect(resolveStellarHorizonUrl(legacyConfig, 'public')).toBe(
+      'https://legacy-horizon.example.com',
+    );
+    expect(resolveStellarRpcUrl(legacyConfig, 'public')).toBe(
+      'https://legacy-rpc.example.com',
+    );
   });
 
   it('the documented .env.example templates validate cleanly', () => {

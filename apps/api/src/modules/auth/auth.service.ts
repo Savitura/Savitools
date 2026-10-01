@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { BoundedTtlMap } from '../../common/bounded-ttl-map';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as argon2 from 'argon2';
 import {
@@ -32,6 +33,7 @@ import { IsNull, Repository } from 'typeorm';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  DISCOVERABLE_CHALLENGE_OWNER,
   EMAIL_VERIFICATION_TTL_SECONDS,
   PASSKEY_CHALLENGE_TTL_SECONDS,
   PASSKEY_MAX_PER_USER,
@@ -42,6 +44,7 @@ import {
   PASSWORD_RESET_TTL_SECONDS,
   PASSWORD_RESET_WINDOW_MS,
   REFRESH_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_REUSE_GRACE_MS,
 } from './auth.constants';
 import { CreateVaultKeyDto } from './dto/create-vault-key.dto';
 import { FluxaDto } from './dto/fluxa.dto';
@@ -70,6 +73,12 @@ export interface IssueSessionContext {
 
 const HKDF_INFO_CONNECTED = ENCRYPTION_PURPOSES.CONNECTED_ACCOUNT;
 const HKDF_INFO_VAULT = ENCRYPTION_PURPOSES.VAULT_KEY;
+
+/**
+ * Ceiling for the two single-use passkey maps (#291): both are written from
+ * unauthenticated routes, so the bound is a memory guarantee, not a tuning knob.
+ */
+const PASSKEY_CHALLENGE_MAX_ENTRIES = 10_000;
 
 @Injectable()
 export class AuthService {
@@ -335,15 +344,23 @@ export class AuthService {
     );
 
     if (claim.affected !== 1) {
-      // The token was already consumed — by a concurrent winner or by a
-      // genuine replay. Either way, a second presentation of a used token
-      // means it may have been captured/duplicated: revoke the whole
-      // family so no descendant token can keep producing sessions.
-      this.logger.warn(`Refresh token reuse detected for family ${stored.familyId}`);
-      await this.refreshTokensRepository.update(
-        { familyId: stored.familyId },
-        { revokedAt: new Date() },
-      );
+      const latest = await this.refreshTokensRepository.findOne({
+        where: { id: stored.id },
+      });
+      const consumedAt = latest?.revokedAt?.getTime();
+      const now = Date.now();
+      const withinGrace =
+        consumedAt !== undefined &&
+        consumedAt <= now &&
+        now - consumedAt <= REFRESH_TOKEN_REUSE_GRACE_MS;
+
+      if (!withinGrace) {
+        this.logger.warn(`Refresh token reuse detected for family ${stored.familyId}`);
+        await this.refreshTokensRepository.update(
+          { familyId: stored.familyId },
+          { revokedAt: new Date() },
+        );
+      }
       throw new UnauthorizedException('INVALID_REFRESH_TOKEN');
     }
 
@@ -646,14 +663,20 @@ export class AuthService {
   // ─── WebAuthn passkeys (Savitura/Savitools#218) ───────────────────────────
 
   /**
-   * Single-use challenge store, bounded like the reset rate-limiter.
-   * Keys are `${userId}:${challenge}` so a challenge can only ever be
-   * consumed by the account that requested it.
+   * Single-use challenge store. Keys are `${userId}:${challenge}` so a challenge
+   * can only ever be consumed by the account that requested it.
+   *
+   * Written by unauthenticated routes (`POST /auth/passkeys/login/options`), so
+   * the entry bound is what keeps a caller from growing it without limit; the
+   * TTL is what makes an abandoned challenge unusable (Savitura/Savitools#291).
    */
-  private readonly passkeyChallenges = new Map<
+  private readonly passkeyChallenges = new BoundedTtlMap<
     string,
-    { challenge: string; type: 'registration' | 'assertion'; expiresAt: number; rpId: string }
-  >();
+    { challenge: string; type: 'registration' | 'assertion'; rpId: string }
+  >({
+    maxEntries: PASSKEY_CHALLENGE_MAX_ENTRIES,
+    ttlMs: PASSKEY_CHALLENGE_TTL_SECONDS * 1000,
+  });
 
   private storePasskeyChallenge(
     userId: string,
@@ -662,17 +685,10 @@ export class AuthService {
     rpId: string,
     allowedCredentialIds?: string[],
   ): void {
-    if (this.passkeyChallenges.size > 10_000) {
-      const now = Date.now();
-      for (const [key, entry] of this.passkeyChallenges) {
-        if (entry.expiresAt < now) this.passkeyChallenges.delete(key);
-      }
-    }
     this.passkeyChallenges.set(`${userId}:${challenge}`, {
       challenge,
       type,
       rpId,
-      expiresAt: Date.now() + PASSKEY_CHALLENGE_TTL_SECONDS * 1000,
     });
     if (allowedCredentialIds) {
       this.challengeKeyCache.set(challenge, allowedCredentialIds.sort().join(','));
@@ -687,9 +703,11 @@ export class AuthService {
     rpId: string,
   ): void {
     const key = `${userId}:${challenge}`;
+    // `get` removes an expired entry, and the explicit delete makes the
+    // challenge single-use: a replay finds nothing (Savitura/Savitools#291).
     const entry = this.passkeyChallenges.get(key);
     this.passkeyChallenges.delete(key);
-    if (!entry || entry.expiresAt < Date.now()) {
+    if (!entry) {
       throw new UnauthorizedException(
         'PASSKEY_CHALLENGE_INVALID: challenge is expired, unknown, or already used',
       );
@@ -915,12 +933,14 @@ export class AuthService {
       userVerification: 'preferred',
     });
 
-    // Assertion challenges are stored under a stable owner hash of the
-    // allowed credential ids (or 'anonymous' for discoverable flows) and
-    // constrained to those credentials at verification time.
+    // Assertion challenges are stored under a stable owner hash of the allowed
+    // credential ids, and constrained to those credentials at verification
+    // time. Discoverable (usernameless) assertions are issued before the server
+    // knows which credential will answer, so they are keyed under
+    // DISCOVERABLE_CHALLENGE_OWNER instead (#287).
     const challengeOwner = allowCredentials
       ? this.userIdForChallenge(allowCredentials)
-      : 'anonymous';
+      : DISCOVERABLE_CHALLENGE_OWNER;
     this.storePasskeyChallenge(
       challengeOwner,
       'assertion',
@@ -932,7 +952,16 @@ export class AuthService {
     return { options: authOptions, allowCredentials };
   }
 
-  private challengeKeyCache = new Map<string, string>();
+  /**
+   * Allow-list per issued assertion challenge. Bounded and TTL'd like the
+   * challenge itself, and consumed on read: it used to be written on every
+   * unauthenticated login-options call and never deleted from
+   * (Savitura/Savitools#291).
+   */
+  private readonly challengeKeyCache = new BoundedTtlMap<string, string>({
+    maxEntries: PASSKEY_CHALLENGE_MAX_ENTRIES,
+    ttlMs: PASSKEY_CHALLENGE_TTL_SECONDS * 1000,
+  });
 
   /** Resolve the storage key owner for a login challenge based on allowCredentials. */
   private userIdForChallenge(allowCredentials: Array<{ id: string }>): string {
@@ -948,6 +977,8 @@ export class AuthService {
     rpId: string,
   ): void {
     const allowedRaw = this.challengeKeyCache.get(challenge);
+    // Consumed on read, so the allow-list cannot outlive the challenge it belongs to.
+    this.challengeKeyCache.delete(challenge);
     if (allowedRaw) {
       const allowed = allowedRaw.split(',');
       if (!allowed.includes(credentialId)) {
@@ -960,9 +991,16 @@ export class AuthService {
       return;
     }
 
-    // Discoverable credential: challenges are keyed per user when issued
-    // via beginPasskeyLogin without allowCredentials.
-    this.takePasskeyChallenge(credentialUserId, challenge, 'assertion', rpId);
+    // Discoverable credential: the challenge was issued without an allow-list,
+    // so it was keyed under DISCOVERABLE_CHALLENGE_OWNER rather than under the
+    // user this assertion names. Prefer the owner that actually holds it, so a
+    // usernameless login can consume its own challenge (#287) — the key is
+    // still consumed exactly once and still checked for type and rpId.
+    const owner = this.passkeyChallenges.has(`${credentialUserId}:${challenge}`)
+      ? credentialUserId
+      : DISCOVERABLE_CHALLENGE_OWNER;
+
+    this.takePasskeyChallenge(owner, challenge, 'assertion', rpId);
   }
 
   /** Verify an assertion and issue the same session as password login. */

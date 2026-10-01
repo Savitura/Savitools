@@ -9,16 +9,47 @@ import { createClient, RedisClientType } from 'redis';
 import { getHorizonUrl, parseAssetParams, fetchFromHorizon, ParsedAsset } from './horizon.util';
 import { TradesQueryDto, OrderQuoteDto } from './dto/trades.dto';
 import { BadRequestException } from '@nestjs/common';
+import {
+  DecimalFormatError,
+  FIXED_SCALE,
+  divFixed,
+  divRound,
+  formatFixed,
+  mulFixed,
+  parseFixed as parseDecimal,
+} from '../../common/decimal.util';
 
 export type OrderbookNetwork = 'mainnet' | 'testnet';
 
 export interface OrderbookLevel {
+  /** Horizon's price string, passed through unchanged. */
   price: string;
+  /** Horizon's amount string, passed through unchanged. */
   amount: string;
+  /** Exact running total, seven-decimal string. */
   cumulativeAmount: string;
+  /** Running total as a percentage of the side total, rounded to 2 decimals (half away from zero). */
   cumulativePercent: number;
 }
 
+/**
+ * Order-book analytics.
+ *
+ * All arithmetic is exact (bigint stroops). Rounding happens once, at this API
+ * boundary, and is stated per field:
+ *
+ * - `spread`, `midPrice`, `cumulativeAmount`: seven-decimal strings. `spread`
+ *   and `cumulativeAmount` are exact. `midPrice` is (bestBid + bestAsk) / 2
+ *   rounded half up to the seventh decimal (only differs from exact when the
+ *   two prices sum to an odd number of stroops).
+ * - `spreadBps`: (ask - bid) / exact mid * 10 000, rounded to 2 decimals,
+ *   half away from zero. Uses the exact mid, not the rounded `midPrice`.
+ * - `cumulativePercent`: rounded to 2 decimals, half away from zero.
+ * - `liquidityScore`: whole number 0-100, half away from zero. Counts volume on
+ *   bids priced >= 99% and asks priced <= 101% of the exact mid (inclusive).
+ * - `bestBid` / `bestAsk` / level `price` / level `amount`: Horizon's strings,
+ *   unchanged. An empty side reports "0".
+ */
 export interface OrderbookResult {
   selling: string;
   buying: string;
@@ -91,44 +122,61 @@ export interface OrderQuoteResult {
   lastUpdated: number;
 }
 
-const FIXED_SCALE = 10_000_000n;
 const MAX_TRADE_PAGES = 5;
 const ESTIMATED_TRADE_FEE_STROOPS = '100';
 
+/**
+ * Parses a decimal string, surfacing malformed input as a 400 like the rest of
+ * this service. The arithmetic itself lives in common/decimal.util.
+ */
 function parseFixed(value: string): bigint {
-  const match = /^(\d+)(?:\.(\d{1,7}))?$/.exec(value);
-  if (!match) {
-    throw new BadRequestException(
-      `Invalid decimal value: "${value}" (expected a non-negative decimal with at most 7 fractional digits)`,
-    );
+  try {
+    return parseDecimal(value);
+  } catch (err) {
+    if (err instanceof DecimalFormatError) {
+      throw new BadRequestException(err.message);
+    }
+    throw err;
   }
-  const whole = BigInt(match[1]);
-  const fraction = match[2] ? BigInt(match[2].padEnd(7, '0')) : 0n;
-  return whole * FIXED_SCALE + fraction;
-}
-
-function formatFixed(value: bigint): string {
-  const negative = value < 0n;
-  const abs = negative ? -value : value;
-  const whole = abs / FIXED_SCALE;
-  const fraction = (abs % FIXED_SCALE).toString().padStart(7, '0');
-  return `${negative ? '-' : ''}${whole}.${fraction}`;
-}
-
-function mulFixed(a: bigint, b: bigint): bigint {
-  return (a * b) / FIXED_SCALE;
-}
-
-function divFixed(a: bigint, b: bigint): bigint {
-  if (b === 0n) {
-    throw new BadRequestException('Division by zero');
-  }
-  return (a * FIXED_SCALE) / b;
 }
 
 function formatAssetString(asset: ParsedAsset): string {
   if (asset.type === 'native' || !asset.code) return 'XLM';
   return `${asset.code}:${asset.issuer ?? ''}`;
+}
+
+/**
+ * Canonical spelling of one side of a trading pair.
+ *
+ * Accepts "XLM", "CODE:ISSUER", and the legacy literal "native" that earlier
+ * versions of `registerActivePair` wrote into the active-pair set (#285).
+ */
+function canonicalAssetString(value: string): string {
+  if (value === 'native') return 'XLM';
+  return formatAssetString(parseAssetParams(value));
+}
+
+/**
+ * Legacy spelling of one side: native as the literal "native".
+ *
+ * Only used to read history that was written under the old key shape, so a
+ * deploy does not orphan snapshots still sitting in Redis (#285).
+ */
+function legacyAssetString(value: string): string {
+  if (value === 'native') return 'native';
+  const asset = parseAssetParams(value);
+  return asset.type === 'native' ? 'native' : `${asset.code}:${asset.issuer}`;
+}
+
+/**
+ * Canonical key for a trading pair, shared by the active-pair set, the
+ * mid-price sampler and the history lookup.
+ *
+ * The sampler used to store snapshots under the literal "native|…" while
+ * `getHistory` looked up "XLM|…", so no snapshot was ever read back (#285).
+ */
+function canonicalPairKey(selling: string, buying: string): string {
+  return pairKey(canonicalAssetString(selling), canonicalAssetString(buying));
 }
 
 function formatPriceRatio(price: unknown): string {
@@ -144,6 +192,7 @@ function formatPriceRatio(price: unknown): string {
   throw new BadRequestException('Invalid trade price in Horizon response');
 }
 
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- Horizon /trades records are untyped */
 function mapHorizonTrade(record: any): TradeRow {
   const baseAsset = formatAssetString({
     type: record.base_asset_type,
@@ -187,6 +236,13 @@ interface HorizonOrderBookResponse {
   asks?: HorizonOrderBookLevel[];
 }
 
+/** A Horizon level with its price and amount parsed to exact stroops. */
+interface ParsedLevel {
+  raw: HorizonOrderBookLevel;
+  price: bigint;
+  amount: bigint;
+}
+
 const HISTORY_LENGTH = 60;
 const DEFAULT_ACTIVE_PAIR = {
   selling: 'XLM',
@@ -198,32 +254,55 @@ function pairKey(selling: string, buying: string): string {
   return `${selling}|${buying}`;
 }
 
-function buildLevels(levels: HorizonOrderBookLevel[]): OrderbookLevel[] {
-  const total = levels.reduce((sum, l) => sum + Number(l.amount), 0);
-  let cumulative = 0;
+/** Parses every level's price and amount exactly. Throws 400 on malformed input. */
+function parseLevels(levels: HorizonOrderBookLevel[]): ParsedLevel[] {
+  return levels.map((raw) => ({
+    raw,
+    price: parseFixed(raw.price),
+    amount: parseFixed(raw.amount),
+  }));
+}
+
+function sumAmounts(levels: ParsedLevel[]): bigint {
+  return levels.reduce((sum, level) => sum + level.amount, 0n);
+}
+
+function buildLevels(levels: ParsedLevel[]): OrderbookLevel[] {
+  const total = sumAmounts(levels);
+  let cumulative = 0n;
 
   return levels.map((level) => {
-    cumulative += Number(level.amount);
+    cumulative += level.amount;
+    // Percent to 2 decimals = basis points of the total / 100, rounded once.
+    const percentBps = total > 0n ? divRound(cumulative * 10_000n, total) : 0n;
     return {
-      price: level.price,
-      amount: level.amount,
-      cumulativeAmount: cumulative.toFixed(7),
-      cumulativePercent: total > 0 ? Math.round((cumulative / total) * 10000) / 100 : 0,
+      price: level.raw.price,
+      amount: level.raw.amount,
+      cumulativeAmount: formatFixed(cumulative),
+      cumulativePercent: Number(percentBps) / 100,
     };
   });
 }
 
+/**
+ * Total amount within 1% of the mid price on one side (inclusive at the edge).
+ *
+ * `midTwice` is bestBid + bestAsk, i.e. 2x the exact mid, so the 99% / 101%
+ * thresholds are compared as exact integers with no rounded threshold:
+ *   bids: price >= 0.99 * mid  <=>  200 * price >= 99  * midTwice
+ *   asks: price <= 1.01 * mid  <=>  200 * price <= 101 * midTwice
+ */
 function volumeWithinOnePercent(
-  levels: HorizonOrderBookLevel[],
-  midPrice: number,
+  levels: ParsedLevel[],
+  midTwice: bigint,
   side: 'bids' | 'asks',
-): number {
-  const threshold = side === 'bids' ? midPrice * 0.99 : midPrice * 1.01;
-  return levels.reduce((sum, l) => {
-    const price = Number(l.price);
-    const withinRange = side === 'bids' ? price >= threshold : price <= threshold;
-    return withinRange ? sum + Number(l.amount) : sum;
-  }, 0);
+): bigint {
+  return levels.reduce((sum, level) => {
+    const scaled = level.price * 200n;
+    const withinRange =
+      side === 'bids' ? scaled >= midTwice * 99n : scaled <= midTwice * 101n;
+    return withinRange ? sum + level.amount : sum;
+  }, 0n);
 }
 
 @Injectable()
@@ -231,6 +310,9 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrderbookService.name);
   private redisClient?: RedisClientType;
   private pollInterval?: NodeJS.Timeout;
+  /** In-flight connect attempt, so concurrent callers share one socket. */
+  private redisConnect?: Promise<boolean>;
+  private redisFailureLogged = false;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -239,28 +321,63 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
     this.redisClient = createClient({ url: redisUrl });
     this.redisClient.on('error', (err) => this.logger.error('Redis Client Error', err));
 
-    try {
-      await this.redisClient.connect();
-      this.logger.log('Connected to Redis for order book polling');
-
+    if (await this.ensureRedisReady()) {
       await this.registerActivePair(
         DEFAULT_ACTIVE_PAIR.selling,
         DEFAULT_ACTIVE_PAIR.buying,
         DEFAULT_ACTIVE_PAIR.network,
       );
-
       await this.pollActivePairs();
-      this.pollInterval = setInterval(() => this.pollActivePairs(), 60_000);
-    } catch (err) {
-      this.logger.error('Failed to connect to Redis', err as Error);
+    } else {
+      // Loud and recoverable instead of a silent permanent degradation: the
+      // poller below retries the connection on every tick, so a Redis that comes
+      // back later is picked up without restarting the API (#291).
+      this.logger.error(
+        'Order book polling is degraded: Redis is unavailable. Retrying every 60s; the cache is inactive until it connects.',
+      );
     }
+
+    this.pollInterval = setInterval(() => this.pollActivePairs(), 60_000);
+    this.pollInterval.unref?.();
+  }
+
+  /**
+   * True once the shared client is ready. A previous failed attempt does not
+   * poison the client: the next call retries, so the process recovers on its own.
+   */
+  private ensureRedisReady(): Promise<boolean> {
+    const client = this.redisClient;
+    if (!client) return Promise.resolve(false);
+    if (client.isReady) return Promise.resolve(true);
+
+    if (!this.redisConnect) {
+      this.redisConnect = client
+        .connect()
+        .then(() => {
+          this.redisFailureLogged = false;
+          this.logger.log('Connected to Redis for order book polling');
+          return true;
+        })
+        .catch((err: unknown) => {
+          if (!this.redisFailureLogged) {
+            this.logger.error('Failed to connect to Redis', err as Error);
+            this.redisFailureLogged = true;
+          }
+          return false;
+        })
+        .finally(() => {
+          this.redisConnect = undefined;
+        });
+    }
+
+    return this.redisConnect;
   }
 
   async onModuleDestroy(): Promise<void> {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
     }
-    if (this.redisClient) {
+    if (this.redisClient?.isOpen) {
       await this.redisClient.quit();
     }
   }
@@ -295,43 +412,53 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
   ): OrderbookResult {
     const rawBids = raw.bids ?? [];
     const rawAsks = raw.asks ?? [];
+    const bids = parseLevels(rawBids);
+    const asks = parseLevels(rawAsks);
 
     const bestBid = rawBids[0]?.price ?? '0';
     const bestAsk = rawAsks[0]?.price ?? '0';
-    const bestBidNum = Number(bestBid);
-    const bestAskNum = Number(bestAsk);
+    const bestBidFixed = bids[0]?.price ?? 0n;
+    const bestAskFixed = asks[0]?.price ?? 0n;
 
-    const midPriceNum =
-      bestBidNum > 0 && bestAskNum > 0
-        ? (bestBidNum + bestAskNum) / 2
-        : bestBidNum > 0
-          ? bestBidNum
-          : bestAskNum;
+    const twoSided = bestBidFixed > 0n && bestAskFixed > 0n;
 
-    const spreadNum = bestBidNum > 0 && bestAskNum > 0 ? bestAskNum - bestBidNum : 0;
-    const spreadBps = midPriceNum > 0 ? (spreadNum / midPriceNum) * 10000 : 0;
+    // 2x the exact mid: bid + ask when both sides are quoted, otherwise twice
+    // the one quoted price (mid falls back to that side), or 0 for an empty book.
+    const midTwice = twoSided
+      ? bestBidFixed + bestAskFixed
+      : bestBidFixed > 0n
+        ? bestBidFixed * 2n
+        : bestAskFixed * 2n;
+    // Half up at the seventh decimal.
+    const midPrice = (midTwice + 1n) / 2n;
 
-    const totalVolume =
-      rawBids.reduce((sum, l) => sum + Number(l.amount), 0) +
-      rawAsks.reduce((sum, l) => sum + Number(l.amount), 0);
+    const spread = twoSided ? bestAskFixed - bestBidFixed : 0n;
+    // spread / mid * 10 000 bps, in hundredths of a bp: spread * 1e6 / mid,
+    // and mid = midTwice / 2.
+    const spreadBpsHundredths =
+      midTwice > 0n ? divRound(spread * 2_000_000n, midTwice) : 0n;
+
+    const totalVolume = sumAmounts(bids) + sumAmounts(asks);
     const volumeWithin1Pct =
-      volumeWithinOnePercent(rawBids, midPriceNum, 'bids') +
-      volumeWithinOnePercent(rawAsks, midPriceNum, 'asks');
+      volumeWithinOnePercent(bids, midTwice, 'bids') +
+      volumeWithinOnePercent(asks, midTwice, 'asks');
     const liquidityScore =
-      totalVolume > 0 ? Math.min(100, Math.round((volumeWithin1Pct / totalVolume) * 100)) : 0;
+      totalVolume > 0n
+        ? Math.min(100, Number(divRound(volumeWithin1Pct * 100n, totalVolume)))
+        : 0;
 
     return {
       selling,
       buying,
       network,
-      spread: spreadNum.toFixed(7),
-      spreadBps: Math.round(spreadBps * 100) / 100,
-      midPrice: midPriceNum.toFixed(7),
+      spread: formatFixed(spread),
+      spreadBps: Number(spreadBpsHundredths) / 100,
+      midPrice: formatFixed(midPrice),
       bestBid,
       bestAsk,
       liquidityScore,
-      bids: buildLevels(rawBids),
-      asks: buildLevels(rawAsks),
+      bids: buildLevels(bids),
+      asks: buildLevels(asks),
       lastUpdated: Date.now(),
     };
   }
@@ -354,18 +481,19 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
     buying: string,
     network: OrderbookNetwork,
   ): Promise<void> {
+    if (!(await this.ensureRedisReady())) return;
     const redis = this.redisClient;
     if (!redis) return;
     try {
-      // Validate and canonicalize to prevent creating unbounded unique junk keys
-      const s = parseAssetParams(selling);
-      const b = parseAssetParams(buying);
-      const sStr = s.type === 'native' ? 'native' : `${s.code}:${s.issuer}`;
-      const bStr = b.type === 'native' ? 'native' : `${b.code}:${b.issuer}`;
+      // Validate to prevent creating unbounded unique junk keys, then store the
+      // canonical pair so the sampler's history keys match what getHistory
+      // looks up (#285).
+      parseAssetParams(selling);
+      parseAssetParams(buying);
 
       // Use a sorted set to track when it was last requested
       const key = `orderbook:active_pairs:${network}`;
-      await redis.zAdd(key, [{ score: Date.now(), value: pairKey(sStr, bStr) }]);
+      await redis.zAdd(key, [{ score: Date.now(), value: canonicalPairKey(selling, buying) }]);
       // Limit to max 1000 active pairs per network to prevent unbounded growth
       if (await redis.zCard(key) > 1000) {
         await redis.zRemRangeByRank(key, 0, 0); // remove the oldest
@@ -376,6 +504,7 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async pollActivePairs(): Promise<void> {
+    if (!(await this.ensureRedisReady())) return;
     const redis = this.redisClient;
     if (!redis) return;
 
@@ -428,8 +557,22 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
     if (!redis) return [];
 
     try {
-      const historyKey = `orderbook:history:${network}:${pairKey(selling, buying)}`;
-      const results = await redis.lRange(historyKey, 0, HISTORY_LENGTH - 1);
+      const historyKey = `orderbook:history:${network}:${canonicalPairKey(selling, buying)}`;
+      let results = await redis.lRange(historyKey, 0, HISTORY_LENGTH - 1);
+
+      // Read-only fallback for snapshots written before the key was
+      // canonicalised: pairs sampled as "native|…" are still in Redis until the
+      // active-pair set rotates, and their history would otherwise be lost.
+      if (results.length === 0) {
+        const legacyKey = `orderbook:history:${network}:${pairKey(
+          legacyAssetString(selling),
+          legacyAssetString(buying),
+        )}`;
+        if (legacyKey !== historyKey) {
+          results = await redis.lRange(legacyKey, 0, HISTORY_LENGTH - 1);
+        }
+      }
+
       return results.map((r) => JSON.parse(r) as MidPriceSnapshot).reverse();
     } catch (err) {
       this.logger.error('Failed to read order book history', err as Error);
@@ -464,6 +607,7 @@ export class OrderbookService implements OnModuleInit, OnModuleDestroy {
       if (cursor) params.set('cursor', cursor);
 
       const data = await fetchFromHorizon(`${horizonUrl}/trades?${params.toString()}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Horizon /trades records are untyped
       const batch: any[] = data?._embedded?.records ?? [];
       if (batch.length === 0) {
         stopReason = 'end-of-data';

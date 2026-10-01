@@ -1,4 +1,3 @@
-import { SiteHeader } from '@/components/layout/site-header';
 import { toolDocs } from '@/lib/tool-docs';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -55,7 +54,6 @@ export default async function ToolDocPage({
 
   return (
     <>
-      <SiteHeader />
       <main className="min-h-screen bg-background">
         <div className="max-w-3xl mx-auto px-6 py-12">
           <Link

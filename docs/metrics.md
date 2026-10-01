@@ -10,7 +10,7 @@ Use a separate metrics key in production:
 METRICS_API_KEY=replace-with-a-long-random-value
 ```
 
-Prometheus can send the key as either `Authorization: Bearer <key>` or `X-Metrics-Api-Key: <key>`. If `METRICS_API_KEY` is unset, the endpoint defaults to internal-network-only access (`127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`). Set `METRICS_INTERNAL_ONLY=false` only when an upstream firewall, sidecar, or ingress policy restricts access.
+Prometheus can send the key as either `Authorization: Bearer <key>` or `X-Metrics-Api-Key: <key>`. If `METRICS_API_KEY` is unset, the endpoint defaults to internal-network-only access (`127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`). `METRICS_INTERNAL_ONLY` therefore defaults to `true` when it is unset (as in `apps/api/.env.example`); only the exact value `false` disables the restriction, so set `METRICS_INTERNAL_ONLY=false` only when an upstream firewall, sidecar, or ingress policy restricts access.
 
 ## Exported metrics
 
@@ -21,6 +21,8 @@ Prometheus can send the key as either `Authorization: Bearer <key>` or `X-Metric
 - `savitools_horizon_active_connections`: configured Horizon client connections by network.
 - `savitools_redis_active_connections`: Redis client connection state by client name.
 - Node.js process and runtime default metrics from `prom-client`.
+
+The `savitools_http_*` request metrics deliberately exclude `/metrics` and the `/health/*` probes (matched by whole path segment), because a scrape would otherwise observe itself and orchestrator probe traffic would be counted as user traffic, flattening request-rate, latency, and error-rate panels. A route whose name merely contains `health` (for example `/api/v1/monitoring/operational-health`) is still measured.
 
 ## Prometheus scrape config
 

@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnApplicationShutdown } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import * as StellarSdk from "@stellar/stellar-sdk";
@@ -15,8 +21,9 @@ import {
 } from "./monitor.types";
 import { WatchRegistry } from "./watch-registry.service";
 import { MonitorGateway } from "./monitor.gateway";
+import { MonitorLeaderService } from "./monitor-leader.service";
+import { MonitorRuntimeConfig } from "./monitor-runtime.config";
 
-export const MAX_SSE_CONNECTIONS = 50;
 export const INITIAL_RECONNECT_DELAY_MS = 1_000;
 export const MAX_RECONNECT_DELAY_MS = 60_000;
 export const RECONNECT_BACKOFF_FACTOR = 2;
@@ -36,14 +43,28 @@ interface StreamGroup {
   chains: Partial<Record<EventSource, Promise<void>>>;
 }
 
+/**
+ * Opens (and re-opens) the Horizon stream/polling groups for every watch.
+ *
+ * The Horizon streams are the expensive half of the monitor: two live SSE
+ * connections per account watch. Only the elected leader opens them
+ * (Savitura/Savitools#255), so a rolling deployment with N replicas costs one
+ * set of Horizon connections instead of N, and losing the lease closes them
+ * immediately rather than waiting for the process to exit.
+ */
 @Injectable()
-export class StreamManager implements OnApplicationShutdown {
+export class StreamManager
+  implements OnApplicationBootstrap, OnModuleDestroy, OnApplicationShutdown
+{
   private readonly logger = new Logger(StreamManager.name);
   private readonly groups = new Map<string, StreamGroup>();
   private activeSseConnections = 0;
   private shuttingDown = false;
+  private stopLeadershipListener?: () => void;
 
   constructor(
+    private readonly runtime: MonitorRuntimeConfig,
+    private readonly leader: MonitorLeaderService,
     private readonly configService: ConfigService,
     @InjectRepository(Watch)
     private readonly watchRepository: Repository<Watch>,
@@ -52,14 +73,78 @@ export class StreamManager implements OnApplicationShutdown {
     private readonly gateway: MonitorGateway,
   ) {}
 
+  onApplicationBootstrap(): void {
+    if (!this.leader.producerEnabled) {
+      this.logger.log(
+        `Monitor role "${this.runtime.role}": Horizon streams are disabled on this instance`,
+      );
+      return;
+    }
+    this.stopLeadershipListener = this.leader.onLeadershipChange((isLeader) => {
+      if (isLeader) {
+        void this.startAll().catch((error: unknown) => {
+          this.logger.error(
+            `Failed to start Horizon streams: ${this.errorMessage(error)}`,
+          );
+        });
+      } else {
+        void this.stopAll();
+      }
+    });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    this.stopLeadershipListener?.();
+    await this.stopAll();
+  }
+
+  /** Live counters for `GET /monitor/metrics`. */
+  stats(): {
+    maxSseConnections: number;
+    horizonSseConnections: number;
+    streamGroups: number;
+    sseGroups: number;
+    pollingGroups: number;
+  } {
+    let sseGroups = 0;
+    let pollingGroups = 0;
+    for (const group of this.groups.values()) {
+      if (group.mode === "sse") {
+        sseGroups += 1;
+      } else {
+        pollingGroups += 1;
+      }
+    }
+    return {
+      maxSseConnections: this.runtime.maxSseConnections,
+      horizonSseConnections: this.activeSseConnections,
+      streamGroups: this.groups.size,
+      sseGroups,
+      pollingGroups,
+    };
+  }
+
   async startAll(): Promise<void> {
+    // A replica that is not the leader must never open Horizon connections.
+    if (!this.leader.producerEnabled || !this.leader.isLeader()) {
+      return;
+    }
     for (const key of this.registry.keys()) {
       await this.start(key);
     }
   }
 
+  async stopAll(): Promise<void> {
+    for (const key of Array.from(this.groups.keys())) {
+      await this.stop(key);
+    }
+  }
+
   async start(key: string): Promise<void> {
     if (this.groups.has(key)) {
+      return;
+    }
+    if (!this.leader.producerEnabled || !this.leader.isLeader()) {
       return;
     }
 
@@ -73,7 +158,7 @@ export class StreamManager implements OnApplicationShutdown {
       return;
     }
 
-    if (this.activeSseConnections + 2 > MAX_SSE_CONNECTIONS) {
+    if (this.activeSseConnections + 2 > this.runtime.maxSseConnections) {
       await this.startPolling(key, FALLBACK_POLL_INTERVAL_MS);
       return;
     }
@@ -174,6 +259,8 @@ export class StreamManager implements OnApplicationShutdown {
     group.pollTimer = setInterval(() => {
       void this.poll(group);
     }, intervalMs);
+    // Polling timers must never keep the event loop alive on their own.
+    group.pollTimer.unref?.();
   }
 
   private async poll(group: StreamGroup): Promise<void> {
@@ -264,6 +351,8 @@ export class StreamManager implements OnApplicationShutdown {
           await this.reconnect(group, source, this.errorMessage(error));
         });
     }, delay);
+    // A pending reconnect is bookkeeping; it must not hold the process open.
+    group.reconnectTimers[source]?.unref?.();
   }
 
   private async pollAccount(
@@ -512,7 +601,7 @@ export class StreamManager implements OnApplicationShutdown {
   private async promotePollingGroup(): Promise<void> {
     if (
       this.shuttingDown ||
-      this.activeSseConnections + 2 > MAX_SSE_CONNECTIONS
+      this.activeSseConnections + 2 > this.runtime.maxSseConnections
     ) {
       return;
     }

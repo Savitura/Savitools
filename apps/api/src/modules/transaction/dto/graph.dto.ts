@@ -20,7 +20,7 @@ export enum GraphMode {
 export class GraphQueryDto {
   @ApiProperty({
     description: 'Root Stellar public key to build the relationship graph from',
-    example: 'GDK7RUYN2KBZ4B4B6AHX4RHB3C2FT3N3Z4G4X4X4X4X4X4X4X4X4X4X4X',
+    example: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7',
   })
   @IsString()
   @IsNotEmpty()

@@ -173,7 +173,7 @@ function readGuardClasses(metadata: unknown): Type[] {
 }
 
 /** Every handler name a controller exposes, including inherited ones. */
-function collectHandlerNames(controller: Type): string[] {
+function collectHandlerNames(controller: { prototype: object }): string[] {
   const names = new Set<string>();
   let prototype = controller.prototype as Record<string, unknown> | null;
   while (prototype && prototype !== Object.prototype) {

@@ -12,7 +12,9 @@ import { AlertEvaluator } from './alert-evaluator.service';
 import { AlertEvent } from './entities/alert-event.entity';
 import { Watch } from './entities/watch.entity';
 import { horizonServer } from './horizon';
+import { MonitorLeaderService } from './monitor-leader.service';
 import { MonitorQueueService } from './monitor-queue.service';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import {
   AccountStateSnapshot,
   AlertRuleDefinition,
@@ -21,7 +23,6 @@ import {
 } from './monitor.types';
 import { WatchRegistry } from './watch-registry.service';
 
-export const DEFAULT_EVALUATION_INTERVAL_MS = 60_000;
 const TRANSACTION_PAGE_LIMIT = 200;
 const MAX_SCANNED_TRANSACTIONS = 1_000;
 
@@ -30,6 +31,12 @@ const MAX_SCANNED_TRANSACTIONS = 1_000;
  * condition rather than an event (balance thresholds, transaction volume) can
  * fire. Alerts are edge-triggered: a rule fires when it becomes true and stays
  * quiet until the condition clears.
+ *
+ * Evaluation is leader-only (Savitura/Savitools#255). The edge trigger lives in
+ * `watch.alertState`, which every replica caches in its own registry, so two
+ * replicas evaluating the same crossing would both see "not fired yet" and both
+ * insert an alert row — state alerts have a NULL `watch_event_id`, so the unique
+ * index cannot deduplicate them.
  */
 @Injectable()
 export class StateEvaluationService
@@ -38,8 +45,11 @@ export class StateEvaluationService
   private readonly logger = new Logger(StateEvaluationService.name);
   private timer?: ReturnType<typeof setInterval>;
   private evaluating = false;
+  private stopLeadershipListener?: () => void;
 
   constructor(
+    private readonly runtime: MonitorRuntimeConfig,
+    private readonly leader: MonitorLeaderService,
     private readonly configService: ConfigService,
     @InjectRepository(Watch)
     private readonly watchRepository: Repository<Watch>,
@@ -51,30 +61,52 @@ export class StateEvaluationService
   ) {}
 
   onApplicationBootstrap(): void {
-    const intervalMs = this.configService.get<number>(
-      'MONITOR_EVALUATION_INTERVAL_MS',
-      DEFAULT_EVALUATION_INTERVAL_MS,
-    );
-    if (Number(intervalMs) <= 0) {
+    this.stopLeadershipListener = this.leader.onLeadershipChange((isLeader) => {
+      if (isLeader) {
+        this.startEvaluationLoop();
+      } else {
+        this.stopEvaluationLoop();
+      }
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.stopLeadershipListener?.();
+    this.stopEvaluationLoop();
+  }
+
+  private startEvaluationLoop(): void {
+    const intervalMs = this.runtime.evaluationIntervalMs;
+    if (intervalMs <= 0) {
       this.logger.warn(
         'MONITOR_EVALUATION_INTERVAL_MS is not positive; state alerts are disabled',
       );
       return;
     }
+    if (this.timer) {
+      return;
+    }
 
-    this.timer = setInterval(() => {
-      void this.evaluateAll();
-    }, Number(intervalMs));
+    this.timer = setInterval(
+      () => {
+        void this.evaluateAll();
+      },
+      Number(intervalMs),
+    );
+    // Shutdown must not wait for the next tick.
+    this.timer.unref?.();
   }
 
-  onModuleDestroy(): void {
+  private stopEvaluationLoop(): void {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = undefined;
     }
   }
 
   async evaluateAll(): Promise<void> {
-    if (this.evaluating) {
+    // Only the leader owns the alertState edge trigger for the cluster.
+    if (!this.leader.isLeader() || this.evaluating) {
       return;
     }
     this.evaluating = true;

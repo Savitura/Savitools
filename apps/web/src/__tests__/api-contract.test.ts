@@ -1,4 +1,11 @@
 /**
+ * @jest-environment node
+ *
+ * Static analysis over the source tree plus a mocked global `fetch` — no DOM
+ * involved, so this suite runs in the Node environment.
+ */
+
+/**
  * API-to-frontend route contract (Savitura/Savitools#202).
  *
  * Two guarantees, both executable:
@@ -24,8 +31,11 @@ import { join, relative } from 'path';
 import {
   apiFetch,
   fetchWebhookHistory,
+  getMultisigLimits,
   refreshSession,
+  runPathPaymentLab,
   sendWebhook,
+  simulateMultisig,
 } from '@/lib/api';
 import { buildTransaction, fetchOperations } from '@/lib/composer-api';
 
@@ -47,8 +57,8 @@ const API_CONTRACT_MANIFEST = join(
 const API_ORIGIN_LITERAL = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1):3001\b/g;
 const API_BASE_REFERENCE = /NEXT_PUBLIC_API_URL/g;
 const RAW_FETCH_CALL = /\bfetch\s*\(/g;
-const WRAPPER_CALL =
-  /\b(apiFetchFormData|apiFetch|downloadCsv)\s*(?:<[\s\S]{0,400}?>)?\s*\(\s*(`(?:\\[\s\S]|[^`\\])*`|'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*")/g;
+const WRAPPER_CALLEE =
+  /\b(apiFetchFormData|apiFetch|downloadCsv)\s*(?:<[\s\S]{0,400}?>)?\s*\(/g;
 
 /** `${...}` interpolations that sit behind a `/` are path parameters; the rest are query suffixes. */
 const PARAM_MARKER = '\u0000';
@@ -88,6 +98,16 @@ interface WrapperCall {
   key: string;
 }
 
+interface WrapperCallSite {
+  callee: string;
+  /** Index of the callee, used for line numbers. */
+  index: number;
+  /** Index of the call's opening `(`. */
+  openIndex: number;
+  /** The argument literal, including its surrounding quotes. */
+  literal: string;
+}
+
 export function normalizeApiPath(raw: string): string {
   const withoutQuery = raw.split('?')[0];
   const marked = withoutQuery.replace(/\$\{[^}]*\}/g, PARAM_MARKER);
@@ -103,6 +123,107 @@ export function normalizeApiPath(raw: string): string {
 
 function lineOf(source: string, index: number): number {
   return source.slice(0, index).split('\n').length;
+}
+
+/** End index (exclusive) of the string/template literal starting at `start`, or -1. */
+function scanStringLiteral(source: string, start: number): number {
+  const quote = source[start];
+  let index = start + 1;
+
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '\\') {
+      index += 2;
+      continue;
+    }
+    if (quote === '`' && character === '$' && source[index + 1] === '{') {
+      const close = scanInterpolation(source, index + 2);
+      if (close === -1) return -1;
+      index = close + 1;
+      continue;
+    }
+    if (character === quote) return index + 1;
+    if (character === '\n' && quote !== '`') return -1;
+    index += 1;
+  }
+
+  return -1;
+}
+
+/** Index of the `}` closing the `${` whose expression starts at `start`, or -1. */
+function scanInterpolation(source: string, start: number): number {
+  let depth = 1;
+  let index = start;
+
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '\\') {
+      index += 2;
+      continue;
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      const end = scanStringLiteral(source, index);
+      if (end === -1) return -1;
+      index = end;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+    index += 1;
+  }
+
+  return -1;
+}
+
+/**
+ * Every `apiFetch`/`apiFetchFormData`/`downloadCsv` call whose first argument is
+ * a string or template literal.
+ *
+ * The argument is read with a scanner rather than a regex so that nested
+ * template literals are not truncated at the inner backtick:
+ *
+ *   apiFetch<AssetTrustlinesResult>(
+ *     `${assetPath(code, issuer, "trustlines")}${query ? `?${query}` : ""}`,
+ *   )
+ *
+ * Truncating there is what used to make the hygiene scan report that computed
+ * path as a hard-coded one.
+ */
+function findWrapperCalls(source: string): WrapperCallSite[] {
+  const calls: WrapperCallSite[] = [];
+
+  for (const match of source.matchAll(WRAPPER_CALLEE)) {
+    const openIndex = (match.index ?? 0) + match[0].length - 1;
+    let argumentStart = openIndex + 1;
+    while (/\s/.test(source[argumentStart] ?? '')) argumentStart += 1;
+
+    const quote = source[argumentStart];
+    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
+
+    const end = scanStringLiteral(source, argumentStart);
+    if (end === -1) continue;
+
+    calls.push({
+      callee: match[1],
+      index: match.index ?? 0,
+      openIndex,
+      literal: source.slice(argumentStart, end),
+    });
+  }
+
+  return calls;
+}
+
+/**
+ * The literal is an interpolated path (`` `${assetPath(...)}` ``). It is
+ * assembled at runtime, so it cannot be compared against a route and is not a
+ * hygiene violation either.
+ */
+function isComputedPath(literal: string): boolean {
+  return literal.slice(1).startsWith('${');
 }
 
 function listSourceFiles(): SourceFile[] {
@@ -157,24 +278,25 @@ function scanSourceFile(file: SourceFile): Violation[] {
     }
   }
 
-  for (const match of file.source.matchAll(WRAPPER_CALL)) {
-    const literal = match[2];
-    const raw = literal.slice(1, -1);
+  for (const call of findWrapperCalls(file.source)) {
+    if (isComputedPath(call.literal)) continue;
+
+    const raw = call.literal.slice(1, -1);
     if (!raw.startsWith('/')) {
       violations.push({
         file: file.path,
-        line: lineOf(file.source, match.index ?? 0),
+        line: lineOf(file.source, call.index),
         rule: 'wrapper-path-shape',
-        detail: `${match[1]}("${raw}") must start with "/" so the helper applies the /v1 prefix`,
+        detail: `${call.callee}("${raw}") must start with "/" so the helper applies the /v1 prefix`,
       });
       continue;
     }
     if (/^\/api(\/|$)/.test(raw) || /^\/v1(\/|$)/.test(raw)) {
       violations.push({
         file: file.path,
-        line: lineOf(file.source, match.index ?? 0),
+        line: lineOf(file.source, call.index),
         rule: 'wrapper-path-shape',
-        detail: `${match[1]}("${raw}") already carries an api/v1 prefix — pass the path relative to /v1`,
+        detail: `${call.callee}("${raw}") already carries an api/v1 prefix — pass the path relative to /v1`,
       });
     }
   }
@@ -194,21 +316,24 @@ function formatViolations(violations: Violation[]): string {
 /** Index of the `)` that closes the call whose `(` is at `openIndex`. */
 function findCallEnd(source: string, openIndex: number): number {
   let depth = 0;
-  let quote: string | null = null;
-  for (let index = openIndex; index < source.length; index += 1) {
+  let index = openIndex;
+
+  while (index < source.length) {
     const character = source[index];
-    if (quote) {
-      if (character === '\\') index += 1;
-      else if (character === quote) quote = null;
+    if (character === "'" || character === '"' || character === '`') {
+      const end = scanStringLiteral(source, index);
+      if (end === -1) return source.length;
+      index = end;
       continue;
     }
-    if (character === "'" || character === '"' || character === '`') quote = character;
-    else if (character === '(') depth += 1;
+    if (character === '(') depth += 1;
     else if (character === ')') {
       depth -= 1;
       if (depth === 0) return index;
     }
+    index += 1;
   }
+
   return source.length;
 }
 
@@ -222,18 +347,22 @@ function requestMethodOf(callee: string, callText: string): string {
 function collectWrapperCalls(files: SourceFile[]): WrapperCall[] {
   const calls: WrapperCall[] = [];
   for (const file of files) {
-    for (const match of file.source.matchAll(WRAPPER_CALL)) {
-      const literal = match[2];
-      const literalStart = (match.index ?? 0) + match[0].length - literal.length;
-      const openIndex = file.source.lastIndexOf('(', literalStart);
-      const callText = file.source.slice(openIndex, findCallEnd(file.source, openIndex) + 1);
+    for (const call of findWrapperCalls(file.source)) {
+      if (isComputedPath(call.literal)) continue;
+
+      const callText = file.source.slice(
+        call.openIndex,
+        findCallEnd(file.source, call.openIndex) + 1,
+      );
+      const method = requestMethodOf(call.callee, callText);
+
       calls.push({
         file: file.path,
-        line: lineOf(file.source, match.index ?? 0),
-        callee: match[1],
-        literal,
-        method: requestMethodOf(match[1], callText),
-        key: `${requestMethodOf(match[1], callText)} /api/v1${normalizeApiPath(literal.slice(1, -1))}`,
+        line: lineOf(file.source, call.index),
+        callee: call.callee,
+        literal: call.literal,
+        method,
+        key: `${method} /api/v1${normalizeApiPath(call.literal.slice(1, -1))}`,
       });
     }
   }
@@ -259,10 +388,17 @@ function serverRouteKeys(): Set<string> {
  *   has no alert re-send endpoint, so the "Re-send" button cannot work yet.
  * - `GET /api/v1/shared/composer/:token` — `fetchSharedComposerWorkspace` has no
  *   callers and there is no shared-workspace controller.
+ * - `POST /api/v1/composer/fee-bump/inspect` — `inspectFeeBump` in
+ *   `composer-api.ts` and the Composer fee-bump panel both call it, but
+ *   `ComposerService` has no matching method and `ComposerController` exposes no
+ *   route, so the panel's "Inspect" action cannot work. Re-registering the route
+ *   without the service method behind it is not possible; the wrapper is pinned
+ *   here until that method lands.
  */
 const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
   'GET /api/v1/shared/composer/:param',
+  'POST /api/v1/composer/fee-bump/inspect',
 ];
 
 interface SmokeContract {
@@ -331,6 +467,45 @@ const SMOKE_CONTRACTS: readonly SmokeContract[] = [
     method: 'GET',
     path: '/v1/playground/history',
   },
+  {
+    flow: 'Path-payment slippage lab',
+    wrapper: 'runPathPaymentLab() in lib/api.ts',
+    invoke: () =>
+      runPathPaymentLab({
+        direction: 'strict_send',
+        sourceAsset: 'XLM',
+        destinationAsset: 'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+        amount: '100',
+        slippageScenarios: [0.5, 2],
+        adverseMovePercent: 1,
+      }),
+    method: 'POST',
+    path: '/v1/simulator/path-payment-lab',
+  },
+  {
+    flow: 'Multisig limits',
+    wrapper: 'getMultisigLimits() in lib/api.ts',
+    invoke: () => getMultisigLimits(),
+    method: 'GET',
+    path: '/v1/multisig/limits',
+  },
+  {
+    flow: 'Multisig simulation',
+    wrapper: 'simulateMultisig() in lib/api.ts',
+    invoke: () =>
+      simulateMultisig({
+        threshold: 2,
+        signers: [
+          {
+            key: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+            weight: 1,
+            signed: true,
+          },
+        ],
+      }),
+    method: 'POST',
+    path: '/v1/multisig/simulate',
+  },
 ];
 
 type FetchArgs = [string, RequestInit];
@@ -377,7 +552,9 @@ describe('API route hygiene', () => {
     });
 
     expect(violations.map((violation) => violation.rule)).toEqual(['raw-api-fetch']);
-    expect(violations[0].detail).toContain('benchmark-panel.tsx');
+    // The offending file is reported structurally; the detail carries the line.
+    expect(violations[0].file).toBe('components/tools/composer/benchmark-panel.tsx');
+    expect(violations[0].detail).toContain('fetch(');
     expect(violations[0].detail).toContain('/composer/benchmark');
   });
 
@@ -491,5 +668,163 @@ describe('API-to-frontend route contract', () => {
 
     const [, init] = fetchMock.mock.calls[0] as FetchArgs;
     expect(init.method ?? 'GET').not.toBe('PUT');
+  });
+});
+
+/**
+ * Field-level spot-check (Savitura/Savitools#294).
+ *
+ * The route contract above pins method and path for every wrapper, which says
+ * nothing about the *body*: a hand-written response interface could silently
+ * drift from what the controller returns and only surface at the first
+ * consumer, as a type error or as wrong rendering. Each entry below names the
+ * fields `apps/api` returns for a spot-checked response and the server source it
+ * mirrors.
+ *
+ * The check is deliberately one-directional: the web declaration must contain
+ * every server field (extra optional web-only fields are allowed), and a union
+ * field must include every member the server can produce.
+ */
+interface ResponseFieldContract {
+  /** Interface declared in `lib/api.ts`. */
+  type: string;
+  /** Fields the API returns for that response. */
+  fields: readonly string[];
+  /** Fields whose declared union must contain every member the server produces. */
+  unions?: Readonly<Record<string, readonly string[]>>;
+  /** Server source this mirrors, quoted in the failure message. */
+  server: string;
+}
+
+const RESPONSE_FIELD_CONTRACTS: readonly ResponseFieldContract[] = [
+  {
+    type: 'SandboxPaymentResult',
+    server: 'apps/api/src/modules/sandbox/sandbox.service.ts:119-131',
+    fields: [
+      'success',
+      'txHash',
+      'feeCharged',
+      'resultCode',
+      'destination',
+      'destinationAccount',
+      'muxedId',
+      'asset',
+      'amount',
+    ],
+    // `result.fee_charged` is declared `fee_charged?: string` by the Stellar
+    // client, so this is a string of stroops — not a number.
+    unions: { feeCharged: ['string'] },
+  },
+  {
+    type: 'SepInfo',
+    server: 'apps/api/src/modules/federation/federation.service.ts:124-130',
+    fields: ['number', 'name', 'supported', 'endpoint', 'probeStatus'],
+    // The probe reports 'timeout' for a SEP whose endpoint never answered.
+    unions: { probeStatus: ['green', 'yellow', 'red', 'none', 'timeout'] },
+  },
+  {
+    type: 'SepResult',
+    server: 'apps/api/src/modules/federation/federation.service.ts:132-136',
+    fields: ['seps', 'tomlStatus'],
+  },
+  {
+    type: 'WebhookHistoryEntry',
+    server: 'apps/api/src/modules/webhook/webhook.service.ts:27-47',
+    fields: [
+      'id',
+      'timestamp',
+      'endpointUrl',
+      'eventType',
+      'method',
+      'requestHeaders',
+      'payload',
+      'responseStatus',
+      'responseHeaders',
+      'responseBody',
+      'latencyMs',
+    ],
+    // The stored body is the raw response text, never a parsed object.
+    unions: { responseBody: ['string'] },
+  },
+];
+
+/** The block of `export interface <name> { ... }`, or null when it is absent. */
+function interfaceBody(source: string, name: string): string | null {
+  const start = source.indexOf(`export interface ${name} {`);
+  if (start === -1) return null;
+  const end = source.indexOf('\n}', start);
+  return end === -1 ? null : source.slice(start, end);
+}
+
+/** Top-level field names declared by an interface body. */
+function declaredFields(body: string): Set<string> {
+  return new Set(
+    [...body.matchAll(/^\s{2}([A-Za-z0-9_]+)\??\s*:/gm)].map((match) => match[1]),
+  );
+}
+
+function responseFieldProblems(source: string): string[] {
+  const problems: string[] = [];
+
+  for (const contract of RESPONSE_FIELD_CONTRACTS) {
+    const body = interfaceBody(source, contract.type);
+    if (!body) {
+      problems.push(`${contract.type} is not declared in lib/api.ts`);
+      continue;
+    }
+
+    const fields = declaredFields(body);
+    for (const field of contract.fields) {
+      if (!fields.has(field)) {
+        problems.push(
+          `${contract.type}.${field} is missing — the server returns it (${contract.server})`,
+        );
+      }
+    }
+
+    for (const [field, members] of Object.entries(contract.unions ?? {})) {
+      const declaration =
+        body.match(new RegExp(`^\\s{2}${field}\\??\\s*:([^;\\n]*)`, 'm'))?.[1] ?? '';
+      for (const member of members) {
+        if (!declaration.includes(member)) {
+          problems.push(
+            `${contract.type}.${field} does not allow "${member}" — the server produces it (${contract.server})`,
+          );
+        }
+      }
+    }
+  }
+
+  return problems;
+}
+
+describe('API response field contract', () => {
+  const apiSource = readFileSync(join(SRC_ROOT, 'lib/api.ts'), 'utf8');
+
+  it('declares every field the spot-checked responses return', () => {
+    expect(responseFieldProblems(apiSource).join('\n')).toBe('');
+  });
+
+  it('bites: a declaration that drops a server field is reported', () => {
+    const truncated = apiSource.replace(
+      /export interface SepInfo \{[\s\S]*?\n\}/,
+      'export interface SepInfo {\n  number: number;\n}',
+    );
+
+    expect(truncated).not.toBe(apiSource);
+    expect(responseFieldProblems(truncated).join('\n')).toContain(
+      'SepInfo.probeStatus is missing',
+    );
+  });
+
+  it('bites: an `any` declaration cannot stand in for a typed field', () => {
+    const untyped = apiSource.replace(
+      /responseBody: string;/,
+      'responseBody: any;',
+    );
+
+    expect(responseFieldProblems(untyped).join('\n')).toContain(
+      'WebhookHistoryEntry.responseBody does not allow "string"',
+    );
   });
 });

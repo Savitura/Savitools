@@ -1,3 +1,9 @@
+/**
+ * @jest-environment node
+ *
+ * `signPayload` needs `globalThis.crypto.subtle` (WebCrypto), which jsdom does
+ * not expose.
+ */
 import {
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
