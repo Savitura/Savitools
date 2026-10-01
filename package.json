@@ -10,7 +10,8 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
-    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\""
   },
   "devDependencies": {
     "prettier": "^3.3.3",

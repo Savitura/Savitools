@@ -10,6 +10,10 @@ import {
 import * as argon2 from 'argon2';
 import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
+import {
+  DISCOVERABLE_CHALLENGE_OWNER,
+  REFRESH_TOKEN_REUSE_GRACE_MS,
+} from './auth.constants';
 import { EncryptionService } from '../../common/encryption.service';
 
 function mockRepo() {
@@ -160,15 +164,6 @@ describe('AuthService', () => {
       emailVerified: true,
       passwordHash,
     });
-    const clientDataJSON = (challenge: string) =>
-      Buffer.from(
-        JSON.stringify({
-          type: 'webauthn.create',
-          challenge,
-          origin: 'http://localhost:3000',
-        }),
-      ).toString('base64url');
-
     it('requires a valid reauthentication grant to register', async () => {
       usersRepo.findOne.mockResolvedValue(user());
       const grant = await service.requestPasskeyReauth(user().id, 'password123');
@@ -202,16 +197,17 @@ describe('AuthService', () => {
       expect(options.rp.name).toBe('SaviTools');
       expect(options.challenge).toBeDefined();
 
-      // The challenge is stored for this user only.
+      // The challenge is stored for this user only. The store is a
+      // BoundedTtlMap, so the expiry lives on the map (#291).
       const stored = (service as any).passkeyChallenges;
-      const entry = [...stored.values()].find(
-        (e: any) => e.challenge === options.challenge,
-      );
+      const entry = stored
+        .keys()
+        .map((key: string) => stored.get(key))
+        .find((e: any) => e?.challenge === options.challenge);
       expect(entry.rpId).toBe('localhost');
       expect(entry.type).toBe('registration');
-      expect(entry.expiresAt).toBeLessThanOrEqual(
-        Date.now() + 120_000,
-      );
+      expect(stored.ttl).toBe(120_000);
+      expect(stored.capacity).toBe(10_000);
     });
 
     it('revoked credentials cannot authenticate', async () => {
@@ -234,6 +230,55 @@ describe('AuthService', () => {
           response: { challenge: 'x' } as any,
         } as any),
       ).rejects.toThrow(/PASSKEY_REVOKED/);
+    });
+
+    it('lets a usernameless login consume the challenge it was issued (#287)', () => {
+      const rpId = 'localhost';
+      // beginPasskeyLogin without an email keys the challenge under the
+      // discoverable owner; nothing is written to challengeKeyCache.
+      (service as any).storePasskeyChallenge(
+        DISCOVERABLE_CHALLENGE_OWNER,
+        'assertion',
+        'challenge-discoverable',
+        rpId,
+      );
+
+      // The assertion names a credential owned by a real user, which is the
+      // only thing the server learns at verification time.
+      expect(() =>
+        (service as any).claimAssertionChallenge(
+          'challenge-discoverable',
+          'cred-id-1',
+          'u-passkey',
+          rpId,
+        ),
+      ).not.toThrow();
+
+      // Still single-use.
+      expect(() =>
+        (service as any).claimAssertionChallenge(
+          'challenge-discoverable',
+          'cred-id-1',
+          'u-passkey',
+          rpId,
+        ),
+      ).toThrow(/PASSKEY_CHALLENGE_INVALID/);
+    });
+
+    it('does not let the discoverable owner stand in for a user-owned challenge (#287)', () => {
+      const rpId = 'localhost';
+      (service as any).storePasskeyChallenge('u-passkey', 'assertion', 'challenge-user', rpId);
+
+      // Another user's credential holds no challenge of its own, and the
+      // fallback reaches only the discoverable owner — so this must fail.
+      expect(() =>
+        (service as any).claimAssertionChallenge('challenge-user', 'cred-id-2', 'u-other', rpId),
+      ).toThrow(/PASSKEY_CHALLENGE_INVALID/);
+
+      // The user the challenge was issued for can still consume it.
+      expect(() =>
+        (service as any).claimAssertionChallenge('challenge-user', 'cred-id-1', 'u-passkey', rpId),
+      ).not.toThrow();
     });
 
     it('rejects an assertion whose challenge was already consumed', async () => {
@@ -718,7 +763,6 @@ describe('AuthService', () => {
 
   describe('refresh', () => {
     it('rotates tokens and atomically consumes the old one', async () => {
-      const { createHash } = require('crypto');
       const rawToken = 'raw-refresh-token';
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
@@ -745,7 +789,6 @@ describe('AuthService', () => {
     });
 
     it('throws INVALID_REFRESH_TOKEN for expired token', async () => {
-      const { createHash } = require('crypto');
       const rawToken = 'expired-token';
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
@@ -768,7 +811,6 @@ describe('AuthService', () => {
 
     describe('with a real token store', () => {
       function setup(rawToken: string, familyId = 'fam-1') {
-        const { createHash } = require('crypto');
         const tokenHash = createHash('sha256').update(rawToken).digest('hex');
         const table = fakeRefreshTokenTable([
           {
@@ -802,10 +844,12 @@ describe('AuthService', () => {
       });
 
       it('replay: reuse of a consumed token revokes the whole family, including the newly rotated token', async () => {
-        const { svc } = setup('replay-me');
+        const { svc, table } = setup('replay-me');
 
         const first = await svc.refresh('replay-me');
-        // Replay the original (already-rotated) token.
+        const consumed = table._rows.get('rt-3')!;
+        consumed.revokedAt = new Date(Date.now() - REFRESH_TOKEN_REUSE_GRACE_MS - 1);
+
         await expect(svc.refresh('replay-me')).rejects.toThrow(UnauthorizedException);
 
         // The token issued to the legitimate caller during the first
@@ -813,6 +857,23 @@ describe('AuthService', () => {
         await expect(svc.refresh(first.tokens.refreshToken)).rejects.toThrow(
           UnauthorizedException,
         );
+      });
+
+      it('does not revoke descendants when a duplicated request reuses a recently consumed token', async () => {
+        const { svc, table } = setup('duplicate-refresh');
+
+        const first = await svc.refresh('duplicate-refresh');
+        await expect(svc.refresh('duplicate-refresh')).rejects.toThrow(
+          UnauthorizedException,
+        );
+
+        const childHash = createHash('sha256')
+          .update(first.tokens.refreshToken)
+          .digest('hex');
+        const child = [...table._rows.values()].find(
+          (row) => row.tokenHash === childHash,
+        );
+        expect(child?.revokedAt).toBeNull();
       });
 
       it('concurrent refresh: two simultaneous requests for the same token — exactly one succeeds', async () => {
@@ -835,6 +896,17 @@ describe('AuthService', () => {
         // The original row must never be left NULL/reusable regardless of
         // which caller "won" — it is atomically consumed exactly once.
         expect(table._rows.get('rt-3')?.revokedAt).not.toBeNull();
+        const winner = [a, b].find(
+          (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof svc.refresh>>> =>
+            result.status === 'fulfilled',
+        )!;
+        const childHash = createHash('sha256')
+          .update(winner.value.tokens.refreshToken)
+          .digest('hex');
+        const child = [...table._rows.values()].find(
+          (row) => row.tokenHash === childHash,
+        );
+        expect(child?.revokedAt).toBeNull();
       });
     });
   });

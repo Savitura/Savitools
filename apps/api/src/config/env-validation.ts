@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { MONITOR_ROLES } from '../modules/monitor/monitor-runtime.config';
 
 /**
  * Startup environment validation (Savitura/Savitools#197).
@@ -39,6 +40,18 @@ function isLoopbackOrigin(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Splits a comma-separated origin list (Savitura/Savitools#255). Unlike
+ * `parseWebOrigins` there is no default: an unset value means "nothing to
+ * validate" rather than "validate localhost".
+ */
+function splitOrigins(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
 }
 
 /** Runtime-read variables and their exact purposes — keep in sync with the
@@ -106,12 +119,30 @@ export function collectConfigurationErrors(
 
   // ─── Production HTTPS ─────────────────────────────────────────────────────
   if (isProduction) {
-    for (const key of ['WEB_ORIGIN', 'STELLAR_HORIZON_URL', 'STELLAR_RPC_URL'] as const) {
+    for (const key of ['STELLAR_HORIZON_URL', 'STELLAR_RPC_URL'] as const) {
       const value = get(key);
       if (value && isHttpUrl(value) && !isLoopbackOrigin(value)) {
         errors.push(`${key} must use HTTPS in production`);
       }
     }
+    // WEB_ORIGIN may list several origins; every public one must be HTTPS.
+    for (const origin of splitOrigins(get('WEB_ORIGIN'))) {
+      if (isHttpUrl(origin) && !isLoopbackOrigin(origin)) {
+        errors.push('WEB_ORIGIN must use HTTPS in production');
+        break;
+      }
+    }
+  }
+
+  // ─── Monitor role ─────────────────────────────────────────────────────────
+  const monitorRole = get('MONITOR_ROLE');
+  if (
+    monitorRole &&
+    !(MONITOR_ROLES as readonly string[]).includes(monitorRole.toLowerCase())
+  ) {
+    errors.push(
+      `MONITOR_ROLE must be one of ${MONITOR_ROLES.join(', ')} (received "${monitorRole}")`,
+    );
   }
 
   // ─── Contracts module (eagerly constructed — required at startup) ─────────
@@ -139,6 +170,18 @@ export function collectConfigurationErrors(
     }
     if (!get('FLUXA_AUTH_URL')) {
       errors.push('FLUXA_AUTH_URL is required when FLUXA_CLIENT_ID is set');
+    }
+  }
+
+  // ─── Playground spec cache ────────────────────────────────────────────────
+  // Env values are strings; reject non-positive/non-integer values at boot so
+  // the service never caches with a NaN TTL (Savitura/Savitools#247).
+  const playgroundSpecTtl = get('PLAYGROUND_SPEC_TTL_MS');
+  if (playgroundSpecTtl !== undefined) {
+    if (!/^\d+$/.test(playgroundSpecTtl) || Number(playgroundSpecTtl) <= 0) {
+      errors.push(
+        'PLAYGROUND_SPEC_TTL_MS must be a positive integer number of milliseconds',
+      );
     }
   }
 

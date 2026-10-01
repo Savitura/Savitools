@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -12,7 +13,21 @@ import { User } from '../../auth/entities/user.entity';
 import { WorkspaceTool } from '../workspace-tool.enum';
 
 @Entity('workspaces')
+// Named workspaces: (user_id, tool, name) is unique. This alone cannot express
+// the default-workspace rule below, because PostgreSQL treats NULLs as distinct
+// in a unique index.
 @Unique(['userId', 'tool', 'name'])
+// The default (unnamed) workspace: a partial unique index over the rows the
+// composite unique above cannot cover, so at most one `name IS NULL` row exists
+// per (user_id, tool). Mirrored by the migration, which also de-duplicates any
+// rows that predate it.
+@Index('UQ_workspaces_user_tool_default', ['userId', 'tool'], {
+  unique: true,
+  where: `"name" IS NULL`,
+})
+// Listing/fetching workspaces is always scoped by user_id; without this the
+// only usable index led with the composite unique.
+@Index('IDX_workspaces_user_id', ['userId'])
 export class Workspace {
   @PrimaryGeneratedColumn('uuid')
   id: string;

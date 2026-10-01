@@ -23,10 +23,10 @@ export class AlertEvaluator {
       case 'tx_failed':
         return event.source === 'transaction' && event.successful === false;
       case 'event_topic_equals':
-        return (
+        return Boolean(
           event.source === 'contract' &&
-          event.payload.topic &&
-          event.payload.topic === rule.topic
+            event.payload.topic &&
+            event.payload.topic === rule.topic,
         );
       case 'failed_contract_call':
         return event.source === 'contract' && event.successful === false;

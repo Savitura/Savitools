@@ -80,7 +80,30 @@ export class PreconditionsDto {
   maxLedgerAhead?: number;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- operation fields are arbitrary JSON keyed by field name
 export type OperationDto = Record<string, any> & { type: string };
+
+export interface PriceRatioDto {
+  n: string;
+  d: string;
+}
+
+export interface LiquidityPoolDepositDto {
+  type: 'liquidity_pool_deposit';
+  liquidityPoolId: string;
+  maxAmountA: string;
+  maxAmountB: string;
+  minPrice: PriceRatioDto;
+  maxPrice: PriceRatioDto;
+}
+
+export interface LiquidityPoolWithdrawDto {
+  type: 'liquidity_pool_withdraw';
+  liquidityPoolId: string;
+  amount: string;
+  minAmountA: string;
+  minAmountB: string;
+}
 
 export class BuildTransactionDto {
   @ApiProperty({ description: 'Stellar source account public key (G…)' })
@@ -130,5 +153,6 @@ export class BuildTransactionDto {
 
   @ApiProperty({ description: 'Ordered array of operations (flattened fields)', isArray: true })
   @IsArray()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- operation fields are arbitrary JSON keyed by field name
   operations: any[];
 }

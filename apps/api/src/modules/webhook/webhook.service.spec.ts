@@ -274,6 +274,32 @@ describe('WebhookService', () => {
       expect(headers).not.toHaveProperty(LEGACY_ISO_TIMESTAMP_HEADER);
     });
 
+    it('signs an empty body for a GET, since a GET sends none (#261)', async () => {
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const result = await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'campaign.funded',
+        payload: KAT_PAYLOAD,
+        secret: SECRET,
+        method: 'GET',
+      });
+      const entry = Array.isArray(result) ? result[0] : result;
+
+      // The receiver reads no body, so it can only verify over the empty string.
+      expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+      expect(
+        verifySignature({
+          secret: SECRET,
+          body: '',
+          signature: sentHeaders()[SIGNATURE_HEADER],
+          timestamp: sentHeaders()[TIMESTAMP_HEADER],
+        }),
+      ).toEqual({ valid: true });
+      // And the recorded signing info matches what was actually signed.
+      expect(entry.signature?.body).toBe('');
+    });
+
     it('signs the exact bytes handed to fetch, not a re-serialised copy', async () => {
       fetchMock.mockResolvedValue(bodyResponse('ok'));
 

@@ -1,3 +1,6 @@
+// Headless suites for the command palette's pure logic. The palette's own
+// keyboard/ARIA behaviour is covered by command-palette-dialog.test.tsx and
+// command-palette-shortcuts.test.tsx, which mount the real components.
 // Test fuzzy search utility
 import { fuzzyScore, fuzzyFilter } from '../lib/fuzzy-search';
 
@@ -281,107 +284,4 @@ describe('User Preferences Management', () => {
     expect(prefs.commandPaletteEnabled).toBe(true);
   });
 
-});
-
-// ─── 4. KEYBOARD SHORTCUTS & SELECTION GUARD TESTS ──────────────────────────
-
-describe('Keyboard Shortcuts & Selection Guard', () => {
-  it('does not trigger custom copy action when text is actively selected in the window', () => {
-    let customCopyTriggered = false;
-
-    // Simulate active text selection
-    windowMock.getSelection = () => ({
-      toString: () => 'highlighted text to copy',
-    });
-
-    const hasSelection = (windowMock.getSelection()?.toString() || '').trim().length > 0;
-    if (!hasSelection) {
-      customCopyTriggered = true;
-    }
-
-    expect(hasSelection).toBe(true);
-    expect(customCopyTriggered).toBe(false);
-  });
-
-  it('triggers custom copy action when no text is selected', () => {
-    let customCopyTriggered = false;
-
-    // Simulate no text selected
-    windowMock.getSelection = () => ({
-      toString: () => '',
-    });
-
-    const hasSelection = (windowMock.getSelection()?.toString() || '').trim().length > 0;
-    if (!hasSelection) {
-      customCopyTriggered = true;
-    }
-
-    expect(hasSelection).toBe(false);
-    expect(customCopyTriggered).toBe(true);
-  });
-});
-
-// ─── 5. COMMAND PALETTE KEYBOARD NAVIGATION STATE LOGIC ─────────────────────
-
-describe('Command Palette Navigation & ARIA Logic', () => {
-  it('correctly cycles active index with ArrowDown and ArrowUp', () => {
-    const itemCount = 5;
-    let activeIndex = 0;
-
-    // ArrowDown
-    activeIndex = (activeIndex + 1) % itemCount;
-    expect(activeIndex).toBe(1);
-
-    activeIndex = (activeIndex + 1) % itemCount;
-    expect(activeIndex).toBe(2);
-
-    // ArrowUp
-    activeIndex = (activeIndex - 1 + itemCount) % itemCount;
-    expect(activeIndex).toBe(1);
-
-    // ArrowUp wrap around to bottom
-    activeIndex = 0;
-    activeIndex = (activeIndex - 1 + itemCount) % itemCount;
-    expect(activeIndex).toBe(4);
-  });
-
-  it('correctly jumps to start and end on Home and End keys', () => {
-    const itemCount = 8;
-    let activeIndex = 3;
-
-    // Home key
-    activeIndex = 0;
-    expect(activeIndex).toBe(0);
-
-    // End key
-    activeIndex = itemCount - 1;
-    expect(activeIndex).toBe(7);
-  });
-
-  it('generates proper ARIA attributes for combobox and options', () => {
-    const isOpen = true;
-    const activeIndex = 2;
-    const activeItemId = `cmd-option-${activeIndex}`;
-
-    const inputAria = {
-      role: 'combobox',
-      'aria-expanded': isOpen,
-      'aria-controls': 'command-palette-listbox',
-      'aria-activedescendant': activeItemId,
-      'aria-autocomplete': 'list',
-    };
-
-    expect(inputAria.role).toBe('combobox');
-    expect(inputAria['aria-expanded']).toBe(true);
-    expect(inputAria['aria-activedescendant']).toBe('cmd-option-2');
-
-    const getOptionAria = (index: number) => ({
-      id: `cmd-option-${index}`,
-      role: 'option',
-      'aria-selected': index === activeIndex,
-    });
-
-    expect(getOptionAria(2)['aria-selected']).toBe(true);
-    expect(getOptionAria(0)['aria-selected']).toBe(false);
-  });
 });

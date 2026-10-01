@@ -4,6 +4,64 @@ import { OperationManifestEntry } from '@/lib/composer-api';
 import { useEffect, useState } from 'react';
 import { ComposedOperation } from './index';
 
+export function liquidityPoolFieldErrors(
+  operation: ComposedOperation,
+): Record<string, string> {
+  if (!operation.type.startsWith('liquidity_pool_')) return {};
+
+  const fields = operation.fields;
+  const errors: Record<string, string> = {};
+  const poolId = String(fields.liquidityPoolId ?? '');
+  if (poolId && !/^[0-9a-fA-F]{64}$/.test(poolId)) {
+    errors.liquidityPoolId = 'Enter a 64-character hexadecimal pool ID';
+  }
+
+  const validateAmount = (field: string, allowZero: boolean) => {
+    const value = String(fields[field] ?? '');
+    if (!value) return;
+    if (!/^\d+(?:\.\d{1,7})?$/.test(value)) {
+      errors[field] = 'Use a decimal with at most 7 fractional digits';
+    } else {
+      const [whole, fraction = ''] = value.split('.');
+      const scaled = BigInt(whole) * 10000000n + BigInt((fraction + '0000000').slice(0, 7));
+      if (scaled > 9223372036854775807n) {
+        errors[field] = 'Amount exceeds the maximum Stellar value';
+      } else if (!allowZero && scaled === 0n) {
+        errors[field] = 'Amount must be greater than zero';
+      }
+    }
+  };
+
+  if (operation.type === 'liquidity_pool_deposit') {
+    validateAmount('maxAmountA', false);
+    validateAmount('maxAmountB', false);
+  } else {
+    validateAmount('amount', false);
+    validateAmount('minAmountA', true);
+    validateAmount('minAmountB', true);
+  }
+
+  if (operation.type === 'liquidity_pool_deposit') {
+    const ratios = ['minPrice', 'maxPrice'].map((name) => {
+      const ratio = fields[name] as Record<string, unknown> | undefined;
+      const n = String(ratio?.n ?? '');
+      const d = String(ratio?.d ?? '');
+      const valid = /^\d+$/.test(n) && /^\d+$/.test(d) &&
+        BigInt(n || '0') > 0n && BigInt(d || '0') > 0n &&
+        BigInt(n || '0') <= 2147483647n && BigInt(d || '0') <= 2147483647n;
+      if (n && !valid) errors[`${name}.n`] = 'Use a positive 32-bit integer';
+      if (d && !valid) errors[`${name}.d`] = 'Use a positive 32-bit integer';
+      return valid ? { n: BigInt(n), d: BigInt(d) } : null;
+    });
+    if (ratios[0] && ratios[1] &&
+      ratios[0].n * ratios[1].d > ratios[1].n * ratios[0].d) {
+      errors['maxPrice.n'] = 'Maximum price must be greater than or equal to minimum price';
+    }
+  }
+
+  return errors;
+}
+
 interface OperationFormProps {
   operation: ComposedOperation | null;
   manifest: OperationManifestEntry[];
@@ -30,6 +88,7 @@ export function OperationForm({ operation, manifest, onChange }: OperationFormPr
 
   const schema = manifest.find((m) => m.type === operation.type);
   if (!schema) return null;
+  const validationErrors = liquidityPoolFieldErrors(operation);
 
   const handleChange = (fieldName: string, value: string | boolean) => {
     const parts = fieldName.split('.');
@@ -72,7 +131,10 @@ export function OperationForm({ operation, manifest, onChange }: OperationFormPr
       </div>
 
       {schema.fields.map((field) => {
-        const error = hasError(field.name, field.required);
+        const validationMessage = touched.has(field.name)
+          ? validationErrors[field.name] ?? (hasError(field.name, field.required) ? `${field.label} is required` : '')
+          : '';
+        const error = Boolean(validationMessage);
 
         return (
           <div key={field.name} className="flex flex-col gap-1.5">
@@ -131,7 +193,7 @@ export function OperationForm({ operation, manifest, onChange }: OperationFormPr
             )}
 
             {error && (
-              <p className="text-[10px] text-rose-400">{field.label} is required</p>
+              <p className="text-[10px] text-rose-400">{validationMessage}</p>
             )}
           </div>
         );

@@ -14,14 +14,14 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+<<<<<<< HEAD
 import { WalletService } from './wallet.service';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
+=======
+>>>>>>> upstream/main
 import { AssetControlService } from './assetcontrol.service';
-import { FundDto } from './dto/fund.dto';
-import { BalancesDto } from './dto/balances.dto';
-import { SendPaymentDto } from './dto/send-payment.dto';
 import { SetTrustlineFlagsDto } from './dto/set-flags.dto';
 import { ClawbackDto } from './dto/clawback.dto';
 import { AccountFlagsDto } from './dto/account-flags.dto';
@@ -57,10 +57,10 @@ function parseOptionalNumber(value?: string): number | undefined {
 @Controller('wallet')
 export class WalletController {
   constructor(
-    private readonly walletService: WalletService,
     private readonly assetControlService: AssetControlService,
   ) {}
 
+<<<<<<< HEAD
   @Post('generate')
   @ApiOperation({ summary: 'Generate a new Stellar keypair' })
   @ApiResponse({ status: 201, description: 'Keypair generated successfully' })
@@ -95,6 +95,8 @@ export class WalletController {
     return this.walletService.sendPayment(dto.sourceSecret, dto.destination, dto.asset, dto.amount);
   }
 
+=======
+>>>>>>> upstream/main
   // ---------------------------------------------------------------------------
   // Asset Control workstation (Savitura/Savitools#81)
   // ---------------------------------------------------------------------------

@@ -525,6 +525,19 @@ export function GraphTool() {
         </div>
       )}
 
+      {result?.truncated && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300"
+        >
+          Partial graph: the traversal stopped at the{' '}
+          {result.truncatedBy === 'node_limit'
+            ? `${result.limits?.maxNodes ?? ''}-node limit`
+            : `${result.limits?.maxHorizonRequests ?? ''}-request Horizon limit`}
+          . Use a narrower mode or a smaller depth to see a complete graph.
+        </div>
+      )}
+
       {/* ── Graph canvas ── */}
       <div
         ref={containerRef}

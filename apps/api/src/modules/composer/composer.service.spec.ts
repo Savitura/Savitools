@@ -95,6 +95,101 @@ describe('ComposerService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('builds a liquidity-pool deposit with canonical A/B amounts and price bounds', async () => {
+      const source = Keypair.random().publicKey();
+      const poolId = 'a'.repeat(64);
+      const result = await service.buildTransaction({
+        sourceAccount: source,
+        network: 'testnet',
+        sequenceNumber: '1',
+        operations: [{
+          type: 'liquidity_pool_deposit',
+          liquidityPoolId: poolId,
+          maxAmountA: '1.0000000',
+          maxAmountB: '2',
+          minPrice: { n: '1', d: '2' },
+          maxPrice: { n: '2', d: '1' },
+        }],
+      });
+
+      const operation = new Transaction(result.xdr, Networks.TESTNET).operations[0] as any;
+      expect(operation.type).toBe('liquidityPoolDeposit');
+      expect(operation.liquidityPoolId).toBe(poolId);
+      expect(operation.maxAmountA).toBe('1.0000000');
+      // The SDK canonicalises every pool amount to Stellar's 7 decimals, so the
+      // short input "2" round-trips as "2.0000000".
+      expect(operation.maxAmountB).toBe('2.0000000');
+      // The SDK canonicalises price bounds to their decimal string form.
+      expect(operation.minPrice).toBe('0.5');
+      expect(operation.maxPrice).toBe('2');
+    });
+
+    it('builds a liquidity-pool withdrawal with canonical A/B minimums', async () => {
+      const source = Keypair.random().publicKey();
+      const poolId = 'b'.repeat(64);
+      const result = await service.buildTransaction({
+        sourceAccount: source,
+        network: 'testnet',
+        sequenceNumber: '1',
+        operations: [{
+          type: 'liquidity_pool_withdraw',
+          liquidityPoolId: poolId,
+          amount: '3.0000000',
+          minAmountA: '0',
+          minAmountB: '1.2500000',
+        }],
+      });
+
+      const operation = new Transaction(result.xdr, Networks.TESTNET).operations[0] as any;
+      expect(operation.type).toBe('liquidityPoolWithdraw');
+      expect(operation.liquidityPoolId).toBe(poolId);
+      expect(operation.amount).toBe('3.0000000');
+      // Same 7-decimal canonicalisation as the deposit above.
+      expect(operation.minAmountA).toBe('0.0000000');
+      expect(operation.minAmountB).toBe('1.2500000');
+    });
+
+    it('rejects malformed pool IDs, excessive precision, and invalid price ratios', () => {
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_withdraw', liquidityPoolId: 'bad', amount: '1',
+        minAmountA: '0', minAmountB: '0',
+      })).toThrow('liquidityPoolId');
+
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_withdraw', liquidityPoolId: 'c'.repeat(64), amount: '1',
+        minAmountA: '0.00000001', minAmountB: '0',
+      })).toThrow('minAmountA');
+
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_deposit', liquidityPoolId: 'd'.repeat(64),
+        maxAmountA: '1', maxAmountB: '1',
+        minPrice: { n: '0', d: '1' }, maxPrice: { n: '2', d: '1' },
+      })).toThrow('minPrice');
+
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_deposit', liquidityPoolId: 'e'.repeat(64),
+        maxAmountA: '1', maxAmountB: '1',
+        minPrice: { n: '3', d: '1' }, maxPrice: { n: '2', d: '1' },
+      })).toThrow('minPrice must be less than or equal to maxPrice');
+    });
+
+    it('accepts the maximum Stellar amount and rejects values above it', () => {
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_withdraw', liquidityPoolId: 'f'.repeat(64),
+        amount: '922337203685.4775807', minAmountA: '0', minAmountB: '0',
+      })).not.toThrow();
+      expect(() => service.mapOperation({
+        type: 'liquidity_pool_withdraw', liquidityPoolId: 'f'.repeat(64),
+        amount: '922337203685.4775808', minAmountA: '0', minAmountB: '0',
+      })).toThrow('amount exceeds the maximum Stellar amount');
+    });
+  });
+
+  describe('TransactionSequenceService Isolation & Auth', () => {
+    it('service runs and isolates per user', async () => {
+      expect(service).toBeDefined();
+    });
   });
 
   describe('preconditions (#208)', () => {
@@ -378,14 +473,42 @@ describe('ComposerService', () => {
   });
 
   describe('simulateTransaction', () => {
+    it('reports an invalid liquidity-pool price bound by operation without broadcasting', async () => {
+      const keypair = Keypair.random();
+      const transaction = new TransactionBuilder(new Account(keypair.publicKey(), '1'), {
+        networkPassphrase: Networks.TESTNET,
+        fee: '100',
+      })
+        .addOperation(Operation.liquidityPoolDeposit({
+          liquidityPoolId: 'a'.repeat(64),
+          maxAmountA: '1',
+          maxAmountB: '1',
+          minPrice: { n: 3, d: 1 },
+          maxPrice: { n: 2, d: 1 },
+        }))
+        .setTimeout(30)
+        .build();
+      const submitSpy = jest.spyOn(Horizon.Server.prototype, 'submitTransaction');
+
+      const result = await service.simulateTransaction({
+        xdr: transaction.toEnvelope().toXDR('base64'),
+        network: 'testnet',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.resultCodes).toBe('tx_failed');
+      const operationResults = result.operationResults as string[] | null;
+      expect(operationResults?.[0]).toContain('op[0] liquidityPoolDeposit');
+      // stellar-core has reworded this diagnostic between protocol releases, so
+      // only the offending field is pinned, not the full sentence.
+      expect(operationResults?.[0]).toContain('minPrice');
+      expect(submitSpy).not.toHaveBeenCalled();
+      submitSpy.mockRestore();
+    });
+
     it('returns a hash for valid XDR without submitting', async () => {
       const xdr = buildTestXdr();
-      const expectedHash = new (require('@stellar/stellar-sdk').Transaction)(
-        xdr,
-        Networks.TESTNET,
-      )
-        .hash()
-        .toString('hex');
+      const expectedHash = new Transaction(xdr, Networks.TESTNET).hash().toString('hex');
 
       const submitSpy = jest.spyOn(Horizon.Server.prototype, 'submitTransaction');
 

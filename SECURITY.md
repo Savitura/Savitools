@@ -44,6 +44,20 @@ SaviTools implements the following security measures:
 - **SSRF Protection**: Guards on outbound requests from Playground and Webhook modules
 - **TLS**: All external API calls use HTTPS
 
+### HTTP Security Headers (Configured in `apps/web/next.config.ts`)
+
+The following security headers are set on all responses:
+
+| Header | Value | Purpose |
+| ------ | ----- | ------- |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://friendbot.stellar.org https://api.fluxa.io https://api.crowdpay.io wss://*.stellar.org; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'` | Mitigates XSS, injection, and unauthorized framing |
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Controls referrer information sent with requests |
+| `Permissions-Policy` | `accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()` | Restricts browser features and APIs |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` (production only) | Enforces HTTPS |
+| `X-DNS-Prefetch-Control` | `on` | Enables DNS prefetching for performance |
+| `X-Powered-By` | **Removed** | Hides Next.js version information |
+
 ## Security-Related Configuration
 
 | Variable                  | Description                              |

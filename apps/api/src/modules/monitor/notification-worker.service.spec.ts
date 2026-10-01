@@ -1,3 +1,4 @@
+import * as dnsPromises from "dns/promises";
 import { ConfigService } from "@nestjs/config";
 import { Repository } from "typeorm";
 import {
@@ -10,7 +11,15 @@ import { AlertEvent } from "./entities/alert-event.entity";
 import { MonitorWebhook } from "./entities/monitor-webhook.entity";
 import { Watch } from "./entities/watch.entity";
 import { MonitorGateway } from "./monitor.gateway";
+import { MonitorRuntimeConfig } from "./monitor-runtime.config";
 import { NotificationWorkerService } from "./notification-worker.service";
+
+/**
+ * The SSRF guard reads `dns/promises#lookup` at call time, so the spy lives on
+ * the module object itself. Every answer is a resolved address list.
+ */
+const spyOnDnsLookup = (addresses: Array<{ address: string }>) =>
+  (jest.spyOn(dnsPromises, "lookup") as unknown as jest.Mock).mockResolvedValue(addresses);
 
 /** Same known answer as the Webhook Tester and contract replay specs. */
 const KAT_SECRET = "whsec_test-secret-123";
@@ -48,9 +57,7 @@ function webhookRepositoryFor(secret: string): Repository<MonitorWebhook> {
 
 describe("NotificationWorkerService", () => {
   beforeEach(() => {
-    jest
-      .spyOn(require("dns/promises"), "lookup")
-      .mockResolvedValue([{ address: "93.184.216.34" }]);
+    spyOnDnsLookup([{ address: "93.184.216.34" }]);
   });
 
   afterEach(() => {
@@ -199,9 +206,7 @@ describe("NotificationWorkerService", () => {
     } as unknown as Repository<MonitorWebhook>;
     const worker = createWorker(webhookRepository);
     const fetchMock = jest.spyOn(global, "fetch");
-    jest
-      .spyOn(require("dns/promises"), "lookup")
-      .mockResolvedValue([{ address: "127.0.0.1" }]);
+    spyOnDnsLookup([{ address: "127.0.0.1" }]);
 
     await expect(
       (worker as any).sendWebhook(alertEvent(), "user-one"),
@@ -223,9 +228,7 @@ describe("NotificationWorkerService", () => {
       update: jest.fn().mockResolvedValue(undefined),
     } as unknown as Repository<MonitorWebhook>;
     const worker = createWorker(webhookRepository);
-    jest
-      .spyOn(require("dns/promises"), "lookup")
-      .mockResolvedValue([{ address: "93.184.216.34" }]);
+    spyOnDnsLookup([{ address: "93.184.216.34" }]);
     jest
       .spyOn(global, "fetch")
       .mockResolvedValueOnce({
@@ -289,7 +292,9 @@ function createWorker(
     }),
     decryptForUser: jest.fn(),
   };
+  const runtime = new MonitorRuntimeConfig(config);
   return new NotificationWorkerService(
+    runtime,
     config,
     {} as Repository<AlertEvent>,
     webhookRepository,

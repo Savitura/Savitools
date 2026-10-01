@@ -6,12 +6,13 @@ import {
   Param,
   Query,
   UseGuards,
-  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { TransactionService } from './transaction.service';
 import { ReplayTransactionDto } from './dto/replay-transaction.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
+import { OffsetPaginationQueryDto } from '../../common/dto/offset-pagination-query.dto';
 
 @ApiTags('transactions')
 @Controller('transactions')
@@ -33,9 +34,8 @@ export class TransactionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Replay historical transaction with modified parameters, simulate and optionally submit' })
   @ApiResponse({ status: 201, description: 'Replay simulation and submission results' })
-  async replayTransaction(@Req() req: any, @Body() dto: ReplayTransactionDto) {
-    const userId = req.user.id;
-    return this.transactionService.replayTransaction(userId, dto);
+  async replayTransaction(@CurrentUser() user: AuthUser, @Body() dto: ReplayTransactionDto) {
+    return this.transactionService.replayTransaction(user.id, dto);
   }
 
   @Get('replay/history')
@@ -43,17 +43,12 @@ export class TransactionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get transaction replay history for debugging' })
   @ApiResponse({ status: 200, description: 'List of transaction replays' })
+  @ApiResponse({ status: 400, description: 'limit or offset out of range' })
   async getReplayHistory(
-    @Req() req: any,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
+    @CurrentUser() user: AuthUser,
+    @Query() query: OffsetPaginationQueryDto,
   ) {
-    const userId = req.user.id;
-    return this.transactionService.getReplayHistory(
-      userId,
-      limit ? Number(limit) : 25,
-      offset ? Number(offset) : 0,
-    );
+    return this.transactionService.getReplayHistory(user.id, query.limit, query.offset);
   }
 
   @Get('replay/:id')
@@ -61,8 +56,7 @@ export class TransactionController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get specific transaction replay record by ID' })
   @ApiResponse({ status: 200, description: 'Transaction replay details' })
-  async getReplayById(@Req() req: any, @Param('id') id: string) {
-    const userId = req.user.id;
-    return this.transactionService.getReplayById(userId, id);
+  async getReplayById(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.transactionService.getReplayById(user.id, id);
   }
 }
