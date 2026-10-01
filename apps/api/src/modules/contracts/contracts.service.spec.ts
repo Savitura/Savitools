@@ -283,6 +283,7 @@ describe('ContractsService', () => {
     it('serves concurrent fetches without blocking the event loop while cloning', async () => {
       const { service } = await createModule();
       const sparseArtifacts = new Map<string, string>();
+      const writtenArtifacts = new Set<string>();
       execFileMock.mockImplementation(
         (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error: Error | null, stdout: Buffer, stderr: Buffer) => void) => {
           if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set' && opts?.cwd) {
@@ -297,7 +298,7 @@ describe('ContractsService', () => {
             }
           }
           setTimeout(() => {
-            if (args[0] === 'sparse-checkout' && args[1] === 'set') {
+            if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set') {
               writtenArtifacts.add(args[2] as string);
             }
             if (args[0] === 'checkout' && opts?.cwd) {

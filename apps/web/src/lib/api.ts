@@ -1300,6 +1300,204 @@ export async function simulateFee(operations: number, network: string) {
   );
 }
 
+/* ─── Path-payment simulation lab (Savitura/Savitools#351) ──────────────── */
+
+export type SlippageDirection = "strict_send" | "strict_receive";
+
+export type SlippageVerdict = "pass" | "fail" | "exact";
+
+/** Mirrors `apps/api/src/modules/simulator/slippage-lab.ts`. */
+export interface SlippageScenarioOutcome {
+  /** Tolerance this row prices, as a percentage. */
+  slippagePercent: number;
+  /** `destinationMin` (strict send) or `sendMax` (strict receive), to submit. */
+  guarantee: string;
+  /** The variable leg once the simulated adverse move is applied. */
+  adverseAmount: string;
+  /** Positive when the tolerance clears the move, negative when it fails. */
+  headroom: string;
+  headroomPercent: number;
+  /** The adverse move this tolerance absorbs, as a percentage. */
+  tolerableMovePercent: number;
+  verdict: SlippageVerdict;
+}
+
+export interface SlippageComparison {
+  direction: SlippageDirection;
+  guaranteeField: "destinationMin" | "sendMax";
+  fixedAmount: string;
+  quotedVariableAmount: string;
+  adverseMovePercent: number;
+  adverseVariableAmount: string;
+  scenarios: SlippageScenarioOutcome[];
+  tightestSlippagePercent: number;
+  widestSlippagePercent: number;
+  recommendedSlippagePercent: number | null;
+  recommendedHeadroomPercent: number | null;
+  exceededByEveryScenario: boolean;
+  routeDispersionPercent: number | null;
+}
+
+export interface PathPaymentLabHop {
+  assetType: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+}
+
+export interface PathPaymentLabRoute {
+  index: number;
+  pathLength: number;
+  sourceAmount: string;
+  destinationAmount: string;
+  exchangeRate: string;
+  fixedAmount: string;
+  variableAmount: string;
+  hops: PathPaymentLabHop[];
+}
+
+export interface PathPaymentLabResult {
+  network: NetworkChoice;
+  direction: SlippageDirection;
+  sourceAsset: string;
+  destinationAsset: string;
+  routeCount: number;
+  route: PathPaymentLabRoute;
+  comparison: SlippageComparison;
+}
+
+export interface PathPaymentLabParams {
+  direction: Direction;
+  sourceAsset: string;
+  destinationAsset: string;
+  amount: string;
+  /** Tolerances to compare, as percentages. */
+  slippageScenarios: number[];
+  /** Adverse rate move to simulate, as a percentage. */
+  adverseMovePercent?: number;
+  /** Which route to simulate, zero-based. Defaults to the best one. */
+  routeIndex?: number;
+  network?: NetworkChoice;
+}
+
+export async function runPathPaymentLab(
+  params: PathPaymentLabParams,
+): Promise<PathPaymentLabResult> {
+  return apiFetch<PathPaymentLabResult>("/simulator/path-payment-lab", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+/* ─── Multisig signer-weight and threshold simulator (#352) ─────────────── */
+
+export type MultisigRiskCode =
+  | "THRESHOLD_UNREACHABLE"
+  | "THRESHOLD_ZERO"
+  | "SINGLE_SIGNER_CONTROLS"
+  | "REQUIRES_EVERY_SIGNER"
+  | "REQUIRED_SIGNER_MISSING"
+  | "REQUIRED_SIGNER_UNSIGNED"
+  | "ZERO_WEIGHT_SIGNERS"
+  | "REDUNDANT_SIGNER"
+  | "QUORUM_SINGLE_POINT_OF_FAILURE"
+  | "DUPLICATE_SIGNER"
+  | "THRESHOLD_ABOVE_TOTAL_WEIGHT";
+
+export type MultisigRiskSeverity = "critical" | "warning" | "info";
+
+export type OperationThresholdKind = "low" | "medium" | "high";
+
+export interface MultisigRisk {
+  code: MultisigRiskCode;
+  severity: MultisigRiskSeverity;
+  message: string;
+  signers?: string[];
+}
+
+export interface MultisigSignerOutcome {
+  key: string;
+  weight: number;
+  signed: boolean;
+  required: boolean;
+  shareOfTotalPercent: number;
+  shareOfThresholdPercent: number;
+  controlsAccount: boolean;
+  indispensable: boolean;
+  redundant: boolean;
+}
+
+export interface MultisigThresholdOutcome {
+  kind: OperationThresholdKind;
+  requiredWeight: number;
+  collectedWeight: number;
+  deficit: number;
+  cleared: boolean;
+}
+
+export interface MultisigSimulationResult {
+  threshold: number;
+  lowThreshold: number;
+  mediumThreshold: number;
+  highThreshold: number;
+  totalWeight: number;
+  signedWeight: number;
+  deficit: number;
+  surplus: number;
+  progressPercent: number;
+  satisfied: boolean;
+  canSubmit: boolean;
+  signers: MultisigSignerOutcome[];
+  operationThresholds: MultisigThresholdOutcome[];
+  outstandingRequiredSigners: string[];
+  minimumSignersNeeded: string[] | null;
+  minimumSetWeight: number;
+  duplicateSigners: string[];
+  risks: MultisigRisk[];
+  timeBounds: {
+    minTime: number | null;
+    maxTime: number | null;
+    notYetActive: boolean;
+    expired: boolean;
+    invalid: boolean;
+  };
+}
+
+export interface MultisigLimits {
+  maxSigners: number;
+  maxSignerWeight: number;
+  maxThreshold: number;
+  operationThresholds: { kind: OperationThresholdKind; gates: string }[];
+}
+
+export interface MultisigSignerInput {
+  key: string;
+  weight: number;
+  signed: boolean;
+  required?: boolean;
+}
+
+export interface MultisigSimulateParams {
+  threshold: number;
+  signers: MultisigSignerInput[];
+  lowThreshold?: number;
+  highThreshold?: number;
+  minTime?: string;
+  maxTime?: string;
+}
+
+export async function getMultisigLimits(): Promise<MultisigLimits> {
+  return apiFetch<MultisigLimits>("/multisig/limits");
+}
+
+export async function simulateMultisig(
+  params: MultisigSimulateParams,
+): Promise<MultisigSimulationResult> {
+  return apiFetch<MultisigSimulationResult>("/multisig/simulate", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 /* ─── Inspector ──────────────────────────────────────────────────────────── */
 
 export interface DecodedEffect {

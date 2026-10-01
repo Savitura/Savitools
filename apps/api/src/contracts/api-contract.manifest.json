@@ -133,11 +133,6 @@
       "auth": "public"
     },
     {
-      "method": "POST",
-      "path": "/api/v1/composer/fee-bump/inspect",
-      "auth": "public"
-    },
-    {
       "method": "GET",
       "path": "/api/v1/composer/operations",
       "auth": "public"
@@ -219,6 +214,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/federation/diagnostics",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/federation/link-preview",
       "auth": "public"
     },
@@ -278,8 +278,23 @@
       "auth": "public"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/monitor/digest/flush",
+      "auth": "jwt"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/monitor/metrics",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/preferences",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/monitor/preferences",
       "auth": "jwt"
     },
     {
@@ -336,6 +351,16 @@
       "method": "POST",
       "path": "/api/v1/monitor/webhook",
       "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/multisig/limits",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/multisig/simulate",
+      "auth": "public"
     },
     {
       "method": "GET",
@@ -505,6 +530,11 @@
     {
       "method": "POST",
       "path": "/api/v1/simulator/orderbook/quote",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulator/path-payment-lab",
       "auth": "public"
     },
     {

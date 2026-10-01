@@ -575,6 +575,113 @@ curl "http://localhost:3001/api/v1/simulator/fee?operations=3&network=testnet"
 
 ---
 
+#### POST `/simulator/path-payment-lab`
+
+Price several slippage tolerances against a single simulated adverse rate move (Savitura/Savitools#351).
+
+A path payment carries a tolerance rather than a locked rate: `destinationMin` for `strict_send`, `sendMax` for `strict_receive`. The network fails the operation when the live route cannot fill inside it. This endpoint reads the live route table for a pair and prices up to ten tolerances against one adverse move, so they can be compared directly.
+
+**Request body:**
+- `direction` (required): `strict_send` or `strict_receive`
+- `sourceAsset` (required): `XLM` or `CODE:ISSUER`
+- `destinationAsset` (required): `XLM` or `CODE:ISSUER`
+- `amount` (required): the pinned leg — the source amount for `strict_send`, the destination amount for `strict_receive`. Up to 15 integer and 7 fractional digits
+- `slippageScenarios` (required): 1–10 tolerance percentages, each at least `0.01` and at most `100`
+- `adverseMovePercent` (optional, default `0`): the deterioration to simulate between quote and landing, `0`–`100`
+- `routeIndex` (optional, default `0`): which route to simulate, zero-based in the order Horizon returned them. `0` is the best route
+- `network` (optional, default `testnet`): `mainnet` or `testnet`
+
+**Request:**
+```bash
+curl -X POST "http://localhost:3001/api/v1/simulator/path-payment-lab" \
+  -H "content-type: application/json" \
+  -d '{
+    "direction": "strict_send",
+    "sourceAsset": "XLM",
+    "destinationAsset": "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ",
+    "amount": "100.0000000",
+    "slippageScenarios": [0.1, 0.5, 1, 5],
+    "adverseMovePercent": 2,
+    "network": "testnet"
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "network": "testnet",
+  "direction": "strict_send",
+  "sourceAsset": "XLM",
+  "destinationAsset": "USDC:GA5Z…JCJQ",
+  "routeCount": 2,
+  "route": {
+    "index": 0,
+    "pathLength": 1,
+    "sourceAmount": "100.0000000",
+    "destinationAmount": "98.0000000",
+    "exchangeRate": "0.98",
+    "fixedAmount": "100.0000000",
+    "variableAmount": "98.0000000",
+    "hops": [{ "assetType": "credit_alphanum4", "assetCode": "USDC", "assetIssuer": "GA5Z…JCJQ" }]
+  },
+  "comparison": {
+    "direction": "strict_send",
+    "guaranteeField": "destinationMin",
+    "fixedAmount": "100.0000000",
+    "quotedVariableAmount": "98.0000000",
+    "adverseMovePercent": 2,
+    "adverseVariableAmount": "96.0000000",
+    "scenarios": [
+      {
+        "slippagePercent": 0.1,
+        "guarantee": "97.9020000",
+        "adverseAmount": "96.0000000",
+        "headroom": "-1.9020000",
+        "headroomPercent": -1.9408,
+        "tolerableMovePercent": 0.1,
+        "verdict": "fail"
+      }
+    ],
+    "tightestSlippagePercent": 0.1,
+    "widestSlippagePercent": 5,
+    "recommendedSlippagePercent": 5,
+    "recommendedHeadroomPercent": 3,
+    "exceededByEveryScenario": false,
+    "routeDispersionPercent": null
+  }
+}
+```
+
+**How the arithmetic works:**
+
+| | `destinationMin` (strict send) | `sendMax` (strict receive) |
+|---|---|---|
+| Guarantee | `floor(variable × (1 − s))` | `ceil(variable × (1 + s))` |
+| Worst case at the move | `floor(variable × (1 − m))` | `ceil(variable × (1 + m))` |
+| Headroom | `worstCase − guarantee` | `guarantee − worstCase` |
+
+where `s` is the tolerance and `m` the adverse move, both as fractions. The two directions subtract differently because a `destinationMin` is a floor the fill must stay *above* while a `sendMax` is a ceiling it must stay *below*; in both cases a positive `headroom` means the payment clears.
+
+- `verdict` is `pass`, `fail`, or `exact`. `exact` means the tolerance and the move produced the same amount, so the payment clears only if the rate does not move by another stroop — treat it as a failure.
+- All amount arithmetic runs on exact stroop integers and rounds the way the network rounds, so a reported `destinationMin`/`sendMax` is always one the network accepts. No amount is ever held in a floating-point number.
+- `recommendedSlippagePercent` is the *narrowest* compared tolerance that still absorbs the move; anything tighter would fail. It is `null` and `exceededByEveryScenario` is `true` when every compared tolerance is exceeded.
+- `routeDispersionPercent` reports how far the selected route already sits below the best route, as a percentage of the best one. It is `null` when route `0` was simulated.
+
+**Limits:**
+- `slippageScenarios`: 1–10 entries, each `0.01`–`100`. A tolerance below `0.01%` would round to zero hundredths of a percent and mean "no tolerance", so it is rejected rather than silently accepted.
+- `adverseMovePercent`: `0`–`100`.
+- `routeIndex`: `0` to `routeCount − 1`.
+
+**Errors:**
+- `400`: invalid amount, asset format, or tolerance; `routeIndex` beyond the routes Horizon returned; no route for the pair
+- `429`: global rate limit exceeded
+
+**Operational notes:**
+- The call is not cached. A run is a pure function of the live route table plus the caller's tolerances, and any cached answer would describe a route table that has since moved.
+- `POST` answers `200`, not `201`: nothing is created.
+
+---
+
 ### Liquidity Pools
 
 #### GET `/liquidity-pools/search?assetA=...&assetB=...&network=...`
@@ -771,6 +878,158 @@ Get your watched pools. Requires authentication.
 
 **Errors:**
 - `401`: Authentication required
+
+---
+
+### Multisig (Signer Weights & Thresholds)
+
+#### GET `/multisig/limits`
+
+Publishes the bounds `POST /multisig/simulate` accepts, so a client can validate a form before a round trip rather than after a 400 (Savitura/Savitools#352).
+
+**Request:**
+```bash
+curl "http://localhost:3001/api/v1/multisig/limits"
+```
+
+**Response (200):**
+```json
+{
+  "maxSigners": 21,
+  "maxSignerWeight": 255,
+  "maxThreshold": 255,
+  "operationThresholds": [
+    { "kind": "low", "gates": "Trustline and offer operations" },
+    { "kind": "medium", "gates": "Payments and path payments" },
+    { "kind": "high", "gates": "Account settings and clawbacks" }
+  ]
+}
+```
+
+`maxSigners` is 21 because SEP-0023 allows 20 additional signers plus the master key, and a request may describe the master key too. `maxSignerWeight` and `maxThreshold` are 255 because that is the `uint8` the XDR uses.
+
+---
+
+#### POST `/multisig/simulate`
+
+Evaluate a weighted multisig against the signatures collected so far.
+
+A Stellar multisig is not "2 of 3 signers" — it is any subset of signers whose weights total at least the threshold. This endpoint answers what that collected weight authorises, which weight classes are cleared, which signers are still outstanding, and which configuration risks apply.
+
+**Request body:**
+- `threshold` (required): the weight the operation needs, `0`–`255`. This is the account's `medium` threshold, which gates payments and path payments
+- `signers` (required): 1–21 entries, each with:
+  - `key` (required): a `G…` account id
+  - `weight` (required): `0`–`255`
+  - `signed` (optional, default `false`): whether a signature from this signer is collected
+  - `required` (optional, default `false`): a master-weight-0 required signer. Its weight must be `0`
+- `lowThreshold` / `highThreshold` (optional): the `low` and `high` weight classes. Both default to `threshold`, which is what Stellar itself defaults them to
+- `minTime` / `maxTime` (optional): the transaction validity window, as unix seconds or an ISO 8601 timestamp. Omit or send an empty value for "unbounded"
+
+**Request:**
+```bash
+curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
+  -H "content-type: application/json" \
+  -d '{
+    "threshold": 2,
+    "lowThreshold": 1,
+    "highThreshold": 3,
+    "signers": [
+      { "key": "GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ", "weight": 2, "signed": true },
+      { "key": "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H", "weight": 1, "signed": false },
+      { "key": "GBRPYHIL3CI3FNQ4BXNFMNDLFJUNSU2HY3ZMFSLONUCEOASW7QC7OX2H", "weight": 1, "signed": false }
+    ]
+  }'
+```
+
+**Response (200):**
+```json
+{
+  "threshold": 2,
+  "lowThreshold": 1,
+  "mediumThreshold": 2,
+  "highThreshold": 3,
+  "totalWeight": 4,
+  "signedWeight": 2,
+  "deficit": 0,
+  "surplus": 0,
+  "progressPercent": 100,
+  "satisfied": true,
+  "canSubmit": true,
+  "signers": [
+    {
+      "key": "GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ",
+      "weight": 2,
+      "signed": true,
+      "required": false,
+      "shareOfTotalPercent": 50,
+      "shareOfThresholdPercent": 100,
+      "controlsAccount": true,
+      "indispensable": true,
+      "redundant": false
+    }
+  ],
+  "operationThresholds": [
+    { "kind": "low", "requiredWeight": 1, "collectedWeight": 2, "deficit": 0, "cleared": true },
+    { "kind": "medium", "requiredWeight": 2, "collectedWeight": 2, "deficit": 0, "cleared": true },
+    { "kind": "high", "requiredWeight": 3, "collectedWeight": 2, "deficit": 1, "cleared": false }
+  ],
+  "outstandingRequiredSigners": [],
+  "minimumSignersNeeded": [],
+  "minimumSetWeight": 0,
+  "duplicateSigners": [],
+  "risks": [
+    {
+      "code": "SINGLE_SIGNER_CONTROLS",
+      "severity": "warning",
+      "message": "Signer weight 2 alone reaches the threshold of 2.",
+      "signers": ["GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ"]
+    }
+  ],
+  "timeBounds": {
+    "minTime": null,
+    "maxTime": null,
+    "notYetActive": false,
+    "expired": false,
+    "invalid": false
+  }
+}
+```
+
+**Field notes:**
+- `satisfied` is `signedWeight >= threshold`. `canSubmit` additionally requires every `required` signer to have signed — a missing required signer blocks the account regardless of collected weight.
+- `progressPercent` is `min(signedWeight / threshold, 1)`, and is `100` when the threshold is `0`.
+- `minimumSignersNeeded` is the **smallest** set of outstanding signers that reaches the threshold, chosen on fewest signers and then the tightest fit, so the answer never commits more weight than the quorum needs. It is `null` when no combination of the remaining signers is enough. `null` and `[]` are therefore different answers: unreachable versus already satisfied.
+- `indispensable`/`redundant` describe the configured signer set — what happens if that key is removed — while `minimumSignersNeeded` answers who still has to sign.
+- `duplicateSigners` lists keys that appear more than once. The totals include them because the request did, but Stellar counts each key once; the finding is reported rather than silently deduplicated.
+
+**Risk codes:**
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `THRESHOLD_ZERO` | critical | A threshold of 0 authorises the operation without any signature |
+| `THRESHOLD_UNREACHABLE` | critical | No signer carries weight, so no signature set can reach a threshold of 1 or more |
+| `THRESHOLD_ABOVE_TOTAL_WEIGHT` | critical | Total weight is below the threshold |
+| `REQUIRED_SIGNER_UNSIGNED` | critical | A required signer has not signed, so the account cannot be modified |
+| `SINGLE_SIGNER_CONTROLS` | warning | One signer's weight alone reaches the threshold |
+| `REQUIRES_EVERY_SIGNER` | warning | Removing any weighted signer drops the account below the threshold |
+| `QUORUM_SINGLE_POINT_OF_FAILURE` | warning | One outstanding signature completes the quorum, so that signer can stall the account alone |
+| `DUPLICATE_SIGNER` | warning | The same key appears more than once |
+| `ZERO_WEIGHT_SIGNERS` | info | Zero-weight signers are recorded but add no weight |
+| `REDUNDANT_SIGNER` | info | These signers could be dropped without weakening the quorum |
+
+**Limits:**
+- `signers`: 1–21 entries
+- `weight`, `threshold`, `lowThreshold`, `highThreshold`: integers `0`–`255`
+- `minTime`/`maxTime`: unix seconds or ISO 8601; `minTime` must not be after `maxTime`
+
+**Errors:**
+- `400`: weight or threshold outside `0`–`255`, more than 21 signers, a `required` signer carrying weight, a window that closes before it opens, or an unreadable timestamp
+- `429`: global rate limit exceeded
+
+**Operational notes:**
+- The call is stateless: nothing is fetched and nothing is stored. The same request always yields the same answer, so it is safe to try configurations that do not exist.
+- `POST` answers `200`, not `201`: nothing is created.
 
 ---
 

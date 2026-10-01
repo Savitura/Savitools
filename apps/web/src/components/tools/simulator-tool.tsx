@@ -244,8 +244,12 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // The shareable link writes `scenario=withdrawal`, but earlier links (and the
+  // `?scenario=withdraw` spelling) are still in circulation, so both are read.
   const [scenario, setScenario] = useState<PoolQuoteScenario>(
-    searchParams.get('scenario') === 'withdraw' ? 'withdraw' : 'deposit',
+    ['withdrawal', 'withdraw'].includes(searchParams.get('scenario') ?? '')
+      ? 'withdrawal'
+      : 'deposit',
   );
 
   // pool identification

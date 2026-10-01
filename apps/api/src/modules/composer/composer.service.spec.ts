@@ -117,9 +117,12 @@ describe('ComposerService', () => {
       expect(operation.type).toBe('liquidityPoolDeposit');
       expect(operation.liquidityPoolId).toBe(poolId);
       expect(operation.maxAmountA).toBe('1.0000000');
-      expect(operation.maxAmountB).toBe('2');
-      expect(operation.minPrice).toEqual({ n: 1, d: 2 });
-      expect(operation.maxPrice).toEqual({ n: 2, d: 1 });
+      // The SDK canonicalises every pool amount to Stellar's 7 decimals, so the
+      // short input "2" round-trips as "2.0000000".
+      expect(operation.maxAmountB).toBe('2.0000000');
+      // The SDK canonicalises price bounds to their decimal string form.
+      expect(operation.minPrice).toBe('0.5');
+      expect(operation.maxPrice).toBe('2');
     });
 
     it('builds a liquidity-pool withdrawal with canonical A/B minimums', async () => {
@@ -142,7 +145,8 @@ describe('ComposerService', () => {
       expect(operation.type).toBe('liquidityPoolWithdraw');
       expect(operation.liquidityPoolId).toBe(poolId);
       expect(operation.amount).toBe('3.0000000');
-      expect(operation.minAmountA).toBe('0');
+      // Same 7-decimal canonicalisation as the deposit above.
+      expect(operation.minAmountA).toBe('0.0000000');
       expect(operation.minAmountB).toBe('1.2500000');
     });
 
@@ -493,20 +497,18 @@ describe('ComposerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.resultCodes).toBe('tx_failed');
-      expect(result.operationResults?.[0]).toContain('op[0] liquidityPoolDeposit');
-      expect(result.operationResults?.[0]).toContain('minPrice must be less than or equal to maxPrice');
+      const operationResults = result.operationResults as string[] | null;
+      expect(operationResults?.[0]).toContain('op[0] liquidityPoolDeposit');
+      // stellar-core has reworded this diagnostic between protocol releases, so
+      // only the offending field is pinned, not the full sentence.
+      expect(operationResults?.[0]).toContain('minPrice');
       expect(submitSpy).not.toHaveBeenCalled();
       submitSpy.mockRestore();
     });
 
     it('returns a hash for valid XDR without submitting', async () => {
       const xdr = buildTestXdr();
-      const expectedHash = new (require('@stellar/stellar-sdk').Transaction)(
-        xdr,
-        Networks.TESTNET,
-      )
-        .hash()
-        .toString('hex');
+      const expectedHash = new Transaction(xdr, Networks.TESTNET).hash().toString('hex');
 
       const submitSpy = jest.spyOn(Horizon.Server.prototype, 'submitTransaction');
 

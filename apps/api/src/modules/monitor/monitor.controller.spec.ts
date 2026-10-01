@@ -1,12 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { MonitorController } from './monitor.controller';
 import { MonitorLeaderService } from './monitor-leader.service';
 import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import { MonitorService } from './monitor.service';
+import { MonitorDigestService } from './monitor-digest.service';
 import { StreamManager } from './stream-manager.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SearchEventsQueryDto } from './dto/search-events.dto';
@@ -15,6 +17,7 @@ import type { FastifyReply } from 'fastify';
 
 describe('MonitorController SSE and Metrics', () => {
   let controller: MonitorController;
+  let testingModule: TestingModule;
 
   const mockMonitorService = {
     createWatch: jest.fn(),
@@ -50,6 +53,12 @@ describe('MonitorController SSE and Metrics', () => {
     }),
   };
 
+  const mockDigestService = {
+    getPreferences: jest.fn(),
+    updatePreferences: jest.fn(),
+    isQuiet: jest.fn().mockReturnValue(false),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
@@ -60,6 +69,7 @@ describe('MonitorController SSE and Metrics', () => {
         MonitorRuntimeConfig,
         { provide: MonitorLeaderService, useValue: mockLeaderService },
         { provide: StreamManager, useValue: mockStreamManager },
+        { provide: MonitorDigestService, useValue: mockDigestService },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -205,6 +215,7 @@ describe('MonitorController SSE and Metrics', () => {
         testingModule.get(MonitorRuntimeConfig),
         testingModule.get(MonitorLeaderService),
         testingModule.get(StreamManager),
+        testingModule.get(MonitorDigestService),
       );
     }
 
@@ -276,6 +287,12 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
     get: jest.fn((key: string, defaultValue?: any) => defaultValue),
   };
 
+  const mockDigestService = {
+    getPreferences: jest.fn(),
+    updatePreferences: jest.fn(),
+    isQuiet: jest.fn().mockReturnValue(false),
+  };
+
   function createFakeReply() {
     const writes: string[] = [];
     return {
@@ -313,6 +330,7 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
             }),
           },
         },
+        { provide: MonitorDigestService, useValue: mockDigestService },
       ],
     })
       .overrideGuard(JwtAuthGuard)
