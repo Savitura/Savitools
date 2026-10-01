@@ -1499,59 +1499,19 @@ curl http://localhost:3001/api/v1/webhooks/templates
 
 **Response (200):**
 ```json
-{
-  "templates": [
+[
     {
       "eventType": "transaction.submitted",
       "description": "Emitted when a transaction is submitted",
-      "schema": {...},
-      "examplePayload": {...}
+    "schema": {},
+    "samplePayload": {}
     }
   ]
-}
 ```
 
 ---
 
-#### GET `/webhooks/signing`
 
-Whether outbound webhook signing is enabled and the exact signature wire format receivers
-should expect. Public — reveals configuration only, no secrets.
-
-**Request:**
-```bash
-curl http://localhost:3001/api/v1/webhooks/signing
-```
-
-**Response (200):**
-```json
-{
-  "enabled": true,
-  "algorithm": "hmac-sha256",
-  "signatureHeader": "X-SaviTools-Signature",
-  "timestampHeader": "X-SaviTools-Timestamp",
-  "replayWindowSeconds": 300,
-  "signedPayloadFormat": "<timestamp>.<body>",
-  "signatureFormat": "sha256=<hex>",
-  "signedPayloadEncoding": "utf-8",
-  "maxSkewSeconds": 60,
-  "perRequestSecretSupported": true
-}
-```
-
-`enabled` is `true` when `WEBHOOK_SIGNING_SECRET` is configured. When enabled (or when a
-per-request `secret` is supplied to `/webhooks/send` or the replay endpoint), every outbound
-request carries `X-SaviTools-Timestamp: <unix seconds>` and
-`X-SaviTools-Signature: sha256=<hex>`, where the hex is HMAC-SHA256 over the UTF-8 bytes of
-`<timestamp>.<body>` with the exact body bytes sent. Receivers should recompute that HMAC with
-the shared secret, compare in constant time, and reject signatures whose timestamp is older
-than `replayWindowSeconds` (replay) or more than `maxSkewSeconds` in the future (clock skew).
-The reference implementation lives in `apps/api/src/modules/webhook/signature.ts` (`signBody` /
-`verifySignature`).
-
-There is no body-only signature format. Deliveries recorded before the timestamped contract
-landed carry the legacy `X-Webhook-Signature`; replaying such an entry strips the stale headers
-and re-signs it, and the history entry is returned with `"legacySignature": true`.
 
 ---
 
@@ -1567,13 +1527,11 @@ curl -X POST http://localhost:3001/api/v1/webhooks/send \
   -d '{
     "endpointUrl": "https://example.com/webhook",
     "eventType": "transaction.submitted",
-    "payload": {...},
-    "secret": "shared-signing-secret"
+    "payload": {}
   }'
 ```
 
-**Response (201):** a `WebhookHistoryEntry` (see `/webhooks/history`). When a `secret` is in
-play, the entry carries the exact signing inputs:
+**Response (201):** a `WebhookHistoryEntry` (see `/webhooks/history`).
 
 ```json
 {
@@ -1582,19 +1540,13 @@ play, the entry carries the exact signing inputs:
   "endpointUrl": "https://example.com/webhook",
   "method": "POST",
   "requestHeaders": {
-    "Content-Type": "application/json",
-    "X-Webhook-Event": "transaction.submitted",
-    "X-SaviTools-Signature": "[REDACTED]",
-    "X-SaviTools-Timestamp": "1717243200"
+    "Content-Type": "application/json"
   },
-  "payload": {...},
-  "signature": {
-    "timestamp": "1717243200",
-    "body": "{\"event\":\"transaction.submitted\"}",
-    "signature": "sha256=8fdd98..."
-  },
+  "payload": {},
   "responseStatus": 200,
-  "latencyMs": 250
+  "responseBody": "ok",
+  "latencyMs": 250,
+  "timestamp": 1717243200000
 }
 ```
 
@@ -1934,30 +1886,25 @@ No content
 
 ---
 
-#### POST `/monitor/watches/:id/alerts`
+#### GET `/monitor/watches/:id/alerts`
 
-Create an alert for a watch (requires authentication).
+Get alerts for a watch (requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
-  -H "Content-Type: application/json" \
-  --cookie "access_token=YOUR_ACCESS_TOKEN" \
-  -d '{
-    "conditionType": "balance_threshold",
-    "threshold": "100.00",
-    "channel": "email",
-    "destination": "user@example.com"
-  }'
+curl http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
+  --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
-**Response (201):**
+**Response (200):**
 ```json
+[
 {
   "id": "alert-456",
   "watchId": "watch-123",
   "conditionType": "balance_threshold"
 }
+]
 ```
 
 ---
@@ -2120,45 +2067,13 @@ For a complete list, refer to the [Stellar Horizon API documentation](http://web
 
 ## Caching Behavior
 
-### Redis-Cached Endpoints
-
-| Endpoint | TTL | Purpose | Cache Key |
-|----------|-----|---------|-----------|
-| `GET /network/status` | 60s | Network fees & reserves | `network:status:{network}` |
-| `GET /network/status/history` | 300s | Historical fee data | `network:history:{network}` |
-| `GET /simulator/paths` | 120s | Payment path results | `paths:{source}:{dest}:{amount}` |
-| `GET /playground/spec/:provider` | 3600s | OpenAPI specs | `spec:cache:{provider}` |
-| `GET /webhooks/templates` | 86400s | Webhook schema definitions | `webhook:templates` |
-
-### Cache Busting
-
-In development, to clear all cached data:
-
-```bash
-# If you have Redis CLI access:
-redis-cli FLUSHDB
-
-# Or via the API (clear specific cache):
-DELETE /api/v1/admin/cache/network:status:mainnet
-```
-
-### Cache Headers
-
-Responses include standard HTTP cache headers:
-```
-Cache-Control: public, max-age=60
-ETag: "abc123..."
-Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
-```
+Caching is not currently implemented in the API; all requests are processed dynamically against upstream services and databases.
 
 ---
 
 ## Rate Limiting
 
-**Current Status:** No rate limiting is enforced in development/testing. Production deployment will include:
-- 100 requests/minute per IP for public endpoints
-- 1000 requests/minute per user for authenticated endpoints
-- Custom limits for resource-intensive operations (e.g., `/composer/simulate`)
+**Current Status:** Rate limiting is enforced globally across all endpoints via NestJS ThrottlerGuard according to application configuration.
 
 ---
 
@@ -2166,7 +2081,7 @@ Last-Modified: Mon, 21 Jun 2026 12:34:56 GMT
 
 - **CORS Origin:** Controlled by `WEB_ORIGIN` environment variable (default: `http://localhost:3000`)
 - **HTTPS:** Enforced in production; cookies marked with `Secure` flag
-- **CSRF Protection:** HTTP-only cookies prevent client-side token theft
+- **Session Security:** HTTP-only cookies store authentication tokens securely.
 - **Input Validation:** All inputs are validated and sanitized server-side
 
 ---
