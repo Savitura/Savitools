@@ -37,6 +37,26 @@ export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{55}|M[A-Z2-7]{68})$/;
 export const STELLAR_DESTINATION_MESSAGE =
   'destination must be a Stellar G… account or M… muxed account';
 
+/** Encode a canonical M… address without allowing lossy JavaScript numbers. */
+export function encodeMuxedDestination(account: string, muxedId: string | bigint): string {
+  if (!StrKey.isValidEd25519PublicKey(account)) {
+    throw new BadRequestException('Invalid base account public key');
+  }
+  let id: bigint;
+  try {
+    id = typeof muxedId === 'bigint' ? muxedId : BigInt(muxedId);
+  } catch {
+    throw new BadRequestException('Muxed account id must be an unsigned 64-bit integer');
+  }
+  if (id < 0n || id > 18446744073709551615n) {
+    throw new BadRequestException('Muxed account id must be an unsigned 64-bit integer');
+  }
+  const payload = Buffer.alloc(40);
+  StrKey.decodeEd25519PublicKey(account).copy(payload, 0);
+  payload.writeBigUInt64BE(id, 32);
+  return StrKey.encodeMed25519PublicKey(payload);
+}
+
 /**
  * Validate and decode a payment destination.
  *
