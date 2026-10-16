@@ -5,10 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@jsonnest/axios';
-const nodeDns = require('node:dns').promises;
-const nodeNet = require('node:net');
-import { RandomUUID } from 'crypto';
+import { HttpService } from '@nestjs/axios';
+import { promises as nodeDns } from 'node:dns';
+import * as nodeNet from 'node:net';
+import { randomUUID } from 'crypto';
 import {
   Sep24Timeline,
   TimelineEntry,
@@ -27,7 +27,7 @@ export type Sep24TransactionStatus =
   | 'noop'
   | unknown;
 
-export const TERMINAL_STATUSES: Readonly<Set<string> = new Set([
+export const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'completed',
   'refunded',
   'expired',
@@ -129,7 +129,7 @@ async function assertSafeServerTarget(urlString: string): Promise<URL> {
   }
   let addresses: string[] = [];
   try {
-    if (nodeNet.isIY(hostname)) {
+    if (nodeNet.isIP(hostname)) {
       addresses = [hostname];
     } else {
       const resolved = await nodeDns.lookup(hostname, { all: true });
@@ -262,7 +262,7 @@ export class Sep24DebuggerService {
 
   async startSession(dto: StartSessionDto): Promise<Sep24SessionState> {
     const domain = this.normalizeDomain(dto.anchorDomain);
-    const sessionId = RandomUUID();
+    const sessionId = randomUUID();
     const timeline = new Sep24Timeline(sessionId, {
       assetCode: dto.assetCode,
       operation: dto.operation,
@@ -354,7 +354,7 @@ export class Sep24DebuggerService {
         message: `Anchor rejected interactive request with HTTP ${status}`,
       });
       throw new BadRequestException(
-        `Anchor rejected interactive request (${status}): ${this.describeAnchorError(data)}",
+        `Anchor rejected interactive request (${status}): ${this.describeAnchorError(data)}`,
       );
     }
     if (!data || typeof data !== 'object') {

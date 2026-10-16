@@ -2,7 +2,7 @@ import { Module, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -32,7 +32,9 @@ import { LedgerCloseModule } from "./modules/ledger-close/ledger-close.module";
 import { DataSource } from "typeorm";
 import { ALL_ENTITIES, ALL_MIGRATIONS } from "./database/database.registry";
 import { validateEnvironment } from "./config/env-validation";
+import { shouldSynchronizeSchema } from "./config/typeorm-synchronize";
 import { CommonModule } from "./common/common.module";
+import { ThrottlerBehindProxyGuard } from "./common/throttler-behind-proxy.guard";
 
 @Module({
   imports: [
@@ -62,7 +64,9 @@ ThrottlerModule.forRootAsync({
         type: "postgres",
         url: config.get<string>("DATABASE_URL"),
         entities: ALL_ENTITIES,
-        synchronize: config.get<string>("NODE_ENV") !== "production",
+        // Only local development/test may alter schema from entities
+        // (Savitura/Savitools#416). Staging/preview/production use migrations.
+        synchronize: shouldSynchronizeSchema(config.get<string>("NODE_ENV")),
         // Same canonical list the CLI data source consumes; see
         // database/database.registry.ts.
         migrations: ALL_MIGRATIONS,
@@ -102,7 +106,7 @@ ThrottlerModule.forRootAsync({
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ThrottlerBehindProxyGuard,
     },
   ],
 })

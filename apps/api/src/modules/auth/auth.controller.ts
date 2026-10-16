@@ -19,11 +19,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import type { RedisClientType } from 'redis';
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_TTL_SECONDS,
+  AUTH_ROUTE_THROTTLE_LIMIT,
+  AUTH_ROUTE_THROTTLE_TTL_MS,
   REFRESH_TOKEN_COOKIE,
   REFRESH_TOKEN_TTL_SECONDS,
 } from './auth.constants';
@@ -39,6 +42,14 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
+/** Tighter per-IP limit for credential and reset endpoints (Savitura/Savitools#418). */
+const AUTH_ROUTE_THROTTLE = {
+  default: {
+    limit: AUTH_ROUTE_THROTTLE_LIMIT,
+    ttl: AUTH_ROUTE_THROTTLE_TTL_MS,
+  },
+} as const;
+
 type AuthRequest = FastifyRequest & { user?: { id: string; email: string } };
 
 /**
@@ -50,7 +61,8 @@ type AuthRequest = FastifyRequest & { user?: { id: string; email: string } };
  * caller cannot rotate `X-Forwarded-For` to get a fresh limiter bucket. The raw
  * header is deliberately not read here: hop 0 of a client-supplied list is
  * caller-controlled. A deployment behind a trusted proxy opts in through the
- * adapter's `trustProxy` option, which changes `req.ip` — and only that.
+ * `TRUST_PROXY` env (parsed into the adapter's `trustProxy` option), which
+ * changes `req.ip` — and only that (Savitura/Savitools#419).
  */
 export function clientAddress(req: FastifyRequest): string | undefined {
   return req.ip ?? undefined;
@@ -69,9 +81,11 @@ export class AuthController {
   // ─── Registration ─────────────────────────────────────────────────────────
 
   @Post('register')
+  @Throttle(AUTH_ROUTE_THROTTLE)
   @ApiOperation({ summary: 'Register with email and password' })
   @ApiResponse({ status: 201, description: 'Verification email sent' })
   @ApiResponse({ status: 409, description: 'Email already in use' })
+  @ApiResponse({ status: 429, description: 'Too many registration attempts from this IP' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
@@ -95,9 +109,11 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
+  @Throttle(AUTH_ROUTE_THROTTLE)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 429, description: 'Too many login attempts from this IP' })
   async login(
     @Body() dto: LoginDto,
     @Req() req: FastifyRequest,
@@ -122,9 +138,14 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(200)
+  @Throttle(AUTH_ROUTE_THROTTLE)
   @ApiOperation({ summary: 'Request a password reset email (enumeration-resistant)' })
   @ApiResponse({ status: 200, description: 'Generic response, regardless of account existence' })
-  @ApiResponse({ status: 429, description: 'Too many reset requests from this IP or email' })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Too many reset requests from this IP (Nest throttler). Per-email abuse is also capped in AuthService.',
+  })
   async forgotPassword(
     @Body() dto: ForgotPasswordDto,
     @Req() req: FastifyRequest,
@@ -134,10 +155,12 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(200)
+  @Throttle(AUTH_ROUTE_THROTTLE)
   @ApiOperation({ summary: 'Set a new password with a valid, unused, unexpired reset token' })
   @ApiResponse({ status: 200, description: 'Password updated; existing sessions revoked' })
   @ApiResponse({ status: 404, description: 'Invalid token' })
   @ApiResponse({ status: 410, description: 'RESET_TOKEN_EXPIRED' })
+  @ApiResponse({ status: 429, description: 'Too many reset attempts from this IP' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.password);
   }

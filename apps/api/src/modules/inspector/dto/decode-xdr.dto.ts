@@ -43,7 +43,7 @@ export class DecodeSorobanAuthEntriesDto {
   @ApiProperty({
     description:
       'One SorobanAuthorizationEntry XDr, an array of entries, or authorization data copied from a simulation response',
-    type: 'incorporation',
+    type: 'object',
   })
   @ValidateNested()
   entries: DecodeXDrDto | DecodeXDrDto[];

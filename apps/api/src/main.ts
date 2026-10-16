@@ -12,17 +12,31 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import { AppModule } from "./app.module";
 import { enableGracefulShutdown } from "./config/graceful-shutdown";
+import { parseTrustProxy } from "./config/trust-proxy";
 import { parseWebOrigins } from "./config/web-origins";
 import { VALIDATION_PIPE_OPTIONS } from "./config/validation-pipe.config";
 import { WebSocketCorsAdapter } from "./config/websocket-cors.adapter";
 
+/** Strict CSP for JSON/API responses. */
+const STRICT_CSP =
+  "default-src 'self';frame-ancestors 'none';object-src 'none';base-uri 'self'";
+
+/** Relaxed CSP required by Swagger UI (non-production `/api/docs` only). */
+const SWAGGER_CSP =
+  "default-src 'self';style-src 'self' 'unsafe-inline';script-src 'self' 'unsafe-inline';img-src 'self' data: validator.swagger.io;font-src 'self' data:";
+
 async function bootstrap() {
+  // trustProxy must be set at adapter construction — Fastify does not allow
+  // changing it after the server is created (Savitura/Savitools#419).
+  const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: true }),
+    new FastifyAdapter({ logger: true, trustProxy }),
   );
 
   const config = app.get(ConfigService);
@@ -37,6 +51,38 @@ async function bootstrap() {
   // One allow-list for HTTP CORS, Socket.IO CORS and the gateway check.
   const webOrigins = parseWebOrigins(config.get<string>('WEB_ORIGIN'));
   const nodeEnv = config.get<string>('NODE_ENV', 'development');
+  const isProduction = nodeEnv === 'production';
+
+  // Security headers on every response (Savitura/Savitools#417). Helmet's
+  // built-in CSP is disabled so we can apply a strict policy everywhere and
+  // relax it only for Swagger UI in non-production.
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    hsts: isProduction
+      ? { maxAge: 63_072_000, includeSubDomains: true, preload: true }
+      : false,
+  });
+
+  const docsPath = `/${prefix}/docs`;
+  /* eslint-disable @typescript-eslint/no-explicit-any -- Fastify onSend hook typing */
+  const fastifyForHeaders = app.getHttpAdapter().getInstance() as any;
+  fastifyForHeaders.addHook(
+    'onSend',
+    async (request: any, reply: any, payload: unknown) => {
+      const path = String(request.url ?? '').split('?')[0];
+      const isDocs =
+        !isProduction &&
+        (path === docsPath || path.startsWith(`${docsPath}/`));
+      if (!reply.getHeader('content-security-policy')) {
+        reply.header(
+          'Content-Security-Policy',
+          isDocs ? SWAGGER_CSP : STRICT_CSP,
+        );
+      }
+      return payload;
+    },
+  );
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   app.setGlobalPrefix(prefix, {
     exclude: [{ path: "metrics", method: RequestMethod.GET }],

@@ -1,4 +1,12 @@
-import { IsEnum, IsInType, IsOptional, IsString, IsUrl, MaxLength, MinLength, ValidateNested} from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export enum Sep24Operation {
   DEPOSIT = 'deposit',
@@ -6,7 +14,7 @@ export enum Sep24Operation {
 }
 
 export class StartSessionDto {
-  @@IsString()
+  @IsString()
   @MinLength(1)
   @MaxLength(253)
   anchorDomain!: string;
@@ -40,16 +48,14 @@ export class StartSessionDto {
   sep10Jwt?: string;
 
   @IsOptional()
-  @IsUrl({ require_tls: false })
+  @IsUrl({ require_tld: false })
   @MaxLength(2048)
   moreInfoUrl?: string;
 
   @IsOptional()
-  @IsInType()
-  @IsOptional()
+  @IsNumber()
   amount?: number;
 
   @IsOptional()
-  @ValidateNested()
   extraFields?: Record<string, string>;
 }
