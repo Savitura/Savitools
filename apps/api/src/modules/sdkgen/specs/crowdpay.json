@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "https://api.crowdpay.io"
+      "url": "https://crowdpay.up.railway.app"
     }
   ],
   "components": {

@@ -1,29 +1,62 @@
+/**
+ * Single source of truth for resolving the Horizon and Soroban RPC endpoints
+ * from environment configuration (Savitura/Savitools#315).
+ *
+ * Every consumer used to inline its own `STELLAR_HORIZON_*` / `STELLAR_RPC_*`
+ * lookups, which is how the codebase ended up with two competing mainnet keys
+ * (`STELLAR_HORIZON_PUBLIC_URL` and the older `STELLAR_HORIZON_MAINNET_URL`).
+ * Reading them through these helpers keeps the preference order identical
+ * everywhere and keeps the documented defaults in one place.
+ */
+
+/** Network vocabulary shared by the Horizon and Soroban RPC resolvers. */
+export type StellarEndpointNetwork = 'testnet' | 'public';
+
+/** Environment-style map: any missing key simply resolves to the default. */
+export type StellarEndpointEnv = Readonly<Record<string, string | undefined>>;
+
+const HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
+const HORIZON_PUBLIC_URL = 'https://horizon.stellar.org';
+const RPC_TESTNET_URL = 'https://soroban-testnet.stellar.org';
+const RPC_PUBLIC_URL = 'https://mainnet.sorobanrpc.com';
+
+/**
+ * Horizon base URL for `network`.
+ *
+ * Public (mainnet) preference order: `STELLAR_HORIZON_PUBLIC_URL`, then the
+ * legacy `STELLAR_HORIZON_MAINNET_URL`, then the Horizon.io default.
+ * Testnet reads `STELLAR_HORIZON_URL`.
+ */
 export function resolveStellarHorizonUrl(
-  config: Record<string, string | undefined>,
-  network: string = 'testnet',
+  env: StellarEndpointEnv,
+  network: StellarEndpointNetwork | string = 'testnet',
 ): string {
-  const isPublic = network === 'public' || network === 'mainnet';
-  if (isPublic) {
+  if (network === 'public' || network === 'mainnet') {
     return (
-      config.STELLAR_HORIZON_PUBLIC_URL ||
-      config.STELLAR_HORIZON_MAINNET_URL ||
-      'https://horizon.stellar.org'
+      env.STELLAR_HORIZON_PUBLIC_URL ??
+      env.STELLAR_HORIZON_MAINNET_URL ??
+      HORIZON_PUBLIC_URL
     );
   }
-  return config.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org';
+  return env.STELLAR_HORIZON_URL ?? HORIZON_TESTNET_URL;
 }
 
+/**
+ * Soroban RPC base URL for `network`.
+ *
+ * Public (mainnet) reads `STELLAR_RPC_PUBLIC_URL`, testnet reads
+ * `STELLAR_RPC_URL`.
+ */
 export function resolveStellarRpcUrl(
-  config: Record<string, string | undefined>,
-  network: string = 'testnet',
+  env: StellarEndpointEnv,
+  network: StellarEndpointNetwork | string = 'testnet',
 ): string {
-  const isPublic = network === 'public' || network === 'mainnet';
-  if (isPublic) {
+  if (network === 'public' || network === 'mainnet') {
     return (
-      config.STELLAR_RPC_PUBLIC_URL ||
-      config.STELLAR_RPC_MAINNET_URL ||
-      'https://soroban-rpc.stellar.org'
+      env.STELLAR_RPC_PUBLIC_URL ??
+      env.STELLAR_RPC_MAINNET_URL ??
+      RPC_PUBLIC_URL
     );
   }
-  return config.STELLAR_RPC_URL || 'https://soroban-rpc-testnet.stellar.org';
+  return env.STELLAR_RPC_URL ?? RPC_TESTNET_URL;
 }

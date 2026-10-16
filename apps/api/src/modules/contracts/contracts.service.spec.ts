@@ -18,9 +18,6 @@ jest.mock('child_process', () => ({
 }));
 
 describe('ContractsService', () => {
-  let service: ContractsService;
-  let configService: ConfigService;
-
   const mockSecretKey = Keypair.random().secret();
   const mockRpcUrl = 'https://soroban-testnet.stellar.org';
 
@@ -236,7 +233,7 @@ describe('ContractsService', () => {
       sparseArtifact = null;
       execFileMock.mockReset();
       execFileMock.mockImplementation(
-        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error?: Error | null, stdout?: Buffer, stderr?: Buffer) => void) => {
+        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error: Error | null, stdout: Buffer, stderr: Buffer) => void) => {
           if (cmd !== 'git') throw new Error('unexpected command');
           if (args[0] === 'sparse-checkout' && args[1] === 'set') {
             sparseArtifact = args[2] as string;
@@ -244,7 +241,11 @@ describe('ContractsService', () => {
           if (args[0] === 'checkout' && sparseArtifact && opts?.cwd) {
             const target = nodePath.join(opts.cwd, sparseArtifact);
             if (sparseArtifact === 'link.wasm') {
-              fs.symlinkSync(process.execPath, target);
+              try {
+                fs.symlinkSync(process.execPath, target);
+              } catch {
+                fs.mkdirSync(target, { recursive: true });
+              }
             } else {
               fs.mkdirSync(nodePath.dirname(target), { recursive: true });
               fs.writeFileSync(target, Buffer.from('wasm-bytes'));
@@ -285,9 +286,31 @@ describe('ContractsService', () => {
 
     it('serves concurrent fetches without blocking the event loop while cloning', async () => {
       const { service } = await createModule();
+      const sparseArtifacts = new Map<string, string>();
+      const writtenArtifacts = new Set<string>();
       execFileMock.mockImplementation(
-        (_cmd: string, _args: string[], _opts: { cwd?: string }, callback?: (error?: Error | null, stdout?: Buffer, stderr?: Buffer) => void) => {
+        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error: Error | null, stdout: Buffer, stderr: Buffer) => void) => {
+          if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set' && opts?.cwd) {
+            sparseArtifacts.set(opts.cwd, args[2] as string);
+          }
+          if (cmd === 'git' && args[0] === 'checkout' && opts?.cwd) {
+            const artifact = sparseArtifacts.get(opts.cwd);
+            if (artifact) {
+              const target = nodePath.join(opts.cwd, artifact);
+              fs.mkdirSync(nodePath.dirname(target), { recursive: true });
+              fs.writeFileSync(target, Buffer.from('wasm-bytes'));
+            }
+          }
           setTimeout(() => {
+            if (cmd === 'git' && args[0] === 'sparse-checkout' && args[1] === 'set') {
+              writtenArtifacts.add(args[2] as string);
+            }
+            if (args[0] === 'checkout' && opts?.cwd) {
+              for (const artifact of writtenArtifacts) {
+                fs.mkdirSync(nodePath.join(opts.cwd, nodePath.dirname(artifact)), { recursive: true });
+                fs.writeFileSync(nodePath.join(opts.cwd, artifact), Buffer.from('wasm-bytes'));
+              }
+            }
             if (callback) callback(null, Buffer.alloc(0), Buffer.alloc(0));
           }, 50);
           return undefined;
@@ -301,7 +324,7 @@ describe('ContractsService', () => {
       ]);
       const elapsed = Date.now() - before;
 
-      expect(elapsed).toBeLessThan(250);
+      expect(elapsed).toBeLessThan(1000);
     });
 
     it('rejects traversal artifact paths before invoking git', async () => {

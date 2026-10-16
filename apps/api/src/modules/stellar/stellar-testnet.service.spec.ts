@@ -250,6 +250,24 @@ describe('StellarTestnetService', () => {
     });
 
     it('returns the HTTP failure instead of throwing', async () => {
+      // A 4xx is the caller's own problem and is handed back as data. 404 and
+      // 5xx are escalated instead — see the next test.
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: async () => 'Malformed request',
+      });
+
+      await expect(service.requestFriendbotFunding('GTEST')).resolves.toEqual({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        body: 'Malformed request',
+      });
+    });
+
+    it('escalates a 5xx, because the cause is the endpoint rather than the request', async () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 500,
@@ -257,12 +275,22 @@ describe('StellarTestnetService', () => {
         text: async () => 'Server Error',
       });
 
-      await expect(service.requestFriendbotFunding('GTEST')).resolves.toEqual({
+      await expect(service.requestFriendbotFunding('GTEST')).rejects.toThrow(
+        /Friendbot is unavailable for network/,
+      );
+    });
+
+    it('escalates a 404 rather than reporting it as an already-funded account', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
         ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        body: 'Server Error',
+        status: 404,
+        statusText: 'Not Found',
+        text: async () => 'Not Found',
       });
+
+      await expect(service.requestFriendbotFunding('GTEST')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws when the request cannot be made at all', async () => {

@@ -26,12 +26,13 @@ SaviTools implements the following security measures:
 - **CORS**: Restricted origins via `WEB_ORIGIN` environment variable
 - **Rate Limiting**: Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL`
 - **Input Validation**: All API inputs are validated using class-validator
+- **Authenticated Signing**: Testnet wallet and sandbox payment endpoints enforce JWT authentication and rate limiting for server-side secret key signing
 
 ### Webhook Security
 
-- **HMAC-SHA256 Signing**: Outbound webhooks (Webhook Tester, contract-event replay, monitor alerts) are signed with a per-request secret or `WEBHOOK_SIGNING_SECRET`
+- **HMAC-SHA256 Signing**: Outbound webhooks are signed using implementation in `webhook/signature.ts`, `contracts/events.service.ts`, and `monitor/notification-worker.service.ts` (using per-request secrets or configured keys; note that `WebhookService` does not read `WEBHOOK_SIGNING_SECRET` directly)
 - **Timestamp Verification**: The signature covers `<timestamp>.<body>`, so a captured request cannot be replayed verbatim. Reject timestamps older than the replay window (default 300s) or more than 60s in the future
-- **Signature Header**: `X-SaviTools-Signature` with format `sha256=<hex>`, paired with `X-SaviTools-Timestamp` (integer Unix seconds)
+- **Signature Header**: `X-Webhook-Signature` with format `sha256=<hex>`, paired with `X-SaviTools-Timestamp` (integer Unix seconds)
 
 ### Authentication
 
@@ -40,7 +41,7 @@ SaviTools implements the following security measures:
 
 ### Network Security
 
-- **SSRF Protection**: Guards on outbound requests from Playground and Webhook modules
+- **SSRF Protection**: Guards on outbound requests from Playground, Webhook, and Network modules
 - **TLS**: All external API calls use HTTPS
 
 ### HTTP Security Headers (Configured in `apps/web/next.config.ts`)

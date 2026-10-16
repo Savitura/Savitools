@@ -10,8 +10,8 @@ interface ApiSelectorProps {
 }
 
 const providers: Array<{ id: PlaygroundProvider; label: string; description: string }> = [
-  { id: 'fluxa', label: 'Fluxa', description: 'Payment infrastructure API' },
-  { id: 'crowdpay', label: 'CrowdPay', description: 'Crowdfunding platform API' },
+  { id: 'fluxa', label: 'Fluxa', description: 'Payment infrastructure API (Sandbox / mock — not hosted publicly yet)' },
+  { id: 'crowdpay', label: 'CrowdPay', description: 'Crowdfunding platform API (Live at crowdpay.up.railway.app)' },
 ];
 
 export function ApiSelector({ selected, onSelect, className }: ApiSelectorProps) {

@@ -1,14 +1,20 @@
-import { SimulatorController } from './simulator.controller';
+﻿import { SimulatorController } from './simulator.controller';
 import { SimulatorService } from './simulator.service';
 import { OrderbookService } from './orderbook.service';
 import { PoolQuoteService } from './pool-quote.service';
+import { PathPaymentLabService } from './path-payment-lab.service';
 import { FindPathsDto, Direction, AssetType } from './dto/find-paths.dto';
 import { TradesQueryDto, OrderQuoteDto } from './dto/trades.dto';
 
 describe('SimulatorController', () => {
   it('passes the complete DTO to the service without manual casting or defaults', async () => {
     const service = { findPaths: jest.fn().mockResolvedValue([]) } as unknown as SimulatorService;
-    const controller = new SimulatorController(service, {} as OrderbookService, {} as PoolQuoteService);
+    const controller = new SimulatorController(
+      service,
+      {} as OrderbookService,
+      {} as PoolQuoteService,
+      {} as PathPaymentLabService,
+    );
     const dto: FindPathsDto = {
       direction: Direction.STRICT_SEND,
       source_asset_type: AssetType.NATIVE,
@@ -26,7 +32,12 @@ describe('SimulatorController', () => {
     const orderbook = {
       getTrades: jest.fn().mockResolvedValue({ trades: [], nextCursor: null }),
     } as unknown as OrderbookService;
-    const controller = new SimulatorController({} as SimulatorService, orderbook, {} as PoolQuoteService);
+    const controller = new SimulatorController(
+      {} as SimulatorService,
+      orderbook,
+      {} as PoolQuoteService,
+      {} as PathPaymentLabService,
+    );
     const query: TradesQueryDto = {
       selling: 'XLM',
       buying: 'USDC:ISSUER',
@@ -49,7 +60,12 @@ describe('SimulatorController', () => {
     const orderbook = {
       getQuote: jest.fn().mockResolvedValue({ status: 'filled' }),
     } as unknown as OrderbookService;
-    const controller = new SimulatorController({} as SimulatorService, orderbook, {} as PoolQuoteService);
+    const controller = new SimulatorController(
+      {} as SimulatorService,
+      orderbook,
+      {} as PoolQuoteService,
+      {} as PathPaymentLabService,
+    );
     const dto: OrderQuoteDto = {
       selling: 'XLM',
       buying: 'USDC:ISSUER',

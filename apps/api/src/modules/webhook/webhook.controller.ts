@@ -14,10 +14,10 @@ export class WebhookController {
   constructor(private readonly webhookService: WebhookService) {}
 
   @Get('templates')
-  @ApiOperation({ summary: 'Get available webhook templates and sample payloads' })
+  @ApiOperation({ summary: 'Get available webhook templates and sample payloads (Note: in-memory storage, lost on restart)' })
   @ApiResponse({ status: 200, description: 'List of webhook templates' })
-  getTemplates(): WebhookTemplate[] {
-    return this.webhookService.getTemplates();
+  getTemplates(@CurrentUser() user?: { id: string }): WebhookTemplate[] {
+    return this.webhookService.getTemplates(user?.id);
   }
 
   /**
@@ -38,8 +38,11 @@ export class WebhookController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Save or update a webhook template' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  saveTemplate(@Body() template: WebhookTemplate): WebhookTemplate {
-    return this.webhookService.saveTemplate(template);
+  saveTemplate(
+    @CurrentUser() user: { id: string },
+    @Body() template: WebhookTemplate,
+  ): WebhookTemplate {
+    return this.webhookService.saveTemplate(user.id, template);
   }
 
   @Post('send')
@@ -56,7 +59,7 @@ export class WebhookController {
 
   @Get('history')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get recent webhook execution history' })
+  @ApiOperation({ summary: 'Get recent webhook execution history (Note: in-memory storage, not shared across replicas)' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   getHistory(@CurrentUser() user: { id: string }): WebhookHistoryEntry[] {
     return this.webhookService.getHistory(user.id);
