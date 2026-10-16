@@ -234,7 +234,10 @@ function listSourceFiles(): SourceFile[] {
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
       const absolute = join(directory, entry.name);
-      files.push({ path: relative(SRC_ROOT, absolute), source: readFileSync(absolute, 'utf8') });
+      files.push({
+        path: relative(SRC_ROOT, absolute).replace(/\\/g, '/'),
+        source: readFileSync(absolute, 'utf8'),
+      });
     }
   };
   walk(SRC_ROOT);

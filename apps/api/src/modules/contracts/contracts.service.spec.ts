@@ -236,7 +236,7 @@ describe('ContractsService', () => {
       sparseArtifact = null;
       execFileMock.mockReset();
       execFileMock.mockImplementation(
-        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error?: Error | null) => void) => {
+        (cmd: string, args: string[], opts?: { cwd?: string }, callback?: (error?: Error | null, stdout?: Buffer, stderr?: Buffer) => void) => {
           if (cmd !== 'git') throw new Error('unexpected command');
           if (args[0] === 'sparse-checkout' && args[1] === 'set') {
             sparseArtifact = args[2] as string;
@@ -286,7 +286,7 @@ describe('ContractsService', () => {
     it('serves concurrent fetches without blocking the event loop while cloning', async () => {
       const { service } = await createModule();
       execFileMock.mockImplementation(
-        (_cmd: string, _args: string[], _opts: { cwd?: string }, callback?: (error?: Error | null) => void) => {
+        (_cmd: string, _args: string[], _opts: { cwd?: string }, callback?: (error?: Error | null, stdout?: Buffer, stderr?: Buffer) => void) => {
           setTimeout(() => {
             if (callback) callback(null, Buffer.alloc(0), Buffer.alloc(0));
           }, 50);

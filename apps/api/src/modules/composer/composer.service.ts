@@ -227,10 +227,10 @@ export const OPERATION_MANIFEST = [
 
 export interface SimulationResult {
   success: boolean;
-  hash: string;
+  hash: string | null;
   fee: string | null;
   resultCodes: string | null;
-  operationResults: unknown | null;
+  operationResults: string[] | null;
   ledger: number | null;
 }
 
@@ -301,6 +301,19 @@ function validatePoolAmount(field: string, value: unknown, allowZero = false): s
 }
 
 function validatePriceRatio(field: string, value: any): { n: number; d: number } {
+  if (typeof value === 'string' || typeof value === 'number') {
+    const str = String(value);
+    if (!/^\d+(?:\.\d+)?$/.test(str)) {
+      throw new BadRequestException(`${field} numerator and denominator must be positive integers`);
+    }
+    const parts = str.split('.');
+    if (parts.length === 1) {
+      return { n: Number(parts[0]), d: 1 };
+    }
+    const d = Math.pow(10, parts[1].length);
+    const n = Math.round(Number(str) * d);
+    return { n, d };
+  }
   const numerator = String(value?.n ?? '');
   const denominator = String(value?.d ?? '');
   if (!/^\d+$/.test(numerator) || !/^\d+$/.test(denominator)) {
@@ -557,7 +570,9 @@ export class ComposerService {
     }
   }
 
-  async simulateTransaction(dto: SimulateTransactionDto) {
+  async simulateTransaction(
+    dto: SimulateTransactionDto,
+  ): Promise<SimulationResult> {
     try {
       const cacheKey = `${dto.network || 'testnet'}:${dto.xdr}`;
       const now = Date.now();

@@ -74,7 +74,13 @@ export function SignSubmitDialog({
     }
   };
 
+  const isMainnet = network === 'mainnet';
+
   const handleWalletSignAndSubmit = async () => {
+    if (isMainnet) {
+      setError('Mainnet signing is disabled. SaviTools is locked to testnet.');
+      return;
+    }
     setSigning(true);
     setError(null);
     try {
@@ -98,6 +104,10 @@ export function SignSubmitDialog({
   };
 
   const handleSecretSignAndSubmit = async () => {
+    if (isMainnet) {
+      setError('Mainnet signing is disabled. SaviTools is locked to testnet.');
+      return;
+    }
     if (!secretKey.trim()) {
       setError('Secret key is required');
       return;
@@ -120,6 +130,7 @@ export function SignSubmitDialog({
   const handleSignAndSubmit = mode === 'wallet' ? handleWalletSignAndSubmit : handleSecretSignAndSubmit;
 
   const signDisabled =
+    isMainnet ||
     signing ||
     (mode === 'wallet'
       ? (!walletAddress && !connectingWallet)
@@ -176,6 +187,16 @@ export function SignSubmitDialog({
               <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
               <p className="text-xs text-amber-300 leading-relaxed">
                 Your secret key is used locally and <strong>never sent to any server</strong>. Signing happens entirely in your browser.
+              </p>
+            </div>
+          )}
+
+          {/* Mainnet lock warning */}
+          {isMainnet && (
+            <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-300 leading-relaxed">
+                <strong>Mainnet signing is disabled.</strong> SaviTools is locked to testnet. Switch network to testnet to sign and submit transactions.
               </p>
             </div>
           )}

@@ -19,6 +19,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Check for unresolved merge conflicts
+        run: |
+          if git grep -n -E '^<<<<<<<|^>>>>>>>'; then
+            echo "::error::Unresolved merge conflict markers detected in tracked files"
+            exit 1
+          fi
       - run: npx turbo lint
       - run: npx tsc --noEmit --project apps/api/tsconfig.json
       - run: npx tsc --noEmit --project apps/web/tsconfig.json

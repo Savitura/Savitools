@@ -2,32 +2,47 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-**A developer workstation for building on Stellar.**
+**Fluxa's Developer Console & Workstation for building on Stellar.**
 
-SaviTools is a standalone product in the [Savitura](https://savitura.com) ecosystem. It gives developers the tools they need to build, test, and debug Stellar-based payment applications — without needing a terminal, Rust toolchain, or deep protocol knowledge.
+SaviTools is the official developer console in the [Savitura](https://savitura.com) ecosystem, purpose-built for [Fluxa](https://github.com/Savitura/Fluxa) payment infrastructure. It provides interactive API playgrounds, webhook testing, SDK generation, and SEP debugging against hosted sandboxes — without needing a terminal, Rust toolchain, or deep protocol knowledge.
 
-> **Status**: Active development — testnet only.
+> **Live Deployment (Testnet Only)**: [https://savitools.savitura.com](https://savitools.savitura.com)  
+> **Live API**: [https://savitools-api.savitura.com](https://savitools-api.savitura.com)  
+> **Status**: Public testnet preview. Mainnet signing is strictly locked out across all tools (Composer, Wallet Sandbox, and API).
 
 ---
 
+## Strategic Focus: Fluxa Developer Console
+
+To avoid surface-area duplication with the official, free [Stellar Lab](https://developers.stellar.org/docs/tools/lab), SaviTools focuses strictly on serving as **Fluxa's Developer Console**. Core focus is placed on SEP-10/24 debugging, webhook testing, API playground, and SDK generation against the hosted Fluxa sandbox. Generic protocol tools that overlap with Stellar Lab are frozen. Feature requests expanding Lab overlap (e.g. #75) are closed / labelled `wontfix/stellar-lab-overlap`.
+
 ## Tools
 
-| Tool                      | What it does                                                                          | Status |
-| ------------------------- | ------------------------------------------------------------------------------------- | ------ |
-| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR into a human-readable breakdown       | MVP    |
-| **Wallet Sandbox**        | Generate testnet keypairs, fund via Friendbot, send test payments                     | MVP    |
-| **Transaction Composer**  | Visual builder for multi-operation Stellar transactions; sign and submit without code | MVP    |
-| **Payment Simulator**     | Find path payment routes between assets; preview hops, rates, and fees                | MVP    |
-| **Webhook Tester**        | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response  | MVP    |
-| **Ledger Monitor**        | Watch a Stellar address or contract for live activity; set threshold alerts           | MVP    |
-| **API Playground**        | Interactive request builder for Fluxa and CrowdPay APIs                               | MVP    |
-| **Contract Deployer**     | Upload and deploy Soroban WASM files to testnet from the browser                      | MVP    |
-| **SDK Generator**         | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints  | MVP     |
-| **Network Status**        | Live Stellar network health: ledger close time, fee tracker, Horizon latency          | MVP     |
-| **Federation & TOML**     | Resolve federation addresses, inspect stellar.toml files, check SEP compliance        | MVP    |
-| **Order Book**            | Live DEX order book, spread analytics, and liquidity depth chart for any asset pair   | MVP    |
-| **Account Graph**         | Visualize signer networks, offers, and payment relationships with a force-directed graph | MVP |
-| **Contract Events**       | Decode, filter, and replay Soroban contract events from raw ScVal XDR                 | MVP    |
+### Fluxa Developer Console & Core Workstations
+
+| Tool | What it does | Status |
+| --- | --- | --- |
+| **API Playground** | Interactive request builder for Fluxa and CrowdPay APIs | Active (Core) |
+| **Webhook Tester** | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response | Active (Core) |
+| **SDK Generator** | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints | Active (Core) |
+| **Federation & TOML** | Resolve federation addresses, inspect stellar.toml files, check SEP compliance (SEP-10/24) | Active (Core) |
+| **Wallet Sandbox** | Generate testnet keypairs, fund via Friendbot, send test payments (testnet-locked) | Active |
+| **Payment Simulator** | Find path payment routes between assets; preview hops, rates, and fees | Active |
+| **Ledger Monitor** | Watch a Stellar address or contract for live activity; set threshold alerts | Active |
+| **Network Status** | Live Stellar network health: ledger close time, fee tracker, Horizon latency | Active |
+
+### Frozen Tools (Stellar Lab Overlap)
+
+The following tools duplicate capabilities provided natively by official [Stellar Lab](https://developers.stellar.org/docs/tools/lab). They remain functional in testnet MVP but are frozen to prioritize Fluxa and CrowdPay:
+
+| Tool | What it does | Status | Alternative |
+| --- | --- | --- | --- |
+| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR | Frozen (MVP) | [Stellar Lab View XDR](https://developers.stellar.org/docs/tools/lab) |
+| **Transaction Composer** | Visual builder for multi-operation Stellar transactions | Frozen (MVP, Testnet-only) | [Stellar Lab Build Tx](https://developers.stellar.org/docs/tools/lab) |
+| **Contract Deployer** | Upload and deploy Soroban WASM files to testnet | Frozen (MVP) | Stellar CLI / Lab |
+| **Order Book** | Live DEX order book and spread analytics | Frozen (MVP) | Stellar.expert / Lab |
+| **Account Graph** | Visualize signer networks, offers, and payment relationships | Frozen (MVP) | Stellar.expert |
+| **Contract Events** | Decode, filter, and replay Soroban contract events from ScVal XDR | Frozen (MVP) | Stellar RPC / Lab |
 
 ---
 
@@ -229,19 +244,17 @@ docker compose up -d     # Postgres + Redis (docker-compose.yml)
 Postgres and Redis are published on **loopback only** (`127.0.0.1`); change
 `POSTGRES_PORT` / `REDIS_PORT` in the root `.env` if either port is taken.
 
-#### Two compose files
+#### Compose files & Hosting options
 
-- `docker-compose.yml` - Postgres + Redis only. Start it with
-  `docker compose up -d` (this step) or `make infra`.
-- `docker-compose.dev.yml` - Postgres + Redis **plus** the `api` and `web`
-  containers. Start it with `make dev`.
-
-Use the second one when you want the whole stack in Docker instead of running
-the apps on the host in step 4:
+- `docker-compose.yml` - Postgres + Redis only for local host development. Start with `docker compose up -d` or `make infra`.
+- `docker-compose.dev.yml` - Full local dev stack in Docker (`make dev`).
+- `docker-compose.prod.yml` - Production stack locked to testnet (`docker compose -f docker-compose.prod.yml up -d`).
+- `render.yaml` - Declarative blueprint for one-click deployment on Render (or compatible cloud platforms) running `apps/web/Dockerfile` and `apps/api/Dockerfile` with managed PostgreSQL and Redis.
 
 ```bash
 make dev                                            # full stack in Docker
 docker compose -f docker-compose.dev.yml config -q   # validate without starting
+docker compose -f docker-compose.prod.yml config -q  # validate production config
 ```
 
 It caches `node_modules` in named volumes, parameterises every published port,

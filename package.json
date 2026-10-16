@@ -1,6 +1,7 @@
 {
   "name": "savitools",
   "version": "0.1.0",
+  "homepage": "https://savitools.savitura.com",
   "private": true,
   "workspaces": [
     "apps/*"
