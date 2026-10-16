@@ -20,8 +20,8 @@ jobs:
 
       - run: npm ci
       - run: npx turbo lint
-      - run: npx tsc --noEmit --project apps/api/tsconfig.json
-      - run: npx tsc --noEmit --project apps/web/tsconfig.json
+      - run: npx turbo typecheck
+      - run: npm run format:check
 
   build:
     name: Build
