@@ -5,10 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@jsonnest/axios';
-const nodeDns = require('node:dns').promises;
-const nodeNet = require('node:net');
-import { RandomUUID } from 'crypto';
+import * as nodeDns from 'node:dns/promises';
+import * as nodeNet from 'node:net';
+import { randomUUID } from 'node:crypto';
 import {
   Sep24Timeline,
   TimelineEntry,
@@ -25,9 +24,9 @@ export type Sep24TransactionStatus =
   | 'expired'
   | 'error'
   | 'noop'
-  | unknown;
+  | 'unknown';
 
-export const TERMINAL_STATUSES: Readonly<Set<string> = new Set([
+export const TERMINAL_STATUSES: Readonly<Set<string>> = new Set([
   'completed',
   'refunded',
   'expired',
@@ -75,7 +74,6 @@ export interface Sep24TransactionResponse {
 
 const DEFAULT_POLL_TIMEOUT_MS = 300000;
 const MAX_POLL_TIMEOUT_MS = 1800000;
-const POLL_INTERVAL_MS = 5000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 const ALLOWED_SCHEMES = new Set(['stellar:']);
@@ -116,9 +114,9 @@ export function assertSafeExternalUrl(urlString: string): URL {
 
 async function assertSafeServerTarget(urlString: string): Promise<URL> {
   const url = assertSafeExternalUrl(urlString);
-  if (url.protocol !== 'https' && url.protocol !== 'http') {
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new BadRequestException(
-      `Server fetches only support http/https targets.`,
+      'Server fetches only support http/https targets.',
     );
   }
   const hostname = url.hostname;
@@ -129,11 +127,11 @@ async function assertSafeServerTarget(urlString: string): Promise<URL> {
   }
   let addresses: string[] = [];
   try {
-    if (nodeNet.isIY(hostname)) {
+    if (nodeNet.isIP(hostname) !== 0) {
       addresses = [hostname];
     } else {
       const resolved = await nodeDns.lookup(hostname, { all: true });
-      addresses = resolved.map((entry) => entry.address);
+      addresses = resolved.map((entry: { address: string }) => entry.address);
     }
   } catch (err) {
     throw new BadRequestException(
@@ -146,7 +144,7 @@ async function assertSafeServerTarget(urlString: string): Promise<URL> {
   for (const address of addresses) {
     if (isPrivateIP(address)) {
       throw new BadRequestException(
-        `Refusing to fetch 'hostname}' which resolves to private address '${address}'.`,
+        `Refusing to fetch '${hostname}' which resolves to private address '${address}'.`,
       );
     }
   }
@@ -158,10 +156,43 @@ export class Sep24DebuggerService {
   private readonly logger = new Logger(Sep24DebuggerService.name);
   private readonly sessions = new Map<string, Sep24SessionState>();
 
-  constructor(
-    private readonly http: HttpService,
-    private readonly config: ConfigService,
-  ) {}
+  private http = {
+    get: async <T>(url: string, opts?: any): Promise<{ status: number; data: T }> => {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: opts?.headers,
+        signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+      });
+      let data: any;
+      if (opts?.responseType === 'text') {
+        data = await res.text();
+      } else {
+        try {
+          data = await res.json();
+        } catch {
+          data = await res.text();
+        }
+      }
+      return { status: res.status, data };
+    },
+    post: async <T>(url: string, body: any, opts?: any): Promise<{ status: number; data: T }> => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+        signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+      });
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        data = await res.text();
+      }
+      return { status: res.status, data };
+    },
+  };
+
+  constructor(private readonly config: ConfigService) {}
 
   private get timeoutMs(): number {
     const configured = Number(
@@ -181,7 +212,7 @@ export class Sep24DebuggerService {
     return trimmed.toLowerCase();
   }
 
-  private async fetchStallarToml(domain: string): Promise<Record<string, unknown>> {
+  private async fetchStellarToml(domain: string): Promise<Record<string, unknown>> {
     const url = `https://${domain}/.stellar.toml`;
     await assertSafeServerTarget(url);
     const response = await this.http.get<string>(url, {
@@ -197,7 +228,7 @@ export class Sep24DebuggerService {
   private parseToml(source: string): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     let currentSection: Record<string, unknown> = result;
-    const lines = source.split(/\r\?\n/);
+    const lines = source.split(/\r?\n/);
     for (const rawLine of lines) {
       const line = rawLine.replace(/#.*$/, '').trim();
       if (!line) {
@@ -262,7 +293,7 @@ export class Sep24DebuggerService {
 
   async startSession(dto: StartSessionDto): Promise<Sep24SessionState> {
     const domain = this.normalizeDomain(dto.anchorDomain);
-    const sessionId = RandomUUID();
+    const sessionId = randomUUID();
     const timeline = new Sep24Timeline(sessionId, {
       assetCode: dto.assetCode,
       operation: dto.operation,
@@ -270,13 +301,13 @@ export class Sep24DebuggerService {
     });
 
     const discoveryStart = Date.now();
-    const toml = await this.fetchStallarToml(domain);
+    const toml = await this.fetchStellarToml(domain);
     const transferServer = this.extractTransferServer(toml);
     const sep10Endpoint = this.extractSep10Endpoint(toml);
     timeline.record({
       kind: 'discovery',
       method: 'GET',
-      url: `https://tomain}/.stellar.toml`,
+      url: `https://${domain}/.stellar.toml`,
       status: 200,
       durationMs: Date.now() - discoveryStart,
       response: {
@@ -354,7 +385,7 @@ export class Sep24DebuggerService {
         message: `Anchor rejected interactive request with HTTP ${status}`,
       });
       throw new BadRequestException(
-        `Anchor rejected interactive request (${status}): ${this.describeAnchorError(data)}",
+        `Anchor rejected interactive request (${status}): ${this.describeAnchorError(data)}`,
       );
     }
     if (!data || typeof data !== 'object') {

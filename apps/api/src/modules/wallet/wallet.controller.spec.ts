@@ -226,7 +226,7 @@ describe('WalletController', () => {
 });
 
 describe('WalletController validation and auth guards', () => {
-  let controller: WalletController;
+  let _controller: WalletController;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -253,7 +253,7 @@ describe('WalletController validation and auth guards', () => {
       .useValue({ canActivate: () => true })
       .compile();
 
-    controller = module.get<WalletController>(WalletController);
+    _controller = module.get<WalletController>(WalletController);
   });
 
   describe('BalancesDto validation', () => {

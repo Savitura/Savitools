@@ -259,6 +259,21 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/inspector/auth-entry",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/auth-entry/export",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/auth-entry/inspect",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/inspector/decode-xdr",
       "auth": "public"
     },
@@ -276,6 +291,41 @@
       "method": "GET",
       "path": "/api/v1/inspector/tx/:hash/export",
       "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ledger-close/stats",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/details",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/search",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/share-value",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/unwatch",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/watch",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/watched",
+      "auth": "jwt"
     },
     {
       "method": "POST",
@@ -495,7 +545,7 @@
     {
       "method": "POST",
       "path": "/api/v1/sandbox/payment",
-      "auth": "public"
+      "auth": "jwt"
     },
     {
       "method": "POST",
@@ -505,6 +555,66 @@
     {
       "method": "POST",
       "path": "/api/v1/sdkgen/generate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/exchange-token",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/fetch-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/sign-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/validate-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep24/debugger/sessions",
+      "auth": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/sep24/debugger/sessions/:id",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sep24/debugger/sessions/:id/export",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep24/debugger/sessions/:id/poll",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sep24/debugger/sessions/:id/timeline",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sequence-planner/account-sequence",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sequence-planner/plan",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sequence-planner/validate-sequence",
       "auth": "public"
     },
     {
@@ -575,6 +685,46 @@
     {
       "method": "GET",
       "path": "/api/v1/soroban-rpc/methods/:method",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/compare",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/create-typed-key",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/soroban-storage/durability-info",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/query",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/format",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/parse",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stellar-toml/template",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/validate",
       "auth": "public"
     },
     {
@@ -660,7 +810,7 @@
     {
       "method": "POST",
       "path": "/api/v1/wallet/payment",
-      "auth": "public"
+      "auth": "jwt"
     },
     {
       "method": "GET",

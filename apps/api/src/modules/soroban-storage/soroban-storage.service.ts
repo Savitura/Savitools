@@ -2,16 +2,13 @@ import {
   Injectable,
   BadRequestException,
   Logger,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
 import {
-  SorobanRpc,
+  rpc as SorobanRpc,
   nativeToScVal,
   scValToNative,
   xdr,
   Address,
-  Contract,
   StrKey,
 } from '@stellar/stellar-sdk';
 import { StorageQueryDto } from './dto/storage-query.dto';
@@ -84,7 +81,7 @@ export class SorobanStorageService {
   private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private readonly storageCache = new Map<string, { data: any; timestamp: number }>();
 
-  private readonly DEFAULT_RPC_ENDPOINTS = {
+  private readonly DEFAULT_RPC_ENDPOINTS: Record<string, string> = {
     testnet: 'https://soroban-testnet.stellar.org',
     mainnet: 'https://soroban-mainnet.stellar.org',
   };
@@ -243,7 +240,7 @@ export class SorobanStorageService {
           break;
         
         case 'instance':
-          scVal = xdr.ScVal.scvInstance(xdr.ScInstanceType.scInstanceTypeContract());
+          scVal = xdr.ScVal.scvLedgerKeyContractInstance();
           break;
         
         case 'u32':
@@ -418,15 +415,33 @@ export class SorobanStorageService {
       };
 
       // Parse the value
-      const valueXdr = xdr.LedgerEntryData.fromXDR(ledgerEntry.xdr, 'base64');
+      const rawEntry = ledgerEntry as any;
+      let valueXdr: any = rawEntry.val;
+      if (rawEntry.xdr && typeof rawEntry.xdr === 'string') {
+        try {
+          valueXdr = xdr.LedgerEntryData.fromXDR(rawEntry.xdr, 'base64');
+        } catch {
+          try {
+            valueXdr = xdr.ScVal.fromXDR(rawEntry.xdr, 'base64');
+          } catch {
+            // keep valueXdr as-is
+          }
+        }
+      }
       let value: any = { xdr: '', decoded: null, type: 'unknown' };
       
-      if (valueXdr.contractData && valueXdr.contractData().val) {
+      if (valueXdr?.contractData && typeof valueXdr.contractData === 'function' && valueXdr.contractData()?.val) {
         const val = valueXdr.contractData().val();
         value = {
           xdr: val.toXDR('base64'),
           decoded: scValToNative(val),
           type: this.getScValTypeName(val),
+        };
+      } else if (valueXdr && typeof valueXdr.toXDR === 'function') {
+        value = {
+          xdr: valueXdr.toXDR('base64'),
+          decoded: scValToNative(valueXdr),
+          type: this.getScValTypeName(valueXdr),
         };
       }
 

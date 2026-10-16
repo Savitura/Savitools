@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export interface ScValArgumentDto {
   type: 'Address' | 'Bool' | 'Bytes' | 'I32' | 'I64' | 'I128' | 'I256' | 'String' | 'Symbol' | 'U32' | 'U64' | 'U128' | 'U256' | 'Vec' | 'Map';

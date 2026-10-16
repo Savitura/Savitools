@@ -1,5 +1,6 @@
 import { WalletService } from './wallet.service';
 import { BadRequestException } from '@nestjs/common';
+import { Keypair } from '@stellar/stellar-sdk';
 
 describe('WalletService', () => {
   let service: WalletService;
@@ -24,7 +25,6 @@ describe('WalletService', () => {
     });
 
     it('public key corresponds to secret key', () => {
-      const { Keypair } = require('@stellar/stellar-sdk');
       const keypair = service.generateKeypair();
 
       const reconstructed = Keypair.fromSecret(keypair.secretKey);
@@ -32,7 +32,6 @@ describe('WalletService', () => {
     });
 
     it('zeros raw secret key buffer on keypair generation', () => {
-      const { Keypair } = require('@stellar/stellar-sdk');
       const originalRandom = Keypair.random;
       const raw = Buffer.alloc(32, 1);
 
@@ -92,7 +91,6 @@ describe('WalletService', () => {
     });
 
     it('throws on short destination key', async () => {
-      const { Keypair } = require('@stellar/stellar-sdk');
       const kp = Keypair.random();
 
       await expect(
@@ -101,7 +99,6 @@ describe('WalletService', () => {
     });
 
     it('throws on zero amount', async () => {
-      const { Keypair } = require('@stellar/stellar-sdk');
       const kp = Keypair.random();
       const dest = Keypair.random().publicKey();
 
@@ -111,7 +108,6 @@ describe('WalletService', () => {
     });
 
     it('throws on invalid asset format', async () => {
-      const { Keypair } = require('@stellar/stellar-sdk');
       const kp = Keypair.random();
       const dest = Keypair.random().publicKey();
 

@@ -7,12 +7,7 @@ import {
   Transaction,
   Keypair,
   Networks,
-  StrKey,
-  xdr,
   Operation,
-  Account,
-  Memo,
-  MemoType,
 } from '@stellar/stellar-sdk';
 import axios, { AxiosError } from 'axios';
 import { ChallengeRequestDto } from './dto/challenge-request.dto';
@@ -362,7 +357,7 @@ export class Sep10DebuggerService {
     };
 
     // Parse memo
-    if (transaction.memo && transaction.memo.type !== MemoType.MemoNone) {
+    if (transaction.memo && transaction.memo.type !== 'none') {
       challenge.memo = {
         type: transaction.memo.type,
         value: transaction.memo.value?.toString(),
@@ -400,7 +395,7 @@ export class Sep10DebuggerService {
     return challenge;
   }
 
-  private validateChallengeStructure(challenge: ChallengeDetails, request: ChallengeRequestDto): ValidationCheck[] {
+  private validateChallengeStructure(challenge: ChallengeDetails, _request: ChallengeRequestDto): ValidationCheck[] {
     const checks: ValidationCheck[] = [];
 
     // Check for manage_data operation

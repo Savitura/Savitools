@@ -1,5 +1,4 @@
-import { Type } from 'class-transformer';
-import { IsEnum, IsISO8601, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsISO8601, IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export type StellarNetwork = 'mainnet' | 'testnet';

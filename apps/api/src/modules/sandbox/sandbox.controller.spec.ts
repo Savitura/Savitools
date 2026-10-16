@@ -5,8 +5,11 @@ import { PaymentDto } from './dto/payment.dto';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ThrottlerGuard } from '@nestjs/throttler';
+
 describe('SandboxController validation', () => {
-  let controller: SandboxController;
+  let _controller: SandboxController;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -22,9 +25,14 @@ describe('SandboxController validation', () => {
           },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
-    controller = module.get<SandboxController>(SandboxController);
+    _controller = module.get<SandboxController>(SandboxController);
   });
 
   describe('PaymentDto validation in Sandbox', () => {

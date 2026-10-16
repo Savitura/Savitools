@@ -446,6 +446,15 @@ export class InspectorService {
     };
   }
 
+  inspectAuthEntries(dto: { xdr: any; ledger?: number }): AuthorizationEntryInspection {
+    return this.inspectAuthorizationEntries(dto.xdr, dto.ledger);
+  }
+
+  exportAuthEntries(dto: { xdr: any; ledger?: number }): SanitizedAuthorizationEntry {
+    const inspection = this.inspectAuthorizationEntries(dto.xdr, dto.ledger);
+    return this.sanitizeAuthorizationEntries(inspection);
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private collectAuthorizationEntryXdr(

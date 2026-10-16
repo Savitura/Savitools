@@ -30,8 +30,8 @@ export class InspectorController {
   @Header('Content-Type', 'text/csv; charset=utf-8')
   async exportTransaction(
     @Param('hash') hash: string,
-    @Res({ pasthrough: true }) reply: FastifyReply,
-    Query('network') network?: 'testnet' | 'mainnet',
+    @Res({ passthrough: true }) reply: FastifyReply,
+    @Query('network') network?: 'testnet' | 'mainnet',
   ) {
     const breakdown = await this.inspectorService.inspectTransaction(
       hash,
@@ -55,8 +55,8 @@ export class InspectorController {
   getTransactionEvents(
     @Param('hash') hash: string,
     @Query('network') network?: 'testnet' | 'mainnet',
-    Query('contractId') contractId?: string,
-    Query('eventName') eventName?: string,
+    @Query('contractId') contractId?: string,
+    @Query('eventName') eventName?: string,
   ) {
     return this.inspectorService.getTransactionEvents(hash, network ?? 'testnet', {
       contractId,
@@ -64,7 +64,7 @@ export class InspectorController {
     });
   }
 
-  /** Alias matching issue path shape: GET /api/v1/inspector(:txHash/events */
+  /** Alias matching issue path shape: GET /api/v1/inspector/:txHash/events */
   @Get(':txHash/events')
   @ApiOperation({ summary: 'Alias for tx/:hash/events' })
   @ApiParam({ name: 'txHash', description: 'Transaction hash (64 hex chars)' })
@@ -74,8 +74,8 @@ export class InspectorController {
   getTransactionEventsAlias(
     @Param('txHash') txHash: string,
     @Query('network') network?: 'testnet' | 'mainnet',
-    Query('contractId') contractId?: string,
-    Query('eventName') eventName?: string,
+    @Query('contractId') contractId?: string,
+    @Query('eventName') eventName?: string,
   ) {
     return this.inspectorService.getTransactionEvents(txHash, network ?? 'testnet', {
       contractId,
@@ -102,7 +102,7 @@ export class InspectorController {
 
   @Post('auth-entry')
   @ApiOperation({
-    summary: 'Inspect Soroban authorization entries (credential + invocation tree',
+    summary: 'Inspect Soroban authorization entries (credential + invocation tree)',
   })
   inspectAuthEntry(@Body() dto: InspectAuthEntryDto) {
     return this.inspectorService.inspectAuthEntries(dto);
