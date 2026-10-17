@@ -1,6 +1,7 @@
 {
   "name": "savitools",
   "version": "0.1.0",
+  "homepage": "https://savitools.savitura.com",
   "private": true,
   "workspaces": [
     "apps/*"
@@ -9,8 +10,11 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\""
   },
   "devDependencies": {

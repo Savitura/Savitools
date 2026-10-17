@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  BadGatewayException,
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -1908,13 +1907,14 @@ export class FederationService {
             break;
           }
 
+          const parsedAny = parsed as Record<string, any>;
           const status =
-            typeof parsed.transaction?.status === 'string'
-              ? (parsed.transaction.status as string)
-              : typeof parsed.status === 'string'
-                ? (parsed.status as string)
+            typeof parsedAny?.transaction?.status === 'string'
+              ? (parsedAny.transaction.status as string)
+              : typeof parsedAny?.status === 'string'
+                ? (parsedAny.status as string)
                 : null;
-          const tx = (parsed.transaction as Record<string, unknown>) ?? parsed;
+          const tx = (parsedAny?.transaction as Record<string, unknown>) ?? parsedAny;
           moreInfoUrl =
             typeof tx.more_info_url === 'string' ? tx.more_info_url : moreInfoUrl;
           requiredFields =

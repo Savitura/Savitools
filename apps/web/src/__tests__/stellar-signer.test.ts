@@ -8,6 +8,7 @@ import {
   isWalletAvailable,
   requestWalletAccess,
   signWithWallet,
+  signTransactionXdr,
   WalletError,
 } from '@/lib/stellar-signer';
 import { submitSignedTransaction, submitToHorizon } from '@/lib/composer-api';
@@ -157,6 +158,27 @@ describe('browser-wallet signing (Savitura/Savitools#198)', () => {
       code: 'UNSUPPORTED',
       message: expect.stringMatching(/not installed/i),
     });
+  });
+
+  it('rejects wallet signing on mainnet with testnet lock error', async () => {
+    const source = Keypair.random();
+    const xdr = buildTestnetTransaction(source.publicKey());
+
+    await expect(
+      signWithWallet(xdr, {
+        networkPassphrase: Networks.PUBLIC,
+        expectedSourceAccount: source.publicKey(),
+      }),
+    ).rejects.toThrow('Mainnet signing is disabled. SaviTools is locked to testnet.');
+  });
+
+  it('rejects secret-key signing on mainnet with testnet lock error', async () => {
+    const source = Keypair.random();
+    const xdr = buildTestnetTransaction(source.publicKey());
+
+    await expect(
+      signTransactionXdr(xdr, source.secret(), 'mainnet'),
+    ).rejects.toThrow('Mainnet signing is disabled. SaviTools is locked to testnet.');
   });
 });
 

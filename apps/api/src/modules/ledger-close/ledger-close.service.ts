@@ -122,13 +122,12 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      const latestLedger = latestLedgersPage.records[0];
-      const closeTime = new Date(latestLedger.closed_at).getTime();
+      const latestLedger = latestLedgersPage.records[0] as any;
+      const _closeTime = new Date(latestLedger.closed_at).getTime();
       const latencyMs = Date.now() - startedAt;
 
-      const closeTimeSeconds = parseFloat(
-        (latestLedger.closing_time / 1000).toFixed(2),
-      );
+      const rawClosingTime = typeof latestLedger.closing_time === 'number' ? latestLedger.closing_time : 0;
+      const closeTimeSeconds = parseFloat((rawClosingTime / 1000).toFixed(2));
 
       await this.ledgerCloseStatRepository.save(
         this.ledgerCloseStatRepository.create({
@@ -140,8 +139,8 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
           p50LatencyMs: null,
           p95LatencyMs: null,
           p99LatencyMs: null,
-          transactionCount: latestLedger.transaction_count,
-          operationCount: latestLedger.operation_count,
+          transactionCount: typeof latestLedger.transaction_count === 'number' ? latestLedger.transaction_count : (latestLedger.successful_transaction_count ?? 0),
+          operationCount: typeof latestLedger.operation_count === 'number' ? latestLedger.operation_count : 0,
           sampledAt: new Date(),
         }),
       );
@@ -246,11 +245,11 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
       closeTime: stat.closeTime.toISOString(),
       closeTimeSeconds: stat.closeTimeSeconds,
       latencyMs: stat.latencyMs,
-      p50LatencyMs: stat.p50LatencyMs,
-      p95LatencyMs: stat.p95LatencyMs,
-      p99LatencyMs: stat.p99LatencyMs,
-      transactionCount: stat.transactionCount,
-      operationCount: stat.operationCount,
+      p50LatencyMs: stat.p50LatencyMs ?? undefined,
+      p95LatencyMs: stat.p95LatencyMs ?? undefined,
+      p99LatencyMs: stat.p99LatencyMs ?? undefined,
+      transactionCount: stat.transactionCount ?? undefined,
+      operationCount: stat.operationCount ?? undefined,
       sampledAt: stat.sampledAt.toISOString(),
     };
   }

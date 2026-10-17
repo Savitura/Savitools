@@ -237,7 +237,10 @@ function listSourceFiles(): SourceFile[] {
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
       const absolute = join(directory, entry.name);
-      files.push({ path: relative(SRC_ROOT, absolute), source: readFileSync(absolute, 'utf8') });
+      files.push({
+        path: relative(SRC_ROOT, absolute).replace(/\\/g, '/'),
+        source: readFileSync(absolute, 'utf8'),
+      });
     }
   };
   walk(SRC_ROOT);
@@ -399,25 +402,6 @@ const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
   'GET /api/v1/shared/composer/:param',
   'POST /api/v1/composer/fee-bump/inspect',
-  'POST /api/v1/sep10/fetch-challenge',
-  'POST /api/v1/sep10/validate-challenge',
-  'POST /api/v1/sep10/sign-challenge',
-  'POST /api/v1/sep10/exchange-token',
-  'POST /api/v1/sequence-planner/plan',
-  'POST /api/v1/sequence-planner/validate-sequence',
-  'GET /api/v1/soroban-storage/durability-info',
-  'POST /api/v1/soroban-storage/query',
-  'POST /api/v1/soroban-storage/compare',
-  'POST /api/v1/soroban-storage/create-typed-key',
-  'POST /api/v1/stellar-toml/validate',
-  'POST /api/v1/stellar-toml/format',
-  'GET /api/v1/stellar-toml/template',
-  'GET /api/v1/liquidity-pools/search',
-  'GET /api/v1/liquidity-pools/details',
-  'POST /api/v1/liquidity-pools/share-value',
-  'POST /api/v1/liquidity-pools/watch',
-  'POST /api/v1/liquidity-pools/unwatch',
-  'GET /api/v1/liquidity-pools/watched',
 ];
 
 interface SmokeContract {

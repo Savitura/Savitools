@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { Sep10DebuggerService } from './sep10-debugger.service';
-import { Keypair, Networks, Transaction, Operation, Memo, Account } from '@stellar/stellar-sdk';
+import { Keypair, Networks, Transaction, Operation, Account, TransactionBuilder } from '@stellar/stellar-sdk';
 import axios from 'axios';
 
 // Mock axios
@@ -274,10 +274,10 @@ describe('Sep10DebuggerService', () => {
   function createValidChallenge(serverKeypair: Keypair, clientAccountId: string, homeDomain?: string): Transaction {
     const serverAccount = new Account(serverKeypair.publicKey(), '0');
     const now = Math.floor(Date.now() / 1000);
-    const transaction = new Transaction.Builder(serverAccount, {
+    const transaction = new TransactionBuilder(serverAccount, {
       fee: '100',
       networkPassphrase: Networks.TESTNET,
-      timeBounds: {
+      timebounds: {
         minTime: now - 300, // 5 minutes ago
         maxTime: now + 300, // 5 minutes from now
       },

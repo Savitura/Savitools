@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiOperation,
@@ -14,7 +15,13 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { AssetControlService } from './assetcontrol.service';
+import { WalletService } from './wallet.service';
+import { FundDto } from './dto/fund.dto';
+import { BalancesDto } from './dto/balances.dto';
+import { SendPaymentDto } from './dto/send-payment.dto';
 import { SetTrustlineFlagsDto } from './dto/set-flags.dto';
 import { ClawbackDto } from './dto/clawback.dto';
 import { AccountFlagsDto } from './dto/account-flags.dto';
@@ -50,9 +57,44 @@ function parseOptionalNumber(value?: string): number | undefined {
 @Controller('wallet')
 export class WalletController {
   constructor(
+    private readonly walletService: WalletService,
     private readonly assetControlService: AssetControlService,
   ) {}
 
+  @Post('generate')
+  @ApiOperation({ summary: 'Generate a new Stellar keypair' })
+  @ApiResponse({ status: 201, description: 'Keypair generated successfully' })
+  generate() {
+    return this.walletService.generateKeypair();
+  }
+
+  @Post('fund')
+  @ApiOperation({ summary: 'Fund a testnet account via Friendbot' })
+  @ApiResponse({ status: 200, description: 'Account funded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid public key or funding failed' })
+  fund(@Body() dto: FundDto) {
+    return this.walletService.fundFromFriendbot(dto.publicKey);
+  }
+
+  @Get('balances')
+  @ApiOperation({ summary: 'Get asset balances for an account' })
+  @ApiQuery({ name: 'publicKey', required: true, type: String })
+  @ApiResponse({ status: 200, description: 'Balances retrieved successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid public key or account not found' })
+  getBalances(@Query() query: BalancesDto) {
+    const publicKey = typeof query === 'string' ? query : query?.publicKey;
+    return this.walletService.getBalances(publicKey);
+  }
+
+  @Post('payment')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @ApiOperation({ summary: 'Send a payment from a sandbox wallet (authenticated & rate-limited testnet signing)' })
+  @ApiResponse({ status: 200, description: 'Payment sent successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid payment parameters or insufficient balance' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  sendPayment(@Body() dto: SendPaymentDto) {
+    return this.walletService.sendPayment(dto.sourceSecret, dto.destination, dto.asset, dto.amount);
+  }
   // ---------------------------------------------------------------------------
   // Asset Control workstation (Savitura/Savitools#81)
   // ---------------------------------------------------------------------------

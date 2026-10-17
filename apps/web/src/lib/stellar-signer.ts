@@ -37,8 +37,11 @@ export async function signTransactionXdr(
   secretKey: string,
   network: 'testnet' | 'mainnet',
 ): Promise<string> {
+  if (network === 'mainnet') {
+    throw new Error('Mainnet signing is disabled. SaviTools is locked to testnet.');
+  }
   const { Keypair, Networks } = await import('@stellar/stellar-sdk');
-  const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
+  const passphrase = Networks.TESTNET;
   const { tx } = await parseEnvelope(unsignedXdr, passphrase);
   const keypair = Keypair.fromSecret(secretKey);
   tx.sign(keypair);
@@ -147,6 +150,14 @@ export async function signWithWallet(
   unsignedXdr: string,
   options: WalletSignOptions,
 ): Promise<string> {
+  const { Networks } = await import('@stellar/stellar-sdk');
+  if (options.networkPassphrase === Networks.PUBLIC) {
+    throw new WalletError(
+      'UNSUPPORTED',
+      'Mainnet signing is disabled. SaviTools is locked to testnet.',
+    );
+  }
+
   const freighter = getFreighter();
   if (!freighter?.signTransaction) {
     throw new WalletError(

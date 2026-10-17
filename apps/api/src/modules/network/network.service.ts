@@ -12,7 +12,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { Between, LessThan, Repository } from "typeorm";
 import { MetricsService } from "../metrics/metrics.service";
-import { assertPublicHostname } from "../webhook/ssrf-guard";
+import { assertPublicHostname } from "../../common/ssrf-guard";
 import { NetworkSample } from "./entities/network-sample.entity";
 import { NetworkProfile } from "./entities/network-profile.entity";
 

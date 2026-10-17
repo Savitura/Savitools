@@ -23,10 +23,10 @@ export function liquidityPoolFieldErrors(
       errors[field] = 'Use a decimal with at most 7 fractional digits';
     } else {
       const [whole, fraction = ''] = value.split('.');
-      const scaled = BigInt(whole) * 10000000n + BigInt((fraction + '0000000').slice(0, 7));
-      if (scaled > 9223372036854775807n) {
+      const scaled = BigInt(whole) * BigInt(10000000) + BigInt((fraction + '0000000').slice(0, 7));
+      if (scaled > BigInt('9223372036854775807')) {
         errors[field] = 'Amount exceeds the maximum Stellar value';
-      } else if (!allowZero && scaled === 0n) {
+      } else if (!allowZero && scaled === BigInt(0)) {
         errors[field] = 'Amount must be greater than zero';
       }
     }
@@ -47,8 +47,8 @@ export function liquidityPoolFieldErrors(
       const n = String(ratio?.n ?? '');
       const d = String(ratio?.d ?? '');
       const valid = /^\d+$/.test(n) && /^\d+$/.test(d) &&
-        BigInt(n || '0') > 0n && BigInt(d || '0') > 0n &&
-        BigInt(n || '0') <= 2147483647n && BigInt(d || '0') <= 2147483647n;
+        BigInt(n || '0') > BigInt(0) && BigInt(d || '0') > BigInt(0) &&
+        BigInt(n || '0') <= BigInt(2147483647) && BigInt(d || '0') <= BigInt(2147483647);
       if (n && !valid) errors[`${name}.n`] = 'Use a positive 32-bit integer';
       if (d && !valid) errors[`${name}.d`] = 'Use a positive 32-bit integer';
       return valid ? { n: BigInt(n), d: BigInt(d) } : null;

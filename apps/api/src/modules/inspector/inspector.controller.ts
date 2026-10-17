@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import { DecodeXDrDto as DecodeXdrDto } from './dto/decode-xdr.dto';
-import { DecodeSorobanAuthEntriesDto as InspectAuthEntryDto } from './dto/decode-xdr.dto';
+import { DecodeXDrDto } from './dto/decode-xdr.dto';
+import { InspectAuthEntryDto } from './dto/inspect-auth-entry.dto';
 import { InspectorService } from './inspector.service';
 
 @ApiTags('inspector')
@@ -96,7 +96,7 @@ export class InspectorController {
 
   @Post('decode-xdr')
   @ApiOperation({ summary: 'Decode raw XDR (offline, no Horizon call)' })
-  decodeXdr(@Body() dto: DecodeXdrDto) {
+  decodeXdr(@Body() dto: DecodeXDrDto) {
     return this.inspectorService.decodeXdr(dto.xdr, dto.network ?? 'testnet');
   }
 
@@ -105,14 +105,14 @@ export class InspectorController {
     summary: 'Inspect Soroban authorization entries (credential + invocation tree)',
   })
   inspectAuthEntry(@Body() dto: InspectAuthEntryDto) {
-    return this.inspectorService.inspectAuthorizationEntries(dto);
+    return this.inspectorService.inspectAuthEntries(dto);
   }
 
   /** Alias matching issue path shape: POST /api/v1/inspector/auth-entry/inspect */
   @Post('auth-entry/inspect')
   @ApiOperation({ summary: 'Alias for auth-entry' })
   inspectAuthEntryAlias(@Body() dto: InspectAuthEntryDto) {
-    return this.inspectorService.inspectAuthorizationEntries(dto);
+    return this.inspectorService.inspectAuthEntries(dto);
   }
 
   @Post('auth-entry/export')
@@ -120,7 +120,6 @@ export class InspectorController {
     summary: 'Sanitized export of authorization entries (signature material removed)',
   })
   inspectAuthEntryExport(@Body() dto: InspectAuthEntryDto) {
-    const inspection = this.inspectorService.inspectAuthorizationEntries(dto);
-    return this.inspectorService.sanitizeAuthorizationEntries(inspection);
+    return this.inspectorService.exportAuthEntries(dto);
   }
 }

@@ -42,7 +42,7 @@ export class WebhookController {
     @CurrentUser() user: { id: string },
     @Body() template: WebhookTemplate,
   ): WebhookTemplate {
-    return this.webhookService.saveTemplate(user.id, template);
+    return this.webhookService.saveTemplate(template, user.id);
   }
 
   @Post('send')

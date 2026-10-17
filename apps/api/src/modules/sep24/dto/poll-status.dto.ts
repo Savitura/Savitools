@@ -1,9 +1,8 @@
 import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class PollStatusDto {
-  @IsOptional()
   @IsUUID()
-  sessionId?: string;
+  sessionId!: string;
 
   @IsOptional()
   @IsString()

@@ -1,15 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { SorobanStorageService } from './soroban-storage.service';
-import { SorobanRpc, xdr, nativeToScVal, StrKey } from '@stellar/stellar-sdk';
+import { rpc as SorobanRpc, xdr, nativeToScVal } from '@stellar/stellar-sdk';
 
 // Mock SorobanRpc
-jest.mock('@stellar/stellar-sdk', () => ({
-  ...jest.requireActual('@stellar/stellar-sdk'),
-  SorobanRpc: {
+jest.mock('@stellar/stellar-sdk', () => {
+  const actual = jest.requireActual('@stellar/stellar-sdk');
+  const mockRpc = {
+    ...actual.rpc,
     Server: jest.fn(),
-  },
-}));
+  };
+  return {
+    ...actual,
+    rpc: mockRpc,
+    SorobanRpc: mockRpc,
+  };
+});
 
 describe('SorobanStorageService', () => {
   let service: SorobanStorageService;

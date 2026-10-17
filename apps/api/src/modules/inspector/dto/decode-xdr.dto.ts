@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
   IsIn,
   IsOptional,
   IsString,
@@ -10,7 +7,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export class DecodeXDrDto {
+export class DecodeXdrDto {
   @ApiProperty({
     description: 'Raw XDR string (envelope, result, fee bump, or Soroban authorization entry)',
   })
@@ -39,12 +36,14 @@ export class DecodeXDrDto {
   nearExpiryLedgers?: number = 10;
 }
 
+export { DecodeXdrDto as DecodeXDrDto };
+
 export class DecodeSorobanAuthEntriesDto {
   @ApiProperty({
     description:
-      'One SorobanAuthorizationEntry XDr, an array of entries, or authorization data copied from a simulation response',
-    type: 'object',
+      'One SorobanAuthorizationEntry XDR, an array of entries, or authorization data copied from a simulation response',
+    type: () => Object,
   })
   @ValidateNested()
-  entries: DecodeXDrDto | DecodeXDrDto[];
+  entries: DecodeXdrDto | DecodeXdrDto[];
 }

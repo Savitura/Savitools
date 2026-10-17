@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { TransactionPlanDto } from './dto/sequence-plan.dto';
 
-interface SequenceConflict {
+export interface SequenceConflict {
   type: 'duplicate' | 'gap' | 'out_of_order' | 'dependency_violation';
   severity: 'error' | 'warning';
   message: string;
@@ -11,14 +11,14 @@ interface SequenceConflict {
   accounts: string[];
 }
 
-interface AccountSequenceInfo {
+export interface AccountSequenceInfo {
   account: string;
   currentSequence: string;
   nextSequence: string;
   plannedSequences: number[];
 }
 
-interface PlannedTransaction extends TransactionPlanDto {
+export interface PlannedTransaction extends TransactionPlanDto {
   assignedSequence: number;
   status: 'valid' | 'conflict' | 'warning';
   issues: string[];

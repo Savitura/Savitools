@@ -6,6 +6,7 @@ import {
   IsUrl,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 export enum Sep24Operation {
@@ -57,5 +58,6 @@ export class StartSessionDto {
   amount?: number;
 
   @IsOptional()
+  @ValidateNested()
   extraFields?: Record<string, string>;
 }
