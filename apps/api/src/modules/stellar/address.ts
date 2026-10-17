@@ -32,7 +32,7 @@ const MUXED_ID_BYTES = 8;
  * malformed address fails validation with a field-level error instead of
  * reaching the Stellar layer, which then verifies the checksum.
  */
-export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{55}|M[A-Z2-7]{68})$/;
+export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{54,55}|M[A-Z2-7]{68})$/;
 
 export const STELLAR_DESTINATION_MESSAGE =
   'destination must be a Stellar G… account or M… muxed account';

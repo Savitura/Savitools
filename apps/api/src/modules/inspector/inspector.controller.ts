@@ -64,7 +64,7 @@ export class InspectorController {
     });
   }
 
-  /** Alias matching issue path shape: GET /api/v1/inspector(:txHash/events */
+  /** Alias matching issue path shape: GET /api/v1/inspector/:txHash/events */
   @Get(':txHash/events')
   @ApiOperation({ summary: 'Alias for tx/:hash/events' })
   @ApiParam({ name: 'txHash', description: 'Transaction hash (64 hex chars)' })
@@ -102,7 +102,7 @@ export class InspectorController {
 
   @Post('auth-entry')
   @ApiOperation({
-    summary: 'Inspect Soroban authorization entries (credential + invocation tree',
+    summary: 'Inspect Soroban authorization entries (credential + invocation tree)',
   })
   inspectAuthEntry(@Body() dto: InspectAuthEntryDto) {
     return this.inspectorService.inspectAuthEntries(dto);

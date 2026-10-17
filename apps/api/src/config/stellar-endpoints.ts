@@ -29,9 +29,9 @@ const RPC_PUBLIC_URL = 'https://mainnet.sorobanrpc.com';
  */
 export function resolveStellarHorizonUrl(
   env: StellarEndpointEnv,
-  network: StellarEndpointNetwork,
+  network: StellarEndpointNetwork | string = 'testnet',
 ): string {
-  if (network === 'public') {
+  if (network === 'public' || network === 'mainnet') {
     return (
       env.STELLAR_HORIZON_PUBLIC_URL ??
       env.STELLAR_HORIZON_MAINNET_URL ??
@@ -49,10 +49,14 @@ export function resolveStellarHorizonUrl(
  */
 export function resolveStellarRpcUrl(
   env: StellarEndpointEnv,
-  network: StellarEndpointNetwork,
+  network: StellarEndpointNetwork | string = 'testnet',
 ): string {
-  if (network === 'public') {
-    return env.STELLAR_RPC_PUBLIC_URL ?? RPC_PUBLIC_URL;
+  if (network === 'public' || network === 'mainnet') {
+    return (
+      env.STELLAR_RPC_PUBLIC_URL ??
+      env.STELLAR_RPC_MAINNET_URL ??
+      RPC_PUBLIC_URL
+    );
   }
   return env.STELLAR_RPC_URL ?? RPC_TESTNET_URL;
 }

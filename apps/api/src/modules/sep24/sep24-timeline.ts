@@ -1,4 +1,4 @@
-import { RandomUUI } from 'crypto';
+import { randomUUID } from 'crypto';
 
 export type TimelineEntryKind =
   | 'discovery'
@@ -32,8 +32,8 @@ export interface TimelineExport {
   entries: TimelineEntry[];
 }
 
-const SENSITIVE KEY_PATTERNS = [
-/json/i,
+const SENSITIVE_KEY_PATTERNS = [
+  /json/i,
   /jwt/i,
   /token/i,
   /secret/i,
@@ -46,22 +46,22 @@ const SENSITIVE KEY_PATTERNS = [
 ];
 
 const SENSITIVE_FIELD_PATTERNS = [
-/^(first_name)$/i,
-/^(last_name)$/i,
-/^(email)$/i,
-/^(phone_number)$/i,
-/^(phone))$/i,
-/^(address)$/i,
-/^(birth_date))$/i,
-/^(birth_place))$/i,
-/^(id_number)$/i,
-/^(tax_id)$/i,
-/^(ssn)$/i,
-/^(document_number)$/i,
-/^(account_number))$/i,
-/^(routing_number))$/i,
-/^(card_number))$/i,
-/^(cvv)$/i,
+  /^(first_name)$/i,
+  /^(last_name)$/i,
+  /^(email)$/i,
+  /^(phone_number)$/i,
+  /^(phone)$/i,
+  /^(address)$/i,
+  /^(birth_date)$/i,
+  /^(birth_place)$/i,
+  /^(id_number)$/i,
+  /^(tax_id)$/i,
+  /^(ssn)$/i,
+  /^(document_number)$/i,
+  /^(account_number)$/i,
+  /^(routing_number)$/i,
+  /^(card_number)$/i,
+  /^(cvv)$/i,
 ];
 
 const REDACTED = '[REDACTED]';
@@ -123,7 +123,7 @@ export class Sep24Timeline {
 
   record(entry: Omit<TimelineEntry, 'id' | 'timestamp'>): TimelineEntry {
     const recorded: TimelineEntry = {
-      id: RandomUUID(),
+      id: randomUUID(),
       timestamp: new Date().toISOString(),
       ...entry,
       request: redactValue(entry.request),

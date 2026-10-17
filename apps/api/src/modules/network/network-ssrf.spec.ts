@@ -56,7 +56,7 @@ describe('NetworkService SSRF Guard', () => {
 
   it('rejects link-local metadata IP (169.254.169.254)', async () => {
     await expect(
-      service.assertHorizonPassphrase('http://169.254.169.254/', 'passphrase')
+      (service as any).assertHorizonPassphrase('http://169.254.169.254/', 'passphrase')
     ).rejects.toThrow(BadRequestException);
     expect(global.fetch).not.toHaveBeenCalled();
   });

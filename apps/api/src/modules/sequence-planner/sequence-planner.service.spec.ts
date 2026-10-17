@@ -242,7 +242,7 @@ describe('SequencePlannerService', () => {
     });
 
     it('should handle multiple accounts', async () => {
-      mockHorizonServer.loadAccount.mockImplementation((account) => {
+      mockHorizonServer.loadAccount.mockImplementation((_account: any) => {
         return Promise.resolve({ sequence: '100' });
       });
 

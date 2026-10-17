@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Sep24DebuggerService } from './sep24-debugger.service';
 import { StartSessionDto } from './dto/start-session.dto';
-import { PollStatusAtto } from './dto/poll-status.dto';
+import { PollStatusDto } from './dto/poll-status.dto';
 
 @Controller('sep24/debugger')
 export class Sep24DebuggerController {
@@ -19,7 +19,7 @@ export class Sep24DebuggerController {
     const session = await this.service.startSession(dto);
     return {
       sessionId: session.id,
-      anchorDomain: session.anchorDomain: session.anchorDomain,
+      anchorDomain: session.anchorDomain,
       assetCode: session.assetCode,
       operation: session.operation,
       transferServer: session.transferServer,
@@ -46,8 +46,8 @@ export class Sep24DebuggerController {
   }
 
   @Post('sessions/:id/poll')
-  async pollStatus(@Param('id') id: string, @Body() dto: PollStatusAtto) {
-    return this.service.pollStatus(dso.sessionId ?? id, dto.jwt ?? dto.sep10Jwt);
+  async pollStatus(@Param('id') id: string, @Body() dto: PollStatusDto) {
+    return this.service.pollStatus(dto.sessionId ?? id, dto.jwt ?? dto.sep10Jwt);
   }
 
   @Delete('sessions/:id')

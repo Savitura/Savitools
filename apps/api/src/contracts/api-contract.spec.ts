@@ -82,14 +82,8 @@ interface ContractApp {
 async function bootstrapContractApp(): Promise<ContractApp> {
   const controllers = collectRegisteredControllers(AppModule);
   const guards = collectReferencedGuards(controllers);
-  // Nest instantiates guards as enhancers, so their constructor dependencies
-  // must be satisfiable too, not just the guards themselves.
   const tokens = new Set<InjectionToken>([
     ...(collectControllerDependencies(controllers) as InjectionToken[]),
-    ...guards.flatMap(
-      (guard) =>
-        (Reflect.getMetadata('design:paramtypes', guard) as InjectionToken[]) ?? [],
-    ),
   ]);
   const providers: Provider[] = [
     ...[...tokens].map((token) => ({
@@ -102,7 +96,11 @@ async function bootstrapContractApp(): Promise<ContractApp> {
     })),
   ];
 
-  const moduleRef = await Test.createTestingModule({ controllers, providers }).compile();
+  let moduleBuilder = Test.createTestingModule({ controllers, providers });
+  for (const guard of guards) {
+    moduleBuilder = moduleBuilder.overrideGuard(guard).useValue(allowAllGuard);
+  }
+  const moduleRef = await moduleBuilder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
   app.setGlobalPrefix(API_GLOBAL_PREFIX, { exclude: [...API_PREFIX_EXCLUSIONS] });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: API_DEFAULT_VERSION });

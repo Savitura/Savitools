@@ -1,14 +1,14 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as TOML from 'smol-toml';
 
-interface ValidationIssue {
+export interface ValidationIssue {
   level: 'error' | 'warning' | 'info';
   field?: string;
   message: string;
   line?: number;
 }
 
-interface ParsedToml {
+export interface ParsedToml {
   VERSION?: string;
   NETWORK_PASSPHRASE?: string;
   FEDERATION_SERVER?: string;
