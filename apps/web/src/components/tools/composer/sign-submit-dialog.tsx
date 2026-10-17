@@ -1,6 +1,13 @@
 'use client';
 
-import { requestWalletAccess, signTransactionXdr, signWithWallet, isWalletAvailable, WalletError } from '@/lib/stellar-signer';
+import {
+  PUBLIC_NETWORK_PASSPHRASE,
+  requestWalletAccess,
+  signTransactionXdr,
+  signWithWallet,
+  isWalletAvailable,
+  WalletError,
+} from '@/lib/stellar-signer';
 import { submitSignedTransaction } from '@/lib/composer-api';
 import { AlertTriangle, Eye, EyeOff, Loader2, Lock, SendHorizontal, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -12,7 +19,7 @@ interface SignSubmitDialogProps {
   network: string;
   /** Horizon URL of the active network profile (built-in or custom). */
   horizonUrl: string;
-  /** Passphrase of the active network profile — used for wallet signing. */
+  /** Passphrase of the active network profile — used for wallet and secret-key signing. */
   networkPassphrase: string;
   /** Transaction source account — wallet signing rejects mismatches. */
   sourceAccount?: string;
@@ -42,10 +49,15 @@ export function SignSubmitDialog({
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A custom profile can point at the public network too, so check the
+  // passphrase as well as the network name.
+  const isMainnet = network === 'mainnet' || networkPassphrase === PUBLIC_NETWORK_PASSPHRASE;
+
   useEffect(() => {
     setWalletDetected(isWalletAvailable());
-    setMode(isWalletAvailable() ? 'wallet' : 'secret');
-  }, []);
+    // Secret-key mode is never offered on mainnet (Savitura/Savitools#422).
+    setMode(isWalletAvailable() || isMainnet ? 'wallet' : 'secret');
+  }, [isMainnet]);
 
   const handleConnectWallet = async () => {
     setConnectingWallet(true);
@@ -73,8 +85,6 @@ export function SignSubmitDialog({
       onError(msg);
     }
   };
-
-  const isMainnet = network === 'mainnet';
 
   const handleWalletSignAndSubmit = async () => {
     if (isMainnet) {
@@ -105,7 +115,8 @@ export function SignSubmitDialog({
 
   const handleSecretSignAndSubmit = async () => {
     if (isMainnet) {
-      setError('Mainnet signing is disabled. SaviTools is locked to testnet.');
+      setSecretKey('');
+      setError('Secret-key signing is disabled on mainnet. Never paste a mainnet secret key into a web tool.');
       return;
     }
     if (!secretKey.trim()) {
@@ -115,7 +126,7 @@ export function SignSubmitDialog({
     setSigning(true);
     setError(null);
     try {
-      const signedXdr = await signTransactionXdr(xdr, secretKey.trim(), network === 'mainnet' ? 'mainnet' : 'testnet');
+      const signedXdr = await signTransactionXdr(xdr, secretKey.trim(), networkPassphrase);
       setSecretKey('');
       await submit(signedXdr);
     } catch (e) {
@@ -173,7 +184,9 @@ export function SignSubmitDialog({
             <button
               type="button"
               onClick={() => { setMode('secret'); setError(null); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              disabled={isMainnet}
+              title={isMainnet ? 'Secret-key signing is disabled on mainnet' : 'Sign locally with a secret key'}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
                 mode === 'secret' ? 'bg-violet-600 text-white' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -182,7 +195,7 @@ export function SignSubmitDialog({
           </div>
 
           {/* Warning for secret mode only */}
-          {mode === 'secret' && (
+          {mode === 'secret' && !isMainnet && (
             <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
               <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
               <p className="text-xs text-amber-300 leading-relaxed">
@@ -195,9 +208,14 @@ export function SignSubmitDialog({
           {isMainnet && (
             <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
               <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-              <p className="text-xs text-red-300 leading-relaxed">
-                <strong>Mainnet signing is disabled.</strong> SaviTools is locked to testnet. Switch network to testnet to sign and submit transactions.
-              </p>
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-red-300 leading-relaxed">
+                  <strong>Mainnet signing is disabled.</strong> SaviTools is locked to testnet. Switch network to testnet to sign and submit transactions.
+                </p>
+                <p className="text-xs text-red-300 leading-relaxed" data-testid="mainnet-secret-key-warning">
+                  Secret-key signing is never available on mainnet: do not paste a mainnet secret key into a web tool. Use a wallet extension that keeps the key outside the page.
+                </p>
+              </div>
             </div>
           )}
 
@@ -245,8 +263,8 @@ export function SignSubmitDialog({
                 )}
               </button>
             )
-          ) : (
-            /* Secret key input — only rendered in secret-key mode */
+          ) : isMainnet ? null : (
+            /* Secret key input — only rendered in secret-key mode, never on mainnet */
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="secret-key-input"

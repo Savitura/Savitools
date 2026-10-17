@@ -32,17 +32,26 @@ async function parseEnvelope(
   return { isFeeBump, tx: tx as never };
 }
 
+/** Passphrase of the Stellar public network (mainnet). */
+export const PUBLIC_NETWORK_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+
+/**
+ * Sign with a raw secret key, entirely in the browser. `networkPassphrase` must
+ * be the active profile's passphrase (testnet, futurenet, local quickstart…) so
+ * the signature matches the network the transaction is submitted to
+ * (Savitura/Savitools#423). The public network is refused: a mainnet seed must
+ * never be pasted into a hosted web tool (Savitura/Savitools#422).
+ */
 export async function signTransactionXdr(
   unsignedXdr: string,
   secretKey: string,
-  network: 'testnet' | 'mainnet',
+  networkPassphrase: string,
 ): Promise<string> {
-  if (network === 'mainnet') {
+  if (networkPassphrase === PUBLIC_NETWORK_PASSPHRASE) {
     throw new Error('Mainnet signing is disabled. SaviTools is locked to testnet.');
   }
-  const { Keypair, Networks } = await import('@stellar/stellar-sdk');
-  const passphrase = Networks.TESTNET;
-  const { tx } = await parseEnvelope(unsignedXdr, passphrase);
+  const { Keypair } = await import('@stellar/stellar-sdk');
+  const { tx } = await parseEnvelope(unsignedXdr, networkPassphrase);
   const keypair = Keypair.fromSecret(secretKey);
   tx.sign(keypair);
 

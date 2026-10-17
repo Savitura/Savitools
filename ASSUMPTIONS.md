@@ -91,7 +91,9 @@ Section for [issue #78](https://github.com/Savitura/Savitools/issues/78)
 6. **Read endpoints are public; replay is authenticated.** `EventsController`'s
    query and filter routes carry no guard; replay requires `JwtAuthGuard`
    because it sends outbound traffic. `CONTRACT_ADMIN_EMAILS` guards
-   deploy/invoke because those spend `DEPLOYER_SECRET_KEY`. Reading events
+   deploy/invoke because those spend the shared `DEPLOYER_SECRET_KEY` account
+   (capped per user per day by `CONTRACT_DAILY_DEPLOY_QUOTA` /
+   `CONTRACT_DAILY_INVOKE_QUOTA`, testnet/futurenet only). Reading events
    spends nothing, and since an empty allowlist denies everyone by design
    (`ContractAuthorizationGuard`), gating reads would ship the tool unusable.
 

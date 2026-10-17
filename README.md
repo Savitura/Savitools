@@ -221,7 +221,7 @@ boots when they are missing.
 | ------------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
 | `DATABASE_URL`           | PostgreSQL connection string                          | `postgresql://postgres:password@localhost:5432/savitools` |
 | `REDIS_URL`              | Redis connection string                               | `redis://localhost:6379`                                  |
-| `STELLAR_NETWORK`        | Stellar network (`testnet` or `public`)               | `testnet`                                                 |
+| `STELLAR_NETWORK`        | Stellar network (`testnet` or `futurenet`; the API refuses to start on `mainnet`/`public`) | `testnet`                     |
 | `STELLAR_HORIZON_URL`    | Horizon API URL                                       | `https://horizon-testnet.stellar.org`                     |
 | `STELLAR_RPC_URL`        | Soroban RPC URL                                       | `https://soroban-rpc-testnet.stellar.org`                 |
 | `STELLAR_NETWORK_PASSPHRASE` | Passphrase matching the network (optional — falls back to the well-known passphrase) | `"Test SDF Network ; September 2015"` |
@@ -232,6 +232,9 @@ boots when they are missing.
 | `WEB_ORIGIN`             | Allowed origin for API and WebSocket CORS             | `http://localhost:3000`                                   |
 | `THROTTLE_TTL`           | Rate limiting sliding window size in milliseconds     | `60000` (1 minute)                                        |
 | `THROTTLE_LIMIT`         | Max requests allowed in the rate limit window         | `100`                                                     |
+| `CONTRACT_ADMIN_EMAILS`  | Comma-separated emails allowed to deploy/invoke contracts (empty denies everyone) | (empty)                       |
+| `CONTRACT_DAILY_DEPLOY_QUOTA` | Contract deploys each user may make per UTC day  | `10`                                                      |
+| `CONTRACT_DAILY_INVOKE_QUOTA` | Contract invocations each user may make per UTC day | `100`                                                  |
 | `NEXT_PUBLIC_API_URL`    | Frontend → API URL                                    | `http://localhost:3001/api`                               |
 
 **`DEPLOYER_SECRET_KEY` is required to boot the API.** `ContractsService`
@@ -244,6 +247,17 @@ necessary if you actually deploy a contract. Generate one after `npm install`:
 ```bash
 node -p "require('@stellar/stellar-sdk').Keypair.random().secret()"
 ```
+
+**The deployer account is shared.** Every contract deploy, wizard deploy and
+invoke made through the API is signed by, and paid for from, this one
+`DEPLOYER_SECRET_KEY` account — no matter which user made the request. Access is
+limited to the `CONTRACT_ADMIN_EMAILS` allowlist, and each allowlisted user has a
+daily quota (`CONTRACT_DAILY_DEPLOY_QUOTA`, `CONTRACT_DAILY_INVOKE_QUOTA`, counted
+per UTC day in Redis) so one user cannot drain the account. Because the key is
+shared, the contracts module is **testnet/futurenet only**: the API refuses to
+start when `STELLAR_NETWORK` is `mainnet`/`public` or
+`STELLAR_NETWORK_PASSPHRASE` is the public network passphrase. Never put a key
+that holds real XLM here.
 
 The full list of runtime-read variables lives in `apps/api/.env.example`. On
 startup, `apps/api/src/config/env-validation.ts` validates the configuration

@@ -68,6 +68,21 @@ function parseRedisConnection(redisUrl: string): { host: string; port: number; u
   };
 }
 
+const MAINNET_NETWORK_NAMES = new Set(['mainnet', 'public', 'pubnet']);
+
+/**
+ * The contracts module signs with a shared server key, so it only runs against
+ * test networks (testnet, futurenet, local quickstart). Throws on the public
+ * network name or passphrase (Savitura/Savitools#425).
+ */
+export function assertTestNetworkOnly(network: string, networkPassphrase: string): void {
+  if (MAINNET_NETWORK_NAMES.has(network.trim().toLowerCase()) || networkPassphrase === Networks.PUBLIC) {
+    throw new ConfigurationError(
+      'Contract deploy/invoke is testnet-only: STELLAR_NETWORK / STELLAR_NETWORK_PASSPHRASE must not point at the public network, because DEPLOYER_SECRET_KEY is shared by all allowlisted users',
+    );
+  }
+}
+
 /** Attached-ABI catalog bounds — mirrors the wizard session TTL pattern. */
 export const ABI_CATALOG_MAX_ENTRIES = 200;
 export const ABI_CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -99,10 +114,16 @@ export class ContractsService {
       "testnet",
     );
 
-    const isProduction =
-      this.configService.get<string>("NODE_ENV") === "production" ||
-      network.toLowerCase() === "mainnet" ||
-      network.toLowerCase() === "public";
+    const networkPassphrase =
+      this.configService.get<string>("STELLAR_NETWORK_PASSPHRASE") ||
+      (network.toLowerCase() === "futurenet" ? Networks.FUTURENET : Networks.TESTNET);
+
+    // DEPLOYER_SECRET_KEY is one account shared by every allowlisted user, so it
+    // must never hold real XLM: refuse to start against the public network
+    // instead of letting a misconfigured env spend mainnet funds.
+    assertTestNetworkOnly(network, networkPassphrase);
+
+    const isProduction = this.configService.get<string>("NODE_ENV") === "production";
 
     if (isProduction && rpcUrl.startsWith("http://")) {
       throw new ConfigurationError(
@@ -124,11 +145,7 @@ export class ContractsService {
     );
     this.deployer = Keypair.fromSecret(secretKey);
 
-    this.networkPassphrase =
-      this.configService.get<string>("STELLAR_NETWORK_PASSPHRASE") ||
-      (network.toLowerCase() === "mainnet" || network.toLowerCase() === "public"
-        ? Networks.PUBLIC
-        : Networks.TESTNET);
+    this.networkPassphrase = networkPassphrase;
 
     const configuredLimit = this.configService.get<string>('MAX_WASM_FILE_SIZE');
     this.maxFileSize = configuredLimit ? parseInt(configuredLimit, 10) || 5 * 1024 * 1024 : 5 * 1024 * 1024;
