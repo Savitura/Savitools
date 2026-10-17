@@ -203,9 +203,9 @@ describe('WalletController', () => {
       const code = 'TEST';
       const issuer = Keypair.random().publicKey();
 
-      expect(() =>
-        controller.getAssetTrustlines(code, issuer, 'not-a-boolean'),
-      ).toThrow(BadRequestException);
+      expect(() => controller.getAssetTrustlines(code, issuer, 'not-a-boolean')).toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws BadRequestException for invalid number filter', () => {
@@ -213,13 +213,7 @@ describe('WalletController', () => {
       const issuer = Keypair.random().publicKey();
 
       expect(() =>
-        controller.getAssetTrustlines(
-          code,
-          issuer,
-          undefined,
-          undefined,
-          'not-a-number',
-        ),
+        controller.getAssetTrustlines(code, issuer, undefined, undefined, 'not-a-number'),
       ).toThrow(BadRequestException);
     });
   });
@@ -259,7 +253,7 @@ describe('WalletController validation and auth guards', () => {
   describe('BalancesDto validation', () => {
     it('accepts valid G... stellar public key', async () => {
       const dto = plainToInstance(BalancesDto, {
-        publicKey: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        publicKey: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
       });
       const errors = await validate(dto);
       expect(errors.length).toBe(0);
@@ -277,8 +271,8 @@ describe('WalletController validation and auth guards', () => {
   describe('SendPaymentDto validation', () => {
     it('accepts valid secret key and destination', async () => {
       const dto = plainToInstance(SendPaymentDto, {
-        sourceSecret: 'SBUQ54DRQG5Q3QLQHJEZ5ODSLGEYZIJEDYAJBSJUKAUJL4MQAQKF3PZ',
-        destination: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        sourceSecret: 'SCXB2UEUJLXSQPDWCIPRSXLKCGCK6AXHLHCXGAA4QM3JPU53QIB4UVHU',
+        destination: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
         asset: 'XLM',
         amount: '10',
       });
@@ -289,7 +283,7 @@ describe('WalletController validation and auth guards', () => {
     it('rejects invalid source secret key format', async () => {
       const dto = plainToInstance(SendPaymentDto, {
         sourceSecret: 'NOTASECRET',
-        destination: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        destination: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
         asset: 'XLM',
         amount: '10',
       });

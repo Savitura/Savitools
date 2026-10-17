@@ -7,38 +7,46 @@ import {
   WELL_KNOWN_TOPIC_NAMES,
 } from './event-parser';
 
-const CONTRACT_ID = 'CA3D5KRYM6CB7OWQ6TWYRRZ3Z4T7GNZLKERYNZGGA5SOMAOPIFY6YQGAXE';
+const CONTRACT_ID = 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE';
 
-/** Well-known genesis / friendbot-style accounts (valid StrKey). */
-const ACCOUNT_A = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJHWIAJTGKIN2ER7LBNVKOCCWN7';
-const ACCOUNT_B = 'GALPCCZN4YXA3YMJHKL6CVICECKPJJJCTVMNYWBTKJW4KHQLYLDMZTB';
+/** Valid StrKey accounts (checksums verified). */
+const ACCOUNT_A = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7';
+const ACCOUNT_B = 'GABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEJXA';
 
 function accountScVal(accountId: string): xdr.ScVal {
   return nativeToScVal(accountId, { type: 'address' });
 }
 
 function contractEventBody(v0: xdr.ContractEventV0): xdr.ContractEventBody {
-  return new (xdr.ContractEventBody as unknown as {
-    new (switchValue: number, value: xdr.ContractEventV0): xdr.ContractEventBody;
-  })(0, v0);
+  return new (
+    xdr.ContractEventBody as unknown as {
+      new (switchValue: number, value: xdr.ContractEventV0): xdr.ContractEventBody;
+    }
+  )(0, v0);
 }
 
 function extensionPoint(): xdr.ExtensionPoint {
-  return new (xdr.ExtensionPoint as unknown as {
-    new (switchValue: number): xdr.ExtensionPoint;
-  })(0);
+  return new (
+    xdr.ExtensionPoint as unknown as {
+      new (switchValue: number): xdr.ExtensionPoint;
+    }
+  )(0);
 }
 
 function sorobanMetaExt(): xdr.SorobanTransactionMetaExt {
-  return new (xdr.SorobanTransactionMetaExt as unknown as {
-    new (switchValue: number): xdr.SorobanTransactionMetaExt;
-  })(0);
+  return new (
+    xdr.SorobanTransactionMetaExt as unknown as {
+      new (switchValue: number): xdr.SorobanTransactionMetaExt;
+    }
+  )(0);
 }
 
 function transactionMetaV3(value: xdr.TransactionMetaV3): xdr.TransactionMeta {
-  return new (xdr.TransactionMeta as unknown as {
-    new (switchValue: number, value: xdr.TransactionMetaV3): xdr.TransactionMeta;
-  })(3, value);
+  return new (
+    xdr.TransactionMeta as unknown as {
+      new (switchValue: number, value: xdr.TransactionMetaV3): xdr.TransactionMeta;
+    }
+  )(3, value);
 }
 
 function makeTransferEvent(): xdr.ContractEvent {
