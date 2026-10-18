@@ -35,9 +35,10 @@ export interface SandboxFundResponse {
   network: string;
 }
 
-export interface SandboxResetResponse {
+export interface SandboxTopUpResponse {
   publicKey: string;
-  reset: boolean;
+  /** true only when Friendbot actually funded the account in this call */
+  toppedUp: boolean;
   network: string;
   startingBalance: string;
   txHash: string | null;
@@ -107,14 +108,15 @@ export class SandboxService {
     return this.fundedResult(publicKey, reply.hash, '10,000 XLM', endpoints.network);
   }
 
-  async resetAccount(
+  async topUpAccount(
     publicKey: string,
     network: string = 'testnet',
     overrides?: any,
-  ): Promise<SandboxResetResponse> {
+  ): Promise<SandboxTopUpResponse> {
     const endpoints = resolveStellarEndpoints(network, overrides);
 
-    // Call friendbot to ensure account has funds / reset state
+    // Friendbot only funds accounts that are not yet funded. It never touches
+    // trustlines, offers, data entries or signers, so this is a top up, not a reset.
     let txHash: string | null = null;
     try {
       const reply = await this.stellar.requestFriendbotFunding(publicKey, endpoints.network, overrides);
@@ -122,19 +124,22 @@ export class SandboxService {
         txHash = reply.hash;
       }
     } catch (err: unknown) {
-      // If friendbot fails because already funded, reload account
+      // Friendbot rejects already-funded accounts; fall through and report current state.
     }
 
     const account = await this.stellar.loadAccountIfPresent(publicKey, endpoints.network, overrides);
-    const balance = account ? this.stellar.startingBalanceOf(account) : '10,000 XLM';
+    const balance = account ? this.stellar.startingBalanceOf(account) : 'unknown';
+    const toppedUp = txHash !== null;
 
     return {
       publicKey,
-      reset: true,
+      toppedUp,
       network: endpoints.network,
       startingBalance: balance,
       txHash,
-      message: `Account ${publicKey} on ${endpoints.network} has been reset to its starting state.`,
+      message: toppedUp
+        ? `Friendbot funded ${publicKey} on ${endpoints.network}. Existing trustlines, offers, data entries and signers are unchanged.`
+        : `Friendbot did not fund ${publicKey} on ${endpoints.network} (it is likely already funded). No changes were made; trustlines, offers, data entries and signers are untouched.`,
     };
   }
 

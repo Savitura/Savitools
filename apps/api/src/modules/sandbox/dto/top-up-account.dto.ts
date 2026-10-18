@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class ResetAccountDto {
+export class TopUpAccountDto {
   @ApiProperty({ description: 'Stellar public key' })
   @IsString()
   @IsNotEmpty()

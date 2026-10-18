@@ -1200,9 +1200,9 @@ export interface SandboxFundResult {
   network?: string;
 }
 
-export interface SandboxResetResult {
+export interface SandboxTopUpResult {
   publicKey: string;
-  reset: boolean;
+  toppedUp: boolean;
   network: string;
   startingBalance: string;
   txHash: string | null;
@@ -1238,8 +1238,8 @@ export async function sandboxFund(publicKey: string, network: string = 'testnet'
   });
 }
 
-export async function sandboxResetAccount(publicKey: string, network: string = 'testnet') {
-  return apiFetch<SandboxResetResult>("/sandbox/reset", {
+export async function sandboxTopUpAccount(publicKey: string, network: string = 'testnet') {
+  return apiFetch<SandboxTopUpResult>("/sandbox/top-up", {
     method: "POST",
     body: JSON.stringify({ publicKey, network }),
   });

@@ -5,7 +5,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { SandboxService } from './sandbox.service';
 import { FundDto } from './dto/fund.dto';
 import { PaymentDto } from './dto/payment.dto';
-import { ResetAccountDto } from './dto/reset-account.dto';
+import { TopUpAccountDto } from './dto/top-up-account.dto';
 
 @ApiTags('sandbox')
 @Controller('sandbox')
@@ -25,10 +25,21 @@ export class SandboxController {
     return this.sandboxService.fundFromFriendbot(dto.publicKey, dto.network);
   }
 
+  @Post('top-up')
+  @ApiOperation({
+    summary: 'Top up a sandbox account via Friendbot (does not reset trustlines, offers, data or signers)',
+  })
+  topUp(@Body() dto: TopUpAccountDto) {
+    return this.sandboxService.topUpAccount(dto.publicKey, dto.network);
+  }
+
   @Post('reset')
-  @ApiOperation({ summary: 'Reset a sandbox account to its known starting state' })
-  reset(@Body() dto: ResetAccountDto) {
-    return this.sandboxService.resetAccount(dto.publicKey, dto.network);
+  @ApiOperation({
+    summary: 'Deprecated alias of POST /sandbox/top-up; it does not reset the account',
+    deprecated: true,
+  })
+  reset(@Body() dto: TopUpAccountDto) {
+    return this.sandboxService.topUpAccount(dto.publicKey, dto.network);
   }
 
   @Get('account/:publicKey')

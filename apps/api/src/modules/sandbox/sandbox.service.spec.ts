@@ -134,24 +134,43 @@ describe('SandboxService', () => {
     });
   });
 
-  describe('resetAccount', () => {
-    it('resets a sandbox account to its known starting state', async () => {
+  describe('topUpAccount', () => {
+    it('reports a Friendbot top up without claiming a reset', async () => {
       const serverMock = (service as any).getServer('quickstart');
       jest.spyOn(serverMock, 'loadAccount').mockResolvedValueOnce({
         balances: [{ asset_type: 'native', balance: '10000.0000000' }],
       });
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ hash: 'tx-reset-hash' }),
+        json: async () => ({ hash: 'tx-top-up-hash' }),
       });
 
-      const result = await service.resetAccount('GTEST', 'quickstart');
+      const result = await service.topUpAccount('GTEST', 'quickstart');
 
-      expect(result.reset).toBe(true);
+      expect(result.toppedUp).toBe(true);
       expect(result.publicKey).toBe('GTEST');
       expect(result.network).toBe('quickstart');
       expect(result.startingBalance).toBe('10000.0000000 XLM');
-      expect(result.message).toContain('Account GTEST on quickstart has been reset');
+      expect(result.message).toContain('Friendbot funded GTEST on quickstart');
+      expect(result.message).toContain('unchanged');
+      expect(result.message).not.toMatch(/reset|starting state/i);
+    });
+
+    it('reports no changes when Friendbot refuses an already-funded account', async () => {
+      const serverMock = (service as any).getServer('quickstart');
+      jest.spyOn(serverMock, 'loadAccount').mockResolvedValueOnce({
+        balances: [{ asset_type: 'native', balance: '9500.0000000' }],
+      });
+      jest
+        .spyOn((service as any).stellar, 'requestFriendbotFunding')
+        .mockRejectedValueOnce(new Error('op_already_funded'));
+
+      const result = await service.topUpAccount('GTEST', 'quickstart');
+
+      expect(result.toppedUp).toBe(false);
+      expect(result.txHash).toBeNull();
+      expect(result.message).toContain('No changes were made');
+      expect(result.message).not.toMatch(/reset|starting state/i);
     });
   });
 

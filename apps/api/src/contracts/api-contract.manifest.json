@@ -554,6 +554,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/sandbox/top-up",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/sdkgen/generate",
       "auth": "public"
     },

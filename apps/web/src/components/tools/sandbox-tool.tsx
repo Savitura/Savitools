@@ -21,11 +21,11 @@ import {
   sandboxFund,
   sandboxGetAccount,
   sandboxSendPayment,
-  sandboxResetAccount,
+  sandboxTopUpAccount,
   type SandboxAccountDetails,
   type SandboxFundResult,
   type SandboxPaymentResult,
-  type SandboxResetResult,
+  type SandboxTopUpResult,
   type Balance,
 } from '@/lib/api';
 import { useNetwork } from '@/lib/network-context';
@@ -74,12 +74,12 @@ export function SandboxTool() {
   
   const [fundResult, setFundResult] = useState<SandboxFundResult | null>(null);
   const [funding, setFunding] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [resetResult, setResetResult] = useState<SandboxResetResult | null>(null);
-  const [resetError, setResetError] = useState<string | null>(null);
+  const [toppingUp, setToppingUp] = useState(false);
+  const [topUpResult, setTopUpResult] = useState<SandboxTopUpResult | null>(null);
+  const [topUpError, setTopUpError] = useState<string | null>(null);
 
   // True while any network operation is in progress — used to block network switching.
-  const inFlight = generating || funding || resetting;
+  const inFlight = generating || funding || toppingUp;
   
   const [inspector, setInspector] = useState<AccountInspectorState>({
     publicKey: '',
@@ -212,22 +212,22 @@ export function SandboxTool() {
     }
   }, [keypair, network, inspector.publicKey, handleInspectAccount]);
 
-  const handleReset = useCallback(async () => {
+  const handleTopUp = useCallback(async () => {
     if (!keypair) return;
-    setResetting(true);
-    setResetResult(null);
-    setResetError(null);
+    setToppingUp(true);
+    setTopUpResult(null);
+    setTopUpError(null);
     try {
-      const result = await sandboxResetAccount(keypair.publicKey, network);
-      setResetResult(result);
+      const result = await sandboxTopUpAccount(keypair.publicKey, network);
+      setTopUpResult(result);
       // Refresh inspector if it is viewing this account
       if (inspector.publicKey === keypair.publicKey) {
         handleInspectAccount(keypair.publicKey);
       }
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : 'Reset failed');
+      setTopUpError(err instanceof Error ? err.message : 'Top up failed');
     } finally {
-      setResetting(false);
+      setToppingUp(false);
     }
   }, [keypair, network, inspector.publicKey, handleInspectAccount]);
 
@@ -463,12 +463,12 @@ export function SandboxTool() {
               </p>
             </div>
 
-            {/* Fund / Reset buttons */}
+            {/* Fund / Top up buttons */}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={handleFund}
-                disabled={funding || resetting}
+                disabled={funding || toppingUp}
                 className="px-3 py-2 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 flex items-center justify-center gap-1.5"
               >
                 {funding ? (
@@ -486,19 +486,19 @@ export function SandboxTool() {
 
               <button
                 type="button"
-                onClick={handleReset}
-                disabled={resetting || funding}
+                onClick={handleTopUp}
+                disabled={toppingUp || funding}
                 className="px-3 py-2 text-xs font-medium rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center justify-center gap-1.5"
               >
-                {resetting ? (
+                {toppingUp ? (
                   <>
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    Resetting…
+                    Topping up…
                   </>
                 ) : (
                   <>
                     <RotateCcw className="h-3 w-3" />
-                    Reset Account
+                    Top Up Account
                   </>
                 )}
               </button>
@@ -522,18 +522,18 @@ export function SandboxTool() {
               </div>
             )}
 
-            {resetError && (
+            {topUpError && (
               <div className="rounded-md bg-red-500/10 border border-red-500/30 p-2">
                 <p className="text-xs text-red-700">
-                  <strong>Reset failed:</strong> {resetError}
+                  <strong>Top up failed:</strong> {topUpError}
                 </p>
               </div>
             )}
 
-            {resetResult && !resetError && (
+            {topUpResult && !topUpError && (
               <div className="rounded-md bg-orange-500/10 border border-orange-500/30 p-2">
                 <p className="text-xs text-orange-700">
-                  <strong>Account reset.</strong> {resetResult.message}
+                  <strong>{topUpResult.toppedUp ? "Account topped up." : "No changes."}</strong> {topUpResult.message}
                 </p>
               </div>
             )}
