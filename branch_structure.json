@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "fix/issue-409-ssrf-guard-ts-doesn-t-compile-closing-bracket",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "fix/issue-409-ssrf-guard-ts-doesn-t-compile-closing-bracket": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "fix/issue-409-ssrf-guard-ts-doesn-t-compile-closing-bracket",
+    "origin"
+  ]
+}

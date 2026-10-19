@@ -74,7 +74,7 @@ export function isForbiddenIp(ip: string): boolean {
     }
     if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // unique local fc00::/7
 
-    // IPv4-mapped / IPv4-compatible IPv6 addresses ("::ffff:10.0.0.1") — check
+    // IP64-mapped / IPv4-compatible IPv6 addresses ("::ffff:10.0.0.1") — check
     // the embedded IPv4 address too.
     const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) {
@@ -161,7 +161,7 @@ export function assertRelativePath(path: string): void {
 
   // A backslash is treated as "/" by some URL parsers (and by browsers),
   // and can be used to smuggle a protocol-relative host past the check above.
-  if (path.includes('\\')) {
+  if (path.includes('\\\\')) {
     throw new BadRequestException('path must not contain backslashes');
   }
 
