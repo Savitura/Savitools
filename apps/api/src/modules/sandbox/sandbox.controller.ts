@@ -15,17 +15,19 @@ export class SandboxController {
   @Post('keypair')
   @ApiOperation({ summary: 'Generate a new ed25519 keypair labelled with its network' })
   @ApiQuery({ name: 'network', required: false, description: 'Target network (e.g. testnet, quickstart)' })
-  generateKeypair(@Query('network') network?: string) {
-    return this.sandboxService.generateKeypair(network);
+  generateKeypair() {
+    return this.sandboxService.generateKeypair();
   }
 
   @Post('fund')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
   @ApiOperation({ summary: 'Fund an account via Friendbot on the target network' })
   fund(@Body() dto: FundDto) {
     return this.sandboxService.fundFromFriendbot(dto.publicKey, dto.network);
   }
 
   @Post('reset')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
   @ApiOperation({ summary: 'Reset a sandbox account to its known starting state' })
   reset(@Body() dto: ResetAccountDto) {
     return this.sandboxService.resetAccount(dto.publicKey, dto.network);

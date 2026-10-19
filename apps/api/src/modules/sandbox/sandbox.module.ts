@@ -2,11 +2,15 @@ import { Module } from '@nestjs/common';
 import { StellarTestnetModule } from '../stellar/stellar-testnet.module';
 import { SandboxController } from './sandbox.controller';
 import { SandboxService } from './sandbox.service';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Module({
   imports: [StellarTestnetModule],
   controllers: [SandboxController],
-  providers: [SandboxService],
+  providers: [
+    SandboxService,
+    AuthGuard,
+  ],
   exports: [SandboxService],
 })
 export class SandboxModule {}
