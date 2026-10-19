@@ -1,5 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
-import { Keypair } from '@stellar/stellar-sdk';
+import {
+  Account,
+  Asset,
+  BASE_FEE,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
 import { Test, TestingModule } from '@nestjs/testing';
 import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
@@ -11,6 +19,25 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
+
+/** Build and sign a payment envelope so the controller receives a real XDR. */
+function buildSignedPaymentXdr(source: Keypair, destination: string): string {
+  const transaction = new TransactionBuilder(
+    new Account(source.publicKey(), '0'),
+    { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
+  )
+    .addOperation(
+      Operation.payment({
+        destination,
+        asset: Asset.native(),
+        amount: '10',
+      }),
+    )
+    .setTimeout(30)
+    .build();
+  transaction.sign(source);
+  return transaction.toEnvelope().toXDR('base64');
+}
 
 describe('WalletController', () => {
   let controller: WalletController;
@@ -112,40 +139,26 @@ describe('WalletController', () => {
   });
 
   describe('sendPayment', () => {
-    it('validates invalid inputs through the real service', async () => {
+    it('rejects a malformed signed XDR through the real service', async () => {
       await expect(
-        controller.sendPayment({
-          sourceSecret: 'INVALID_SECRET',
-          destination: Keypair.random().publicKey(),
-          asset: 'XLM',
-          amount: '10',
-        }),
-      ).rejects.toThrow('Invalid source secret key');
+        controller.sendPayment({ signedXdr: 'NOT_A_SIGNED_XDR' }),
+      ).rejects.toThrow('Invalid signed transaction XDR');
     });
 
-    it('submits payment through real service when inputs and Horizon respond', async () => {
+    it('submits a client-signed payment and returns the transaction hash', async () => {
       const source = Keypair.random();
       const destination = Keypair.random().publicKey();
+      const signedXdr = buildSignedPaymentXdr(source, destination);
 
-      jest.spyOn(stellarTestnetService, 'submitPayment').mockResolvedValue({
+      jest.spyOn(stellarTestnetService, 'submitSignedTransaction').mockResolvedValue({
         hash: 'tx-hash-789',
       });
 
-      const result = await controller.sendPayment({
-        sourceSecret: source.secret(),
-        destination,
-        asset: 'XLM',
-        amount: '10',
-      });
+      const result = await controller.sendPayment({ signedXdr });
 
       expect(result).toEqual({
         success: true,
         txHash: 'tx-hash-789',
-        destination,
-        destinationAccount: destination,
-        muxedId: null,
-        asset: 'XLM',
-        amount: '10',
       });
     });
   });
@@ -275,23 +288,17 @@ describe('WalletController validation and auth guards', () => {
   });
 
   describe('SendPaymentDto validation', () => {
-    it('accepts valid secret key and destination', async () => {
+    it('accepts a base64 signed XDR', async () => {
       const dto = plainToInstance(SendPaymentDto, {
-        sourceSecret: 'SBUQ54DRQG5Q3QLQHJEZ5ODSLGEYZIJEDYAJBSJUKAUJL4MQAQKF3PZ',
-        destination: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
-        asset: 'XLM',
-        amount: '10',
+        signedXdr: 'AAAAAgAAAAA=',
       });
       const errors = await validate(dto);
       expect(errors.length).toBe(0);
     });
 
-    it('rejects invalid source secret key format', async () => {
+    it('rejects a non-base64 signed XDR', async () => {
       const dto = plainToInstance(SendPaymentDto, {
-        sourceSecret: 'NOTASECRET',
-        destination: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
-        asset: 'XLM',
-        amount: '10',
+        signedXdr: 'NOT A SIGNED XDR',
       });
       const errors = await validate(dto);
       expect(errors.length).toBeGreaterThan(0);

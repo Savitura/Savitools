@@ -122,16 +122,11 @@ savitools/
 │           ├── sandbox/           # Wallet sandbox and Friendbot
 │           ├── workspace/         # Multi-tenant workspace mgmt
 │           ├── stellar/           # Stellar network / RPC helpers
+│           ├── stellar-toml/      # stellar.toml inspection
+│           ├── sep10/             # SEP-10 WebAuth debugging
+│           ├── sep24/             # SEP-24 interactive flow + redacted timeline
 │           └── auth/              # User accounts, JWT, Fluxa SSO
 │
-├── src/                          # Standalone SEP-10 & SEP-24 Debugger library
-│   ├── debugger/
-│   │   ├── SEP10Debugger.ts      # SEP-10 WebAuth challenge/response authentication
-│   │   └── SEP24Debugger.ts      # SEP-24 interactive deposit/withdrawal workflow runner
-│   ├── util/                     # URL validation, TOML resolution, redactor
-│   └── index.ts                  # Library entrypoint exports
-│
-├── tests/                        # Tests for root debugger library (SEP24Debugger.test.ts)
 ├── docker-compose.yml
 ├── turbo.json
 └── .env.example
@@ -139,52 +134,17 @@ savitools/
 
 ---
 
-## SEP-10 & SEP-24 Debugger Library (`src/`)
+## SEP-10 & SEP-24 Debuggers (`apps/api/src/modules`)
 
-Located at the repository root in `src/`, this standalone TypeScript library provides protocol-level debugging and automation for Stellar anchors implementing **SEP-10** (Stellar Web Authentication) and **SEP-24** (Interactive Deposit & Withdrawal):
+The SEP-10 and SEP-24 debuggers are part of the NestJS API so they are built
+and tested with the rest of the backend:
 
-- **`SEP10Debugger` (`src/debugger/SEP10Debugger.ts`)**:
-  - Handles the SEP-10 challenge-response authentication handshake.
-  - Fetches the challenge transaction from the anchor's web auth endpoint.
-  - Cryptographically verifies and signs the transaction with client keypairs.
-  - Submits the signed transaction to exchange for a JWT token, managing token caching and expiration.
-
-- **`SEP24Debugger` (`src/debugger/SEP24Debugger.ts`)**:
-  - Resolves `stellar.toml` to automatically discover `TRANSFER_SERVER_SEP0024` and `WEB_AUTH_ENDPOINT`.
-  - Executes authenticated SEP-10 authentication to obtain authorization.
-  - Initiates interactive deposit or withdrawal flows (`/transactions/deposit/interactive` or `/transactions/withdraw/interactive`).
-  - Polls transaction status and generates a comprehensive, redacted diagnostic timeline of every request and response.
-
-### Usage Example
-
-```typescript
-import { SEP10Debugger, SEP24Debugger } from './src';
-
-// 1. Initialize SEP-10 authenticator
-const sep10 = new SEP10Debugger({
-  anchorDomain: 'testanchor.stellar.org',
-  testnet: true,
-});
-
-// 2. Initialize SEP-24 workflow runner
-const sep24 = new SEP24Debugger(
-  {
-    anchorDomain: 'testanchor.stellar.org',
-    asset: 'USDC',
-    flowType: 'deposit',
-    testnet: true,
-    timeout: 60000,
-  },
-  sep10
-);
-
-// 3. Run interactive flow and retrieve diagnostic timeline
-const result = await sep24.startFlow();
-console.log('Interactive URL:', result.interactiveUrl);
-console.log('Transaction ID:', result.transactionId);
-console.log('Diagnostic Timeline:', result.timeline);
-console.log('Final Status:', result.finalStatus);
-```
+- **`sep10/`** - fetches an anchor's challenge, validates its structure against
+  the SEP-10 rules, signs it, and exchanges it for a JWT.
+- **`sep24/`** - discovers `TRANSFER_SERVER_SEP0024`/`WEB_AUTH_ENDPOINT` from
+  `stellar.toml`, starts an interactive deposit/withdrawal, polls status, and
+  records a redacted diagnostic timeline (`sep24-timeline.ts`) where JWT and
+  secret-key material is stripped before it is stored or exported.
 
 ---
 

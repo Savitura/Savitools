@@ -1135,9 +1135,6 @@ export interface BalancesResult {
 export interface SendPaymentResult {
   success: boolean;
   txHash: string;
-  destination: string;
-  asset: string;
-  amount: string;
 }
 
 export async function generateKeypair() {
@@ -1159,15 +1156,10 @@ export async function getBalances(publicKey: string) {
   );
 }
 
-export async function sendPayment(
-  sourceSecret: string,
-  destination: string,
-  asset: string,
-  amount: string,
-) {
+export async function sendPayment(signedXdr: string) {
   return apiFetch<SendPaymentResult>("/wallet/payment", {
     method: "POST",
-    body: JSON.stringify({ sourceSecret, destination, asset, amount }),
+    body: JSON.stringify({ signedXdr }),
   });
 }
 

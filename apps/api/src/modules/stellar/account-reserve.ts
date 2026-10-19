@@ -1,9 +1,10 @@
 /**
- * Calculates the minimum reserve required for a Stellar account.
- * The formula is based on Stellar's current reserve requirements:
+ * Stellar account minimum reserve calculation.
+ *
+ * Formula based on Stellar's reserve requirements:
  * - Base account: 2 * baseReserve
  * - Each trustline: 1 * baseReserve
- * - Each additional signer (beyond the master key): 1 * baseReserve
+ * - Each additional signer beyond the master key: 1 * baseReserve
  * - Each data entry: 1 * baseReserve
  *
  * @param baseReserve The current base reserve value in XLM (e.g., 0.5 XLM).
@@ -16,15 +17,11 @@ export const calculateMinReserve = (
   baseReserve: number,
   numTrustlines: number,
   numSigners: number,
-  numDataEntries: number
+  numDataEntries: number,
 ): number => {
-  // The base account itself requires 2 * baseReserve.
-  // Each additional signer beyond the master key costs 1 * baseReserve.
   const additionalSignersCost = Math.max(0, numSigners - 1);
-
   const totalEntries = 2 + numTrustlines + additionalSignersCost + numDataEntries;
   const minReserve = totalEntries * baseReserve;
 
-  // Ensure the result is formatted to a reasonable precision for XLM
   return parseFloat(minReserve.toFixed(7));
 };

@@ -428,4 +428,44 @@ export class StellarTestnetService {
       throw new BadRequestException(`Payment failed: ${message}`);
     }
   }
+
+  /**
+   * Submit a client-signed transaction envelope.
+   *
+   * The signing key never leaves the caller's device, so the API only ever
+   * handles the signed XDR. The envelope must already carry at least one
+   * signature; an unsigned envelope is rejected before touching the network.
+   */
+  async submitSignedTransaction(
+    signedXdr: string,
+    network: string = 'testnet',
+    overrides?: any,
+  ): Promise<SubmittedTransaction> {
+    const endpoints = resolveStellarEndpoints(network, overrides);
+    const srv = this.serverFor(network, overrides);
+
+    let transaction: StellarSdk.Transaction;
+    try {
+      transaction = new StellarSdk.Transaction(signedXdr, endpoints.passphrase);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      throw new BadRequestException(`Invalid signed transaction XDR: ${message}`);
+    }
+
+    if (!transaction.signatures || transaction.signatures.length === 0) {
+      throw new BadRequestException(
+        'Signed transaction XDR must include at least one signature.',
+      );
+    }
+
+    try {
+      return (await srv.submitTransaction(
+        transaction,
+      )) as unknown as SubmittedTransaction;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error(`Transaction submission failed on ${network}: ${message}`);
+      throw new BadRequestException(`Payment failed: ${message}`);
+    }
+  }
 }

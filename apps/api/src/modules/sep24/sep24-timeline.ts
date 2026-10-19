@@ -81,6 +81,9 @@ function redactString(value: string): string {
   // Redact JWT tokens (3 base64url segments separated by dots).
   const jwtRegex = /[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
   let out = value.replace(jwtRegex, REDACTED);
+  // Redact Stellar secret seeds (S…, 56-char StrKey) wherever they appear,
+  // even under a key that is not itself flagged as sensitive.
+  out = out.replace(/S[A-Z2-7]{55}/g, REDACTED);
   // Redact longer bearer-style tokens.
   out = out.replace(/Bearer\s+[A-Za-z0-9_.-]+/gi, `Bearer ${REDACTED}`);
   return out;
