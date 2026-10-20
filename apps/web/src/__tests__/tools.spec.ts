@@ -15,12 +15,12 @@ describe('Tool Registry Contract', () => {
   });
 
   it('resolves every tool href to an existing page component route directory', () => {
-    const appDir = join(__dirname, '..', 'app');
+    const localeAppDir = join(__dirname, '..', 'app', '[locale]');
     for (const tool of tools) {
-      // e.g. /inspector -> app/inspector/page.tsx or app/inspector
+      // e.g. /inspector -> app/[locale]/inspector/page.tsx or app/[locale]/inspector
       const cleanPath = tool.href.replace(/^\//, '');
-      const routePath = join(appDir, cleanPath);
-      const pageFile = join(appDir, cleanPath, 'page.tsx');
+      const routePath = join(localeAppDir, cleanPath);
+      const pageFile = join(localeAppDir, cleanPath, 'page.tsx');
 
       const exists = existsSync(routePath) || existsSync(pageFile);
       expect(exists).toBe(true);
