@@ -38,8 +38,8 @@ describe('SandboxController validation', () => {
   describe('PaymentDto validation in Sandbox', () => {
     it('accepts valid payment DTO with S... secret and G... destination', async () => {
       const dto = plainToInstance(PaymentDto, {
-        fromSecret: 'SBUQ54DRQG5Q3QLQHJEZ5ODSLGEYZIJEDYAJBSJUKAUJL4MQAQKF3PZ',
-        toPublicKey: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        fromSecret: 'SCXB2UEUJLXSQPDWCIPRSXLKCGCK6AXHLHCXGAA4QM3JPU53QIB4UVHU',
+        toPublicKey: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
         asset: 'XLM',
         amount: '5',
       });
@@ -50,7 +50,7 @@ describe('SandboxController validation', () => {
     it('rejects invalid secret key in sandbox payment dto', async () => {
       const dto = plainToInstance(PaymentDto, {
         fromSecret: 'BADSECRET',
-        toPublicKey: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        toPublicKey: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
         asset: 'XLM',
         amount: '5',
       });
