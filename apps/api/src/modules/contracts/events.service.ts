@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   BadGatewayException,
   BadRequestException,
@@ -48,6 +49,7 @@ export interface ReplaySummary {
   delivered: number;
   failed: number;
   results: ReplayResult[];
+  secret: string;
 }
 
 @Injectable()
@@ -258,8 +260,10 @@ export class EventsService {
 
     await assertSafeWebhookDestination(destination);
 
-    // Per-request secret wins; WEBHOOK_SIGNING_SECRET is the global fallback.
-    const secret = dto.secret || this.configService.get<string>('WEBHOOK_SIGNING_SECRET');
+    // Per-request secret wins. When none is supplied, generate a throwaway secret
+    // and return it in the summary so arbitrary user-chosen payloads can never be
+    // signed with the platform's global WEBHOOK_SIGNING_SECRET.
+    const secret = dto.secret?.trim() ? dto.secret : randomBytes(32).toString('hex');
 
     const results: ReplayResult[] = new Array<ReplayResult>(dto.events.length);
     let next = 0;
@@ -289,7 +293,7 @@ export class EventsService {
       `Replayed ${results.length} event(s) to ${destination.origin}: ${delivered} delivered, ${results.length - delivered} failed`,
     );
 
-    return { delivered, failed: results.length - delivered, results };
+    return { delivered, failed: results.length - delivered, results, secret };
   }
 
   private async deliverOne(

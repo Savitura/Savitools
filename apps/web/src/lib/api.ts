@@ -1976,6 +1976,7 @@ export interface ReplaySummary {
   delivered: number;
   failed: number;
   results: ReplayEventResult[];
+  secret?: string;
 }
 
 export const CONTRACT_EVENTS_MAX_LIMIT = 200;
