@@ -46,6 +46,16 @@ export const DEFAULT_MONITOR_EVALUATION_INTERVAL_MS = 60_000;
 /** How often alerts stuck in a pending/retrying state are re-enqueued. */
 export const DEFAULT_MONITOR_DISPATCH_INTERVAL_MS = 30_000;
 
+/**
+ * Cap on watches one user may own (Savitura/Savitools#432).
+ *
+ * Every watch adds Horizon streaming or polling work to the monitor leader, so
+ * an unbounded per-user count lets a single account multiply that load. The
+ * default matches the 50-connection envelope of the recorded load test: 25
+ * account watches occupy two SSE streams each.
+ */
+export const DEFAULT_MAX_WATCHES_PER_USER = 25;
+
 /** Redis key holding the monitor leader lease. */
 export const MONITOR_LEADER_LOCK_KEY = 'savitools:monitor:leader';
 
@@ -56,9 +66,7 @@ export interface MonitorRoleCapabilities {
   consumes: boolean;
 }
 
-export function monitorRoleCapabilities(
-  role: MonitorRole,
-): MonitorRoleCapabilities {
+export function monitorRoleCapabilities(role: MonitorRole): MonitorRoleCapabilities {
   if (role === 'api') {
     return { produces: false, consumes: false };
   }
@@ -74,9 +82,7 @@ export function resolveMonitorRole(raw: string | undefined): MonitorRole {
   if ((MONITOR_ROLES as readonly string[]).includes(value)) {
     return value as MonitorRole;
   }
-  throw new Error(
-    `MONITOR_ROLE must be one of ${MONITOR_ROLES.join(', ')} (received "${raw}")`,
-  );
+  throw new Error(`MONITOR_ROLE must be one of ${MONITOR_ROLES.join(', ')} (received "${raw}")`);
 }
 
 /** Reads an integer, falling back for unset/invalid input. */
@@ -88,8 +94,7 @@ function resolveInteger(
   if (value === undefined || value === null || value === '') {
     return fallback;
   }
-  const parsed =
-    typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
   return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
 }
 
@@ -120,6 +125,7 @@ export class MonitorRuntimeConfig {
   /** True when this role consumes notification jobs. */
   readonly consumerEnabled: boolean;
   readonly maxSseConnections: number;
+  readonly maxWatchesPerUser: number;
   readonly leaderLockKey: string;
   readonly leaderLeaseMs: number;
   readonly evaluationIntervalMs: number;
@@ -135,9 +141,12 @@ export class MonitorRuntimeConfig {
       configService.get<string>('MAX_SSE_CONNECTIONS'),
       DEFAULT_MAX_SSE_CONNECTIONS,
     );
+    this.maxWatchesPerUser = resolvePositiveInteger(
+      configService.get<string>('MONITOR_MAX_WATCHES_PER_USER'),
+      DEFAULT_MAX_WATCHES_PER_USER,
+    );
     this.leaderLockKey =
-      configService.get<string>('MONITOR_LEADER_LOCK_KEY')?.trim() ||
-      MONITOR_LEADER_LOCK_KEY;
+      configService.get<string>('MONITOR_LEADER_LOCK_KEY')?.trim() || MONITOR_LEADER_LOCK_KEY;
     this.leaderLeaseMs = Math.max(
       1000,
       resolvePositiveInteger(

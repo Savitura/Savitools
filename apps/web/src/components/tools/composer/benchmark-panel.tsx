@@ -1,8 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Zap, Play, Loader2, AlertTriangle, CheckCircle2, History, BarChart3, ArrowUpDown } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import {
+  Zap,
+  Play,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  History,
+  BarChart3,
+  ArrowUpDown,
+} from 'lucide-react';
+import { apiErrorMessage, apiFetch } from '@/lib/api';
 
 interface BenchmarkPanelProps {
   xdr: string;
@@ -39,8 +48,8 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
 
       setResult(data);
       setHistory((prev) => [data, ...prev].slice(0, 5));
-    } catch (err: any) {
-      setError(err.message || 'Failed to run benchmark');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to run benchmark'));
     } finally {
       setLoading(false);
     }
@@ -60,7 +69,8 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Measure throughput (tx/s), latency distributions (p50/p95/p99), and detect sequence number conflicts under concurrent submissions.
+          Measure throughput (tx/s), latency distributions (p50/p95/p99), and detect sequence number
+          conflicts under concurrent submissions.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -150,7 +160,9 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
                 </thead>
                 <tbody className="divide-y divide-border/50">
                   <tr>
-                    <td className="py-3 px-4 font-medium text-muted-foreground">Total Throughput</td>
+                    <td className="py-3 px-4 font-medium text-muted-foreground">
+                      Total Throughput
+                    </td>
                     <td className="py-3 px-4 font-mono font-semibold text-foreground">
                       {result.sequential.throughputTxPerSec} tx/s
                     </td>
@@ -159,18 +171,22 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4 font-medium text-muted-foreground">Success / Failures</td>
-                    <td className="py-3 px-4 font-mono">
-                      <span className="text-emerald-400">{result.sequential.successCount} ok</span> /{' '}
-                      <span className="text-rose-400">{result.sequential.failureCount} fail</span>
+                    <td className="py-3 px-4 font-medium text-muted-foreground">
+                      Success / Failures
                     </td>
                     <td className="py-3 px-4 font-mono">
-                      <span className="text-emerald-400">{result.concurrent.successCount} ok</span> /{' '}
-                      <span className="text-rose-400">{result.concurrent.failureCount} fail</span>
+                      <span className="text-emerald-400">{result.sequential.successCount} ok</span>{' '}
+                      / <span className="text-rose-400">{result.sequential.failureCount} fail</span>
+                    </td>
+                    <td className="py-3 px-4 font-mono">
+                      <span className="text-emerald-400">{result.concurrent.successCount} ok</span>{' '}
+                      / <span className="text-rose-400">{result.concurrent.failureCount} fail</span>
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4 font-medium text-muted-foreground">Sequence Conflicts</td>
+                    <td className="py-3 px-4 font-medium text-muted-foreground">
+                      Sequence Conflicts
+                    </td>
                     <td className="py-3 px-4 font-mono text-muted-foreground">
                       {result.sequential.sequenceConflicts || 0}
                     </td>
@@ -180,8 +196,12 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
                   </tr>
                   <tr>
                     <td className="py-3 px-4 font-medium text-muted-foreground">Average Latency</td>
-                    <td className="py-3 px-4 font-mono">{result.sequential.latencies.average} ms</td>
-                    <td className="py-3 px-4 font-mono">{result.concurrent.latencies.average} ms</td>
+                    <td className="py-3 px-4 font-mono">
+                      {result.sequential.latencies.average} ms
+                    </td>
+                    <td className="py-3 px-4 font-mono">
+                      {result.concurrent.latencies.average} ms
+                    </td>
                   </tr>
                   <tr>
                     <td className="py-3 px-4 font-medium text-muted-foreground">P50 Latency</td>
@@ -189,7 +209,9 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
                     <td className="py-3 px-4 font-mono">{result.concurrent.latencies.p50} ms</td>
                   </tr>
                   <tr>
-                    <td className="py-3 px-4 font-medium text-muted-foreground">P95 / P99 Latency</td>
+                    <td className="py-3 px-4 font-medium text-muted-foreground">
+                      P95 / P99 Latency
+                    </td>
                     <td className="py-3 px-4 font-mono">
                       {result.sequential.latencies.p95}ms / {result.sequential.latencies.p99}ms
                     </td>
@@ -212,16 +234,25 @@ export function BenchmarkPanel({ xdr, network }: BenchmarkPanelProps) {
           </h3>
           <div className="space-y-2">
             {history.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-background text-xs font-mono">
+              <div
+                key={idx}
+                className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-background text-xs font-mono"
+              >
                 <div className="flex items-center gap-3">
-                  <span className="text-primary font-semibold">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-primary font-semibold">
+                    {new Date(item.timestamp).toLocaleTimeString()}
+                  </span>
                   <span>Count: {item.sequential.transactionCount}</span>
                   <span>Concurrency: {item.sequential.concurrency}</span>
                 </div>
                 <div className="flex items-center gap-4 text-muted-foreground">
                   <span>Seq: {item.sequential.throughputTxPerSec} tx/s</span>
-                  <span className="text-emerald-400">Con: {item.concurrent.throughputTxPerSec} tx/s</span>
-                  <span className="text-amber-400">Conflicts: {item.concurrent.sequenceConflicts}</span>
+                  <span className="text-emerald-400">
+                    Con: {item.concurrent.throughputTxPerSec} tx/s
+                  </span>
+                  <span className="text-amber-400">
+                    Conflicts: {item.concurrent.sequenceConflicts}
+                  </span>
                 </div>
               </div>
             ))}

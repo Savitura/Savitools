@@ -248,7 +248,7 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 
 ## Step 8: Sign and Submit
 
-SaviTools supports server-side testnet transaction signing via authenticated and rate-limited endpoints (`POST /wallet/payment` and `POST /sandbox/payment`), or you can sign externally using the Stellar CLI or SDKs.
+SaviTools signs transactions client-side. You can submit an already-signed envelope to the authenticated, rate-limited `POST /wallet/payment` endpoint (body: `{ "signedXdr": "..." }`), submit it directly to Horizon, or use the Stellar CLI or SDKs. The source secret is never sent to the API.
 
 Use the [Stellar CLI](https://developers.stellar.org/docs/tools-and-sdks#command-line-client) or a wallet SDK:
 

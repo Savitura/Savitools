@@ -88,12 +88,12 @@ export class WalletController {
 
   @Post('payment')
   @UseGuards(JwtAuthGuard, ThrottlerGuard)
-  @ApiOperation({ summary: 'Send a payment from a sandbox wallet (authenticated & rate-limited testnet signing)' })
-  @ApiResponse({ status: 200, description: 'Payment sent successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid payment parameters or insufficient balance' })
+  @ApiOperation({ summary: 'Submit a client-signed Stellar payment (authenticated & rate-limited testnet submission)' })
+  @ApiResponse({ status: 200, description: 'Payment submitted successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid signed XDR or Horizon rejected the transaction' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   sendPayment(@Body() dto: SendPaymentDto) {
-    return this.walletService.sendPayment(dto.sourceSecret, dto.destination, dto.asset, dto.amount);
+    return this.walletService.sendPayment(dto.signedXdr);
   }
   // ---------------------------------------------------------------------------
   // Asset Control workstation (Savitura/Savitools#81)

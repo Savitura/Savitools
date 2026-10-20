@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WebhookService, WebhookHistoryEntry } from './webhook.service';
 import { SendWebhookDto } from './dto/send-webhook.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { WebhookTemplate } from './webhook-templates';
 import { WebhookSigningStatus } from './signature';
 
@@ -14,7 +15,10 @@ export class WebhookController {
   constructor(private readonly webhookService: WebhookService) {}
 
   @Get('templates')
-  @ApiOperation({ summary: 'Get available webhook templates and sample payloads (Note: in-memory storage, lost on restart)' })
+  @ApiOperation({
+    summary:
+      'Get available webhook templates and sample payloads (Note: in-memory storage, lost on restart)',
+  })
   @ApiResponse({ status: 200, description: 'List of webhook templates' })
   getTemplates(@CurrentUser() user?: { id: string }): WebhookTemplate[] {
     return this.webhookService.getTemplates(user?.id);
@@ -49,6 +53,7 @@ export class WebhookController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Send a webhook to a target endpoint' })
   @ApiResponse({ status: 201, description: 'Webhook sent successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid endpoint, event type, or payload' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   async sendWebhook(
     @CurrentUser() user: { id: string },
@@ -59,10 +64,17 @@ export class WebhookController {
 
   @Get('history')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get recent webhook execution history (Note: in-memory storage, not shared across replicas)' })
+  @ApiOperation({
+    summary:
+      'Get recent webhook execution history (Note: in-memory storage, not shared across replicas)',
+  })
+  @ApiResponse({ status: 200, description: 'Paginated webhook history' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  getHistory(@CurrentUser() user: { id: string }): WebhookHistoryEntry[] {
-    return this.webhookService.getHistory(user.id);
+  getHistory(
+    @CurrentUser() user: { id: string },
+    @Query() query: PaginationQueryDto = new PaginationQueryDto(),
+  ) {
+    return this.webhookService.getHistory(user.id, query);
   }
 
   @Post('replay/:id')

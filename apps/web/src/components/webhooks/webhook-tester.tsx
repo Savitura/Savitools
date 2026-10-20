@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
+  apiErrorMessage,
   fetchWebhookTemplates,
   fetchWebhookSigningStatus,
   saveWebhookTemplate,
@@ -37,6 +38,15 @@ import {
   signPayload,
   signedPayload,
 } from '@/lib/webhook-signature';
+import {
+  DEFAULT_WEBHOOK_METHOD,
+  WEBHOOK_METHODS,
+  parseWebhookMethod,
+  restoreWebhookMethod,
+  type WebhookMethod,
+} from '@/lib/webhook-method';
+
+export { WEBHOOK_METHODS, type WebhookMethod } from '@/lib/webhook-method';
 
 function formatJson(data: unknown): string {
   try {
@@ -59,10 +69,8 @@ function getStatusColor(status?: number | null): string {
   if (!status) return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
   if (status >= 200 && status < 300)
     return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
-  if (status >= 300 && status < 400)
-    return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
-  if (status >= 400 && status < 500)
-    return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+  if (status >= 300 && status < 400) return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
+  if (status >= 400 && status < 500) return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
   return 'bg-red-500/15 text-red-400 border-red-500/30';
 }
 
@@ -77,11 +85,14 @@ function escapeForSingleQuotes(value: string): string {
  */
 function curlFor(entry: WebhookHistoryEntry): string {
   const body = entry.signature?.body ?? JSON.stringify(entry.payload);
-  return `curl -s -X ${entry.method || 'POST'} '${entry.endpointUrl}' \
+  const method = parseWebhookMethod(entry.method);
+  return `curl -s -X ${method} '${entry.endpointUrl}' \
   ${Object.entries(entry.requestHeaders)
     .map(([k, v]) => `-H '${k}: ${v}'`)
-    .join(' \
-  ')} \
+    .join(
+      ' \
+  ',
+    )} \
   -d '${escapeForSingleQuotes(body)}'`;
 }
 
@@ -100,11 +111,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       onClick={handleCopy}
       className="flex items-center gap-1.5 rounded border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-muted-foreground/50 transition-colors"
     >
-      {copied ? (
-        <Check className="h-3 w-3 text-emerald-400" />
-      ) : (
-        <Copy className="h-3 w-3" />
-      )}
+      {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
       {copied ? 'Copied!' : label}
     </button>
   );
@@ -116,7 +123,8 @@ export function WebhookTester() {
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const { registerContextActions } = useCommandPalette();
   const [endpointUrl, setEndpointUrl] = useState('');
-  const [method, setMethod] = useState<'POST' | 'PUT' | 'PATCH' | 'GET'>('POST');
+  const [method, setMethod] = useState<WebhookMethod>(DEFAULT_WEBHOOK_METHOD);
+  const [methodWarning, setMethodWarning] = useState<string | null>(null);
   const [selectedEventType, setSelectedEventType] = useState('');
   const [payloadEditor, setPayloadEditor] = useState('');
   const [payloadValid, setPayloadValid] = useState(true);
@@ -161,9 +169,7 @@ export function WebhookTester() {
         setPayloadEditor(JSON.stringify(data[0].samplePayload, null, 2));
       }
     } catch (err) {
-      setTemplatesError(
-        err instanceof Error ? err.message : 'Failed to load templates',
-      );
+      setTemplatesError(apiErrorMessage(err, 'Failed to load templates'));
     } finally {
       setTemplatesLoading(false);
     }
@@ -261,11 +267,9 @@ export function WebhookTester() {
       setLocalSignature(null);
       return;
     }
-    void signPayload(secret, signingInput.timestamp, signingInput.body).then(
-      (value) => {
-        if (!cancelled) setLocalSignature(value);
-      },
-    );
+    void signPayload(secret, signingInput.timestamp, signingInput.body).then((value) => {
+      if (!cancelled) setLocalSignature(value);
+    });
     return () => {
       cancelled = true;
     };
@@ -275,18 +279,12 @@ export function WebhookTester() {
   // signature from the same timestamp and bytes, so say so explicitly. Only
   // meaningful once a signature was actually computed for the delivered input.
   const reproducesDelivery =
-    !!result?.signature &&
-    signingInput?.fromDelivery === true &&
-    localSignature !== null;
-  const localMatchesApi =
-    reproducesDelivery && localSignature === result!.signature!.signature;
+    !!result?.signature && signingInput?.fromDelivery === true && localSignature !== null;
+  const localMatchesApi = reproducesDelivery && localSignature === result!.signature!.signature;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setEventDropdownOpen(false);
       }
     }
@@ -298,6 +296,12 @@ export function WebhookTester() {
     setSelectedEventType(template.eventType);
     setPayloadEditor(JSON.stringify(template.samplePayload, null, 2));
     setEventDropdownOpen(false);
+  };
+
+  const restoreMethodFromHistory = (value: unknown) => {
+    const restored = restoreWebhookMethod(value);
+    setMethod(restored.method);
+    setMethodWarning(restored.warning);
   };
 
   const handleSend = useCallback(async () => {
@@ -358,7 +362,7 @@ export function WebhookTester() {
       await loadHistory();
       resultRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Failed to send webhook');
+      setSendError(apiErrorMessage(err, 'Failed to send webhook'));
     } finally {
       setSending(false);
     }
@@ -408,7 +412,7 @@ export function WebhookTester() {
         setTemplateDescInput('');
       }, 1500);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to save template');
+      alert(apiErrorMessage(err, 'Failed to save template'));
     }
   };
 
@@ -419,10 +423,10 @@ export function WebhookTester() {
       setEndpointUrl(res.endpointUrl);
       setSelectedEventType(res.eventType);
       setPayloadEditor(formatJson(res.payload));
-      setMethod((res.method as any) || 'POST');
+      restoreMethodFromHistory(res.method);
       await loadHistory();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to replay webhook');
+      alert(apiErrorMessage(err, 'Failed to replay webhook'));
     }
   };
 
@@ -435,16 +439,26 @@ export function WebhookTester() {
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
             <Send className="h-4 w-4 text-primary" /> Target & Method
           </h3>
+          {methodWarning && (
+            <p className="flex items-start gap-1.5 text-[11px] text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              {methodWarning}
+            </p>
+          )}
           <div className="flex gap-2">
             <select
               value={method}
-              onChange={(e) => setMethod(e.target.value as any)}
+              onChange={(e) => {
+                setMethod(parseWebhookMethod(e.target.value));
+                setMethodWarning(null);
+              }}
               className="rounded-md border border-input bg-background px-3 py-2 text-xs font-bold uppercase"
             >
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="GET">GET</option>
+              {WEBHOOK_METHODS.map((supportedMethod) => (
+                <option key={supportedMethod} value={supportedMethod}>
+                  {supportedMethod}
+                </option>
+              ))}
             </select>
             <input
               type="url"
@@ -542,7 +556,7 @@ export function WebhookTester() {
                   ? 'border-red-500/50 focus:ring-red-500'
                   : 'border-input focus:ring-primary',
               )}
-              placeholder="{&#10;  &quot;event&quot;: &quot;custom.event&quot;,&#10;  &quot;data&quot;: {}&#10;}"
+              placeholder='{&#10;  "event": "custom.event",&#10;  "data": {}&#10;}'
             />
           </div>
         </div>
@@ -560,10 +574,9 @@ export function WebhookTester() {
                 {signingStatus.enabled ? 'enabled' : 'disabled'}
               </span>{' '}
               — every signed request carries{' '}
-              <span className="font-mono text-foreground">{signingStatus.signatureHeader}</span>{' '}
-              and{' '}
-              <span className="font-mono text-foreground">{signingStatus.timestampHeader}</span>
-              , and the signature covers{' '}
+              <span className="font-mono text-foreground">{signingStatus.signatureHeader}</span> and{' '}
+              <span className="font-mono text-foreground">{signingStatus.timestampHeader}</span>,
+              and the signature covers{' '}
               <span className="font-mono text-foreground">{signingStatus.signedPayloadFormat}</span>
               . Reject timestamps older than {signingStatus.replayWindowSeconds}s.
             </p>
@@ -599,9 +612,7 @@ export function WebhookTester() {
                     <dt className="shrink-0 text-muted-foreground">{TIMESTAMP_HEADER}</dt>
                     <dd className="text-foreground break-all">
                       {signingInput?.timestamp ?? '—'}
-                      {signingInput?.fromDelivery
-                        ? ' (as sent)'
-                        : ' (current second)'}
+                      {signingInput?.fromDelivery ? ' (as sent)' : ' (current second)'}
                     </dd>
                   </div>
                   <div className="flex items-start gap-2">
@@ -612,16 +623,14 @@ export function WebhookTester() {
                   </div>
                   <div className="flex items-start gap-2">
                     <dt className="shrink-0 text-muted-foreground">{SIGNATURE_HEADER}</dt>
-                    <dd className="text-foreground break-all">
-                      {localSignature ?? '—'}
-                    </dd>
+                    <dd className="text-foreground break-all">{localSignature ?? '—'}</dd>
                   </div>
                 </dl>
 
                 {signingInput && localSignature === null && (
                   <p className="text-[11px] text-amber-400">
-                    Could not compute the signature here. It is still signed server-side —
-                    check the last delivery below for the value that went on the wire.
+                    Could not compute the signature here. It is still signed server-side — check the
+                    last delivery below for the value that went on the wire.
                   </p>
                 )}
 
@@ -647,9 +656,7 @@ export function WebhookTester() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Custom Headers
-                </label>
+                <label className="text-xs font-medium text-muted-foreground">Custom Headers</label>
                 <button
                   type="button"
                   onClick={() => setCustomHeaders([...customHeaders, { name: '', value: '' }])}
@@ -751,7 +758,10 @@ export function WebhookTester() {
           ) : (
             <>
               <Send className="h-4 w-4" /> Send Webhook {repeatCount > 1 ? `(${repeatCount}x)` : ''}
-              <ShortcutBadge shortcut="Cmd+Enter" className="hidden sm:inline-flex bg-primary-foreground/20 text-primary-foreground border-transparent text-[9px]" />
+              <ShortcutBadge
+                shortcut="Cmd+Enter"
+                className="hidden sm:inline-flex bg-primary-foreground/20 text-primary-foreground border-transparent text-[9px]"
+              />
             </>
           )}
         </button>
@@ -761,9 +771,7 @@ export function WebhookTester() {
       <div className="lg:col-span-5 space-y-6" ref={resultRef}>
         <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">
-              Response Inspector
-            </h3>
+            <h3 className="text-sm font-semibold text-foreground">Response Inspector</h3>
             {result && (
               <div className="flex items-center gap-2">
                 <span
@@ -792,25 +800,29 @@ export function WebhookTester() {
                 <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-400 flex items-start gap-1.5">
                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                   <span>
-                    Recorded before the timestamped signing contract, so it carries the
-                    legacy body-only signature. Replaying it re-signs under{' '}
+                    Recorded before the timestamped signing contract, so it carries the legacy
+                    body-only signature. Replaying it re-signs under{' '}
                     <span className="font-mono">{SIGNATURE_HEADER}</span> +{' '}
-                    <span className="font-mono">{TIMESTAMP_HEADER}</span>; a receiver
-                    cannot verify this entry as it was sent.
+                    <span className="font-mono">{TIMESTAMP_HEADER}</span>; a receiver cannot verify
+                    this entry as it was sent.
                   </span>
                 </p>
               ) : result.signature ? (
                 <p className="rounded border border-border bg-muted/30 p-2.5 text-[11px] font-mono text-muted-foreground">
-                  Signed with <span className="text-foreground">{TIMESTAMP_HEADER}: {result.signature.timestamp}</span>{' '}
-                  over <span className="text-foreground">{SIGNATURE_HEADER}: {result.signature.signature}</span>
+                  Signed with{' '}
+                  <span className="text-foreground">
+                    {TIMESTAMP_HEADER}: {result.signature.timestamp}
+                  </span>{' '}
+                  over{' '}
+                  <span className="text-foreground">
+                    {SIGNATURE_HEADER}: {result.signature.signature}
+                  </span>
                 </p>
               ) : null}
 
               {/* Response Headers */}
               <div>
-                <h4 className="text-xs font-medium text-muted-foreground mb-1">
-                  Response Headers
-                </h4>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1">Response Headers</h4>
                 <pre className="rounded border border-border bg-muted/30 p-2 text-[11px] font-mono overflow-x-auto max-h-32">
                   {formatJson(result.responseHeaders)}
                 </pre>
@@ -819,9 +831,7 @@ export function WebhookTester() {
               {/* Response Body */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-xs font-medium text-muted-foreground">
-                    Response Body
-                  </h4>
+                  <h4 className="text-xs font-medium text-muted-foreground">Response Body</h4>
                   <CopyButton text={result.responseBody} label="Copy Body" />
                 </div>
                 <pre className="rounded border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto max-h-64">
@@ -832,13 +842,8 @@ export function WebhookTester() {
               {/* Request cURL */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="text-xs font-medium text-muted-foreground">
-                    Request cURL
-                  </h4>
-                  <CopyButton
-                    text={curlFor(result)}
-                    label="Copy cURL"
-                  />
+                  <h4 className="text-xs font-medium text-muted-foreground">Request cURL</h4>
+                  <CopyButton text={curlFor(result)} label="Copy cURL" />
                 </div>
                 <pre className="rounded border border-border bg-muted/30 p-3 text-[11px] font-mono overflow-x-auto max-h-40">
                   {curlFor(result)}
@@ -854,14 +859,10 @@ export function WebhookTester() {
 
         {/* Recent Webhook History */}
         <div className="rounded-lg border border-border bg-card p-5 space-y-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-foreground">
-            Webhook History & Replay
-          </h3>
+          <h3 className="text-sm font-semibold text-foreground">Webhook History & Replay</h3>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {history.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">
-                No history available
-              </p>
+              <p className="text-xs text-muted-foreground py-4 text-center">No history available</p>
             ) : (
               history.map((item) => (
                 <div
@@ -880,7 +881,7 @@ export function WebhookTester() {
                       setEndpointUrl(item.endpointUrl);
                       setSelectedEventType(item.eventType);
                       setPayloadEditor(formatJson(item.payload));
-                      setMethod((item.method as any) || 'POST');
+                      restoreMethodFromHistory(item.method);
                     }}
                   >
                     <div className="flex items-center gap-2">
@@ -892,9 +893,7 @@ export function WebhookTester() {
                       >
                         {item.responseStatus ?? 'ERR'}
                       </span>
-                      <span className="font-mono font-medium truncate">
-                        {item.eventType}
-                      </span>
+                      <span className="font-mono font-medium truncate">{item.eventType}</span>
                       {item.legacySignature && (
                         <span
                           title="Signed with the legacy body-only format; a replay is re-signed"
@@ -927,9 +926,7 @@ export function WebhookTester() {
       {saveTemplateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 space-y-4 shadow-xl">
-            <h3 className="text-base font-semibold text-foreground">
-              Save Payload as Template
-            </h3>
+            <h3 className="text-base font-semibold text-foreground">Save Payload as Template</h3>
             {templateSavedMsg ? (
               <div className="p-4 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs text-center font-medium">
                 Template successfully saved!

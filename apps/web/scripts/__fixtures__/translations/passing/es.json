@@ -1,0 +1,7 @@
+{
+  "greeting": "¡Hola, {name}!",
+  "apostrophe": "El nombre del usuario es {name}",
+  "items": "{count, plural, offset:1 =0 {Sin elementos} one {# elemento} other {# elementos}}",
+  "selection": "{kind, select, image {Imagen} other {Archivo}}",
+  "nested": "{count, plural, one {{name} tiene # elemento} other {{name} tiene # elementos}}"
+}

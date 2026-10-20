@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import {
   rpc as SorobanRpc,
   nativeToScVal,
@@ -91,7 +87,7 @@ export class SorobanStorageService {
    */
   async queryStorage(dto: StorageQueryDto): Promise<StorageQueryResult> {
     const startTime = Date.now();
-    
+
     try {
       // Validate contract ID
       if (!StrKey.isValidContract(dto.contractId)) {
@@ -106,7 +102,7 @@ export class SorobanStorageService {
 
       // Parse storage key
       const storageKeyXdr = this.parseStorageKey(dto.storageKey);
-      
+
       // Create ledger key for the storage entry
       const ledgerKey = this.createLedgerKey(dto.contractId, storageKeyXdr, dto.durability);
 
@@ -115,7 +111,7 @@ export class SorobanStorageService {
       const ledgerInfo = await rpcServer.getLatestLedger();
 
       const responseTime = Date.now() - startTime;
-      
+
       const result: StorageQueryResult = {
         contractId: dto.contractId,
         storageKey: dto.storageKey,
@@ -133,7 +129,7 @@ export class SorobanStorageService {
 
       if (ledgerEntries.entries && ledgerEntries.entries.length > 0) {
         const entry = ledgerEntries.entries[0];
-        
+
         if (entry.val) {
           result.found = true;
           result.entry = await this.parseStorageEntry(storageKeyXdr, entry);
@@ -144,10 +140,9 @@ export class SorobanStorageService {
       this.cacheResult(`storage:${dto.contractId}:${dto.storageKey}:${dto.durability}`, result);
 
       return result;
-
     } catch (error) {
       this.logger.error(`Storage query failed: ${error.message}`, error.stack);
-      
+
       return {
         contractId: dto.contractId,
         storageKey: dto.storageKey,
@@ -171,7 +166,7 @@ export class SorobanStorageService {
    */
   async compareStorage(dto: StorageCompareDto): Promise<StorageCompareResult> {
     const startTime = Date.now();
-    
+
     try {
       // Validate inputs
       if (!StrKey.isValidContract(dto.contractId)) {
@@ -192,8 +187,20 @@ export class SorobanStorageService {
 
       // Query both ledger states
       const [entry1, entry2] = await Promise.all([
-        this.queryStorageAtLedger(rpcServer, dto.contractId, storageKeyXdr, 'persistent', dto.ledgerSeq1),
-        this.queryStorageAtLedger(rpcServer, dto.contractId, storageKeyXdr, 'persistent', dto.ledgerSeq2),
+        this.queryStorageAtLedger(
+          rpcServer,
+          dto.contractId,
+          storageKeyXdr,
+          'persistent',
+          dto.ledgerSeq1,
+        ),
+        this.queryStorageAtLedger(
+          rpcServer,
+          dto.contractId,
+          storageKeyXdr,
+          'persistent',
+          dto.ledgerSeq2,
+        ),
       ]);
 
       // Generate diff
@@ -212,7 +219,6 @@ export class SorobanStorageService {
           totalResponseTime: Date.now() - startTime,
         },
       };
-
     } catch (error) {
       this.logger.error(`Storage comparison failed: ${error.message}`, error.stack);
       throw new BadRequestException(`Storage comparison failed: ${error.message}`);
@@ -230,40 +236,40 @@ export class SorobanStorageService {
         case 'symbol':
           scVal = xdr.ScVal.scvSymbol(dto.keyValue);
           break;
-        
+
         case 'string':
           scVal = nativeToScVal(dto.keyValue);
           break;
-        
+
         case 'address':
           scVal = Address.fromString(dto.keyValue).toScVal();
           break;
-        
+
         case 'instance':
           scVal = xdr.ScVal.scvLedgerKeyContractInstance();
           break;
-        
+
         case 'u32':
           scVal = nativeToScVal(parseInt(dto.keyValue, 10), { type: 'u32' });
           break;
-        
+
         case 'i32':
           scVal = nativeToScVal(parseInt(dto.keyValue, 10), { type: 'i32' });
           break;
-        
+
         case 'u64':
           scVal = nativeToScVal(BigInt(dto.keyValue), { type: 'u64' });
           break;
-        
+
         case 'i64':
           scVal = nativeToScVal(BigInt(dto.keyValue), { type: 'i64' });
           break;
-        
+
         case 'bytes':
           const bytes = Buffer.from(dto.keyValue, 'hex');
           scVal = nativeToScVal(bytes);
           break;
-        
+
         default:
           throw new BadRequestException(`Unsupported key type: ${dto.keyType}`);
       }
@@ -273,11 +279,11 @@ export class SorobanStorageService {
         try {
           const additionalKeys = JSON.parse(dto.additionalKeys);
           const keyArray = [scVal];
-          
+
           for (const additionalKey of additionalKeys) {
             keyArray.push(nativeToScVal(additionalKey));
           }
-          
+
           scVal = xdr.ScVal.scvVec(keyArray);
         } catch (parseError) {
           throw new BadRequestException('Invalid additional keys JSON format');
@@ -291,7 +297,6 @@ export class SorobanStorageService {
         xdr: xdrString,
         decoded,
       };
-
     } catch (error) {
       this.logger.error(`Typed key creation failed: ${error.message}`);
       throw new BadRequestException(`Typed key creation failed: ${error.message}`);
@@ -327,50 +332,57 @@ export class SorobanStorageService {
       try {
         return xdr.ScVal.scvSymbol(keyInput);
       } catch (symbolError) {
-        throw new BadRequestException(
-          'Storage key must be valid XDR or a symbol string'
-        );
+        throw new BadRequestException('Storage key must be valid XDR or a symbol string');
       }
     }
   }
 
-  private createLedgerKey(contractId: string, storageKey: xdr.ScVal, durability: string): xdr.LedgerKey {
-    const contractAddress = Address.contract(Buffer.from(contractId, 'hex'));
-    
+  private createLedgerKey(
+    contractId: string,
+    storageKey: xdr.ScVal,
+    durability: string,
+  ): xdr.LedgerKey {
+    // contractId is a C… strkey (validated by the callers), not hex.
+    const contract = Address.fromString(contractId).toScAddress();
+
     switch (durability) {
       case 'temporary':
         return xdr.LedgerKey.contractData(
           new xdr.LedgerKeyContractData({
-            contract: contractAddress.toScAddress(),
+            contract,
             key: storageKey,
             durability: xdr.ContractDataDurability.temporary(),
-          })
+          }),
         );
-      
+
       case 'persistent':
         return xdr.LedgerKey.contractData(
           new xdr.LedgerKeyContractData({
-            contract: contractAddress.toScAddress(),
+            contract,
             key: storageKey,
             durability: xdr.ContractDataDurability.persistent(),
-          })
+          }),
         );
-      
+
       case 'instance':
-        return xdr.LedgerKey.contractCode(
-          new xdr.LedgerKeyContractCode({
-            hash: Buffer.from(contractId, 'hex'),
-          })
+        // Instance storage lives in the contract's persistent instance entry,
+        // keyed by ScVal::LedgerKeyContractInstance.
+        return xdr.LedgerKey.contractData(
+          new xdr.LedgerKeyContractData({
+            contract,
+            key: xdr.ScVal.scvLedgerKeyContractInstance(),
+            durability: xdr.ContractDataDurability.persistent(),
+          }),
         );
-      
+
       default:
         throw new BadRequestException(`Invalid durability class: ${durability}`);
     }
   }
 
   private async queryLedgerEntries(
-    rpcServer: SorobanRpc.Server, 
-    keys: xdr.LedgerKey[]
+    rpcServer: SorobanRpc.Server,
+    keys: xdr.LedgerKey[],
   ): Promise<SorobanRpc.Api.GetLedgerEntriesResponse> {
     return await rpcServer.getLedgerEntries(...keys);
   }
@@ -380,22 +392,22 @@ export class SorobanStorageService {
     contractId: string,
     storageKey: xdr.ScVal,
     durability: string,
-    ledgerSeq: number
+    ledgerSeq: number,
   ): Promise<StorageEntry | undefined> {
     try {
       const ledgerKey = this.createLedgerKey(contractId, storageKey, durability);
-      
+
       // Note: This is a simplified implementation. In practice, you'd need
       // to use historical ledger data or archive access
       const response = await this.queryLedgerEntries(rpcServer, [ledgerKey]);
-      
+
       if (response.entries && response.entries.length > 0) {
         const entry = response.entries[0];
         if (entry.val) {
           return await this.parseStorageEntry(storageKey, entry);
         }
       }
-      
+
       return undefined;
     } catch (error) {
       this.logger.warn(`Failed to query storage at ledger ${ledgerSeq}: ${error.message}`);
@@ -404,8 +416,8 @@ export class SorobanStorageService {
   }
 
   private async parseStorageEntry(
-    keyXdr: xdr.ScVal, 
-    ledgerEntry: SorobanRpc.Api.LedgerEntryResult
+    keyXdr: xdr.ScVal,
+    ledgerEntry: SorobanRpc.Api.LedgerEntryResult,
   ): Promise<StorageEntry> {
     try {
       const key = {
@@ -429,8 +441,12 @@ export class SorobanStorageService {
         }
       }
       let value: any = { xdr: '', decoded: null, type: 'unknown' };
-      
-      if (valueXdr?.contractData && typeof valueXdr.contractData === 'function' && valueXdr.contractData()?.val) {
+
+      if (
+        valueXdr?.contractData &&
+        typeof valueXdr.contractData === 'function' &&
+        valueXdr.contractData()?.val
+      ) {
         const val = valueXdr.contractData().val();
         value = {
           xdr: val.toXDR('base64'),
@@ -529,7 +545,7 @@ export class SorobanStorageService {
 
     if (entry1 && entry2) {
       const key = entry1.key.xdr;
-      
+
       // Deep compare values
       if (JSON.stringify(entry1.value.decoded) === JSON.stringify(entry2.value.decoded)) {
         return {
@@ -541,7 +557,7 @@ export class SorobanStorageService {
       } else {
         // Generate detailed changes
         const changes = this.generateDetailedChanges(entry1.value.decoded, entry2.value.decoded);
-        
+
         return {
           key,
           status: 'modified',
@@ -560,7 +576,7 @@ export class SorobanStorageService {
 
   private generateDetailedChanges(oldValue: any, newValue: any, path = ''): any[] {
     const changes: any[] = [];
-    
+
     if (typeof oldValue !== typeof newValue) {
       changes.push({
         path: path || 'root',
@@ -594,7 +610,9 @@ export class SorobanStorageService {
           } else if (!(key in newValue)) {
             changes.push({ path: currentPath, oldValue: oldValue[key], newValue: undefined });
           } else {
-            changes.push(...this.generateDetailedChanges(oldValue[key], newValue[key], currentPath));
+            changes.push(
+              ...this.generateDetailedChanges(oldValue[key], newValue[key], currentPath),
+            );
           }
         }
       }

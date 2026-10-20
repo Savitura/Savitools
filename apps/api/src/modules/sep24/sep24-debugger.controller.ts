@@ -1,20 +1,18 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Sep24DebuggerService } from './sep24-debugger.service';
 import { StartSessionDto } from './dto/start-session.dto';
 import { PollStatusDto } from './dto/poll-status.dto';
 
+@ApiTags('sep24')
 @Controller('sep24/debugger')
 export class Sep24DebuggerController {
   constructor(private readonly service: Sep24DebuggerService) {}
 
   @Post('sessions')
+  @ApiOperation({ summary: 'Start a SEP-24 interactive deposit or withdrawal session' })
+  @ApiResponse({ status: 201, description: 'Session started' })
+  @ApiResponse({ status: 400, description: 'Invalid anchor domain, asset, or operation' })
   async startSession(@Body() dto: StartSessionDto) {
     const session = await this.service.startSession(dto);
     return {

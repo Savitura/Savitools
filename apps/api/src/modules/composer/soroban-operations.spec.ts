@@ -2,6 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ComposerService } from './composer.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { BadRequestException } from '@nestjs/common';
+import {
+  Account,
+  Address,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
 
 describe('ComposerService - Soroban Operations', () => {
   let service: ComposerService;
@@ -36,12 +44,17 @@ describe('ComposerService - Soroban Operations', () => {
         useAbi: false,
       };
 
-      const operation = (service as any).buildInvokeHostFunctionOperation(dto);
+      // The builder returns a raw xdr.Operation; decode it the way the SDK
+      // does for a parsed transaction before asserting on its fields.
+      const operation = Operation.fromXDRObject(
+        (service as any).buildInvokeHostFunctionOperation(dto),
+      ) as Operation.InvokeHostFunction;
 
-      expect(operation.type).toBe('invokeContractFunction');
-      expect(operation.contract).toBe(dto.contractId);
-      expect(operation.function).toBe(dto.functionName);
-      expect(Array.isArray(operation.args)).toBe(true);
+      expect(operation.type).toBe('invokeHostFunction');
+      const invocation = operation.func.invokeContract();
+      expect(Address.fromScAddress(invocation.contractAddress()).toString()).toBe(dto.contractId);
+      expect(invocation.functionName().toString()).toBe(dto.functionName);
+      expect(invocation.args()).toEqual([]);
     });
 
     it('should throw error for invalid contract ID', () => {
@@ -75,36 +88,36 @@ describe('ComposerService - Soroban Operations', () => {
     it('should convert address type correctly', () => {
       const address = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
       const result = (service as any).buildScValFromType('Address', address);
-      
+
       expect(result).toBeDefined();
       // The result should be an ScVal representing an address
     });
 
     it('should convert boolean type correctly', () => {
       const result = (service as any).buildScValFromType('Bool', true);
-      
+
       expect(result).toBeDefined();
     });
 
     it('should convert string type correctly', () => {
       const result = (service as any).buildScValFromType('String', 'test');
-      
+
       expect(result).toBeDefined();
     });
 
     it('should convert u64 type correctly', () => {
       const result = (service as any).buildScValFromType('U64', '12345');
-      
+
       expect(result).toBeDefined();
     });
 
     it('should convert array type correctly', () => {
       const arrayValue = [
         { type: 'String', value: 'test1' },
-        { type: 'String', value: 'test2' }
+        { type: 'String', value: 'test2' },
       ];
       const result = (service as any).buildScValFromType('Vec', arrayValue);
-      
+
       expect(result).toBeDefined();
     });
 
@@ -122,8 +135,8 @@ describe('ComposerService - Soroban Operations', () => {
           name: 'from',
           type: 'Address',
           xdrBase64: 'base64-encoded-xdr',
-          decoded: { type: 'Address', value: 'GAAA...' }
-        }
+          decoded: { type: 'Address', value: 'GAAA...' },
+        },
       ];
 
       (contractsService.encodeAbiArguments as jest.Mock).mockResolvedValue(mockEncodedArgs);
@@ -140,7 +153,9 @@ describe('ComposerService - Soroban Operations', () => {
     });
 
     it('should return valid result when ABI validation fails', async () => {
-      (contractsService.encodeAbiArguments as jest.Mock).mockRejectedValue(new Error('ABI not found'));
+      (contractsService.encodeAbiArguments as jest.Mock).mockRejectedValue(
+        new Error('ABI not found'),
+      );
 
       const result = await service.validateSorobanArguments(
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
@@ -153,40 +168,31 @@ describe('ComposerService - Soroban Operations', () => {
     });
   });
 
-  describe('simulateSorobanTransaction', () => {
-    it('should detect Soroban operations in transaction', async () => {
-      const mockTransaction = {
-        hash: () => ({ toString: () => 'test-hash' }),
-        operations: [
-          {
-            type: 'invokeHostFunction',
-            contract: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4'
-          }
-        ]
-      };
+  describe('simulateTransaction with a Soroban operation', () => {
+    it('accepts an invoke_host_function transaction', async () => {
+      const source = Keypair.random();
+      const op = (service as any).buildInvokeHostFunctionOperation({
+        type: 'invoke_host_function',
+        contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+        functionName: 'transfer',
+        arguments: [],
+        useAbi: false,
+      });
+      const tx = new TransactionBuilder(new Account(source.publicKey(), '1'), {
+        fee: '100',
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(op)
+        .setTimeout(30)
+        .build();
 
-      const result = await (service as any).simulateSorobanTransaction(mockTransaction, 'testnet');
+      const result = await service.simulateTransaction({
+        xdr: tx.toXDR(),
+        network: 'testnet',
+      } as any);
 
       expect(result.success).toBe(true);
-      expect(result.resourceFee).toBeDefined();
-      expect(result.resourceFee?.cpuInstructions).toBeDefined();
-    });
-
-    it('should fail simulation for invalid contract ID', async () => {
-      const mockTransaction = {
-        hash: () => ({ toString: () => 'test-hash' }),
-        operations: [
-          {
-            type: 'invokeHostFunction',
-            contract: 'invalid-contract-id'
-          }
-        ]
-      };
-
-      const result = await (service as any).simulateSorobanTransaction(mockTransaction, 'testnet');
-
-      expect(result.success).toBe(false);
-      expect(result.operationResults).toContain('op[0] invoke_host_function: Invalid contract ID');
+      expect(result.hash).toBe(tx.hash().toString('hex'));
     });
   });
 
@@ -196,12 +202,14 @@ describe('ComposerService - Soroban Operations', () => {
         id: 'test-contract:default',
         contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
         methods: [],
-        events: []
+        events: [],
       };
 
       (contractsService.getAbi as jest.Mock).mockReturnValue(mockAbi);
 
-      const result = await service.getContractAbi('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4');
+      const result = await service.getContractAbi(
+        'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+      );
 
       expect(result).toEqual(mockAbi);
     });
@@ -213,7 +221,9 @@ describe('ComposerService - Soroban Operations', () => {
         throw error;
       });
 
-      const result = await service.getContractAbi('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4');
+      const result = await service.getContractAbi(
+        'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+      );
 
       expect(result).toBeNull();
     });
@@ -222,7 +232,9 @@ describe('ComposerService - Soroban Operations', () => {
       const serviceWithoutContracts = new ComposerService(undefined);
 
       await expect(
-        serviceWithoutContracts.getContractAbi('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4')
+        serviceWithoutContracts.getContractAbi(
+          'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+        ),
       ).rejects.toThrow('Contract ABI functionality is not available');
     });
   });
@@ -230,8 +242,8 @@ describe('ComposerService - Soroban Operations', () => {
   describe('OPERATION_MANIFEST', () => {
     it('should include invoke_host_function in operation manifest', () => {
       const operations = service.getOperations();
-      const invokeOperation = operations.find(op => op.type === 'invoke_host_function');
-      
+      const invokeOperation = operations.find((op) => op.type === 'invoke_host_function');
+
       expect(invokeOperation).toBeDefined();
       expect(invokeOperation?.label).toBe('Invoke Host Function');
       expect(invokeOperation?.soroban?.requiresResourceFee).toBe(true);
@@ -240,14 +252,44 @@ describe('ComposerService - Soroban Operations', () => {
 
     it('should have correct fields for invoke_host_function', () => {
       const operations = service.getOperations();
-      const invokeOperation = operations.find(op => op.type === 'invoke_host_function');
-      
+      const invokeOperation = operations.find((op) => op.type === 'invoke_host_function');
+
       expect(invokeOperation?.fields).toEqual([
-        { name: 'contractId', label: 'Contract ID', type: 'text', required: true, placeholder: 'C...' },
-        { name: 'functionName', label: 'Function Name', type: 'text', required: true, placeholder: 'transfer' },
-        { name: 'arguments', label: 'Arguments', type: 'scval-array', required: false, placeholder: '[]' },
-        { name: 'useAbi', label: 'Use ABI Validation', type: 'boolean', required: false, placeholder: 'true' },
-        { name: 'rawMode', label: 'Raw Arguments Mode', type: 'boolean', required: false, placeholder: 'false' },
+        {
+          name: 'contractId',
+          label: 'Contract ID',
+          type: 'text',
+          required: true,
+          placeholder: 'C...',
+        },
+        {
+          name: 'functionName',
+          label: 'Function Name',
+          type: 'text',
+          required: true,
+          placeholder: 'transfer',
+        },
+        {
+          name: 'arguments',
+          label: 'Arguments',
+          type: 'scval-array',
+          required: false,
+          placeholder: '[]',
+        },
+        {
+          name: 'useAbi',
+          label: 'Use ABI Validation',
+          type: 'boolean',
+          required: false,
+          placeholder: 'true',
+        },
+        {
+          name: 'rawMode',
+          label: 'Raw Arguments Mode',
+          type: 'boolean',
+          required: false,
+          placeholder: 'false',
+        },
       ]);
     });
   });

@@ -52,34 +52,19 @@ export class WalletService {
     };
   }
 
-  async sendPayment(
-    sourceSecret: string,
-    destination: string,
-    assetString: string,
-    amount: string,
-  ) {
-    const result = await this.stellar.submitPayment({
-      sourceSecret,
-      destination,
-      asset: assetString,
-      amount,
-    });
-
-    // Decoded after the submission so the validation order (and therefore the
-    // error a caller sees for a bad destination) stays inside submitPayment.
-    const parsed = this.stellar.assertDestination(destination);
+  /**
+   * Submit a payment the caller built and signed client-side.
+   *
+   * The API receives only the signed envelope XDR; the source secret never
+   * crosses the network. `destination`/`asset`/`amount` live inside the
+   * signed transaction, so callers that need them can decode the envelope.
+   */
+  async sendPayment(signedXdr: string) {
+    const result = await this.stellar.submitSignedTransaction(signedXdr);
 
     return {
       success: true,
       txHash: result.hash,
-      destination,
-      // For an M… address, the funds land in the underlying G… account; the
-      // wallet page shows the two halves separately rather than echoing the
-      // muxed string as if it were an account.
-      destinationAccount: parsed.account,
-      muxedId: parsed.muxedId,
-      asset: assetString,
-      amount,
     };
   }
 }

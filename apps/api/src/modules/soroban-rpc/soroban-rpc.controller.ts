@@ -1,13 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-} from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ExecuteSorobanRpcDto } from './dto/execute-soroban-rpc.dto';
 import { SorobanRpcService } from './soroban-rpc.service';
 
@@ -44,6 +36,8 @@ export class SorobanRpcController {
     description:
       'Validates the named parameters against the method schema, forwards one JSON-RPC request to the configured endpoint, and returns either the JSON-RPC result or the JSON-RPC error object. Write methods such as sendTransaction are not exposed.',
   })
+  @ApiResponse({ status: 200, description: 'JSON-RPC result or error object' })
+  @ApiResponse({ status: 400, description: 'Unknown method or invalid parameters' })
   execute(@Body() dto: ExecuteSorobanRpcDto) {
     return this.sorobanRpc.execute({
       method: dto.method,

@@ -32,7 +32,7 @@ const MUXED_ID_BYTES = 8;
  * malformed address fails validation with a field-level error instead of
  * reaching the Stellar layer, which then verifies the checksum.
  */
-export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{54,55}|M[A-Z2-7]{68})$/;
+export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{55}|M[A-Z2-7]{68})$/;
 
 export const STELLAR_DESTINATION_MESSAGE =
   'destination must be a Stellar G… account or M… muxed account';
@@ -85,9 +85,7 @@ export function parseDestination(destination: string): ParsedDestination {
     // rather than stripping the leading "M" so the checksum is recomputed
     // rather than assumed.
     const raw = StrKey.decodeMed25519PublicKey(address);
-    const account = StrKey.encodeEd25519PublicKey(
-      raw.subarray(0, ED25519_KEY_BYTES),
-    );
+    const account = StrKey.encodeEd25519PublicKey(raw.subarray(0, ED25519_KEY_BYTES));
     const muxedId = raw
       .subarray(ED25519_KEY_BYTES, ED25519_KEY_BYTES + MUXED_ID_BYTES)
       .readBigUInt64BE(0)
@@ -100,9 +98,7 @@ export function parseDestination(destination: string): ParsedDestination {
   // alphabet) is worth its own message: "invalid public key" reads like the
   // caller used the wrong field, when the real problem is the muxed payload.
   if (address.startsWith('M')) {
-    throw new BadRequestException(
-      `Invalid muxed destination address: ${address}`,
-    );
+    throw new BadRequestException(`Invalid muxed destination address: ${address}`);
   }
 
   throw new BadRequestException(`Invalid destination public key: ${address}`);

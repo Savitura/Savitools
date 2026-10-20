@@ -1,11 +1,7 @@
 'client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  getWorkspace,
-  saveWorkspace,
-  WorkspaceTool,
-} from './api';
+import { getWorkspace, saveWorkspace, WorkspaceTool } from './api';
 import {
   listComposerWorkspaces,
   createComposerWorkspace,
@@ -19,6 +15,16 @@ import {
   shareComposerWorkspace,
 } from './composer-api';
 import { useAuth } from './auth-context';
+import { parseWorkspaceFile, serializeWorkspaceFile } from './workspace-format';
+
+export {
+  WORKSPACE_FORMAT_VERSION,
+  WorkspaceFormatError,
+  migrateWorkspaceFile,
+  parseWorkspaceFile,
+  serializeWorkspaceFile,
+} from './workspace-format';
+export type { WorkspaceFile } from './workspace-format';
 
 function guestStorageKey(tool: WorkspaceTool): string {
   return `savitools:guest:${tool}`;
@@ -49,10 +55,7 @@ export function writeGuestWorkspace<T>(tool: WorkspaceTool, data: T): void {
   window.localStorage.setItem(guestStorageKey(tool), JSON.stringify(data));
 }
 
-export function useWorkspaceState<T>(
-  tool: WorkspaceTool,
-  defaultValue: T,
-) {
+export function useWorkspaceState<T>(tool: WorkspaceTool, defaultValue: T) {
   const { user, loading } = useAuth();
   const [data, setData] = useState<T>(defaultValue);
   const [ready, setReady] = useState(false);
@@ -180,34 +183,18 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export function validateWorkspaceJSON(json: string): { name?: string; composerState: Record<string, unknown>; operations: unknown[] } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new Error('Invalid JSON file');
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) {
-    throw new Error('Workspace JSON must be an object');
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (obj.composerState === undefined || obj.composerState === null || typeof obj.composerState !== 'object') {
-    throw new Error('Missing or invalid "composerState"');
-  }
-
-  if (!Array.isArray(obj.operations)) {
-    throw new Error('Missing or invalid "operations" array');
-  }
-
-  const name = typeof obj.name === 'string' ? obj.name : undefined;
-
+export function validateWorkspaceJSON(json: string): {
+  formatVersion: number;
+  name?: string;
+  composerState: Record<string, unknown>;
+  operations: unknown[];
+} {
+  const parsed = parseWorkspaceFile(json);
   return {
-    name,
-    composerState: obj.composerState as Record<string, unknown>,
-    operations: obj.operations as unknown[],
+    formatVersion: parsed.formatVersion,
+    name: parsed.name,
+    composerState: parsed.composerState,
+    operations: parsed.operations,
   };
 }
 
@@ -281,7 +268,10 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
           const updated = { ...existing, updatedAt: new Date().toISOString() };
           writeGuestWorkspaceData(tool, existing.id, state);
           setWorkspaces((prev) => prev.map((w) => (w.id === existing.id ? updated : w)));
-          writeGuestWorkspaceList(tool, workspaces.map((w) => (w.id === existing.id ? updated : w)));
+          writeGuestWorkspaceList(
+            tool,
+            workspaces.map((w) => (w.id === existing.id ? updated : w)),
+          );
           return updated;
         } else {
           const id = generateId();
@@ -382,7 +372,7 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
     async (id: string): Promise<string> => {
       if (isAuthenticated) {
         const response = await exportComposerWorkspace(id);
-        return JSON.stringify({
+        return serializeWorkspaceFile({
           id: response.id,
           name: response.name,
           updatedAt: response.updatedAt,
@@ -393,7 +383,12 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
         const data = readGuestWorkspaceData(tool, id);
         if (!data) throw new Error('Workspace not found');
         const ws = workspaces.find((w) => w.id === id);
-        return JSON.stringify({ ...data, id, name: ws?.name, updatedAt: ws?.updatedAt });
+        return serializeWorkspaceFile({
+          ...data,
+          id,
+          name: ws?.name,
+          updatedAt: ws?.updatedAt,
+        });
       }
     },
     [isAuthenticated, tool, workspaces],
