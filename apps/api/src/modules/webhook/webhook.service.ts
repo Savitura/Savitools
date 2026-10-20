@@ -14,6 +14,7 @@ import {
   signingStatus,
 } from './signature';
 import * as crypto from 'crypto';
+import { redactHeaders as redactWebhookHeaders } from '../../common/redaction';
 
 export interface WebhookSignatureInfo {
   /** Exact value sent in TIMESTAMP_HEADER: integer Unix seconds. */
@@ -63,15 +64,8 @@ export const MAX_HISTORY_PER_USER = 50;
 export const MAX_HISTORY_USERS = 1_000;
 export const REDACTED = '[REDACTED]';
 
-const SECRET_HEADER_PATTERN =
-  /authorization|cookie|signature|secret|token|key|password|credential/i;
-
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const redacted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    redacted[key] = SECRET_HEADER_PATTERN.test(key) ? REDACTED : value;
-  }
-  return redacted;
+  return redactWebhookHeaders(headers);
 }
 
 const RECORDED_SIGNATURE_HEADER_NAMES = new Set(
