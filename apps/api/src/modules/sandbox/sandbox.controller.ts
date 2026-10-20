@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { SandboxService } from './sandbox.service';
@@ -14,13 +14,19 @@ export class SandboxController {
 
   @Post('keypair')
   @ApiOperation({ summary: 'Generate a new ed25519 keypair labelled with its network' })
-  @ApiQuery({ name: 'network', required: false, description: 'Target network (e.g. testnet, quickstart)' })
+  @ApiQuery({
+    name: 'network',
+    required: false,
+    description: 'Target network (e.g. testnet, quickstart)',
+  })
   generateKeypair(@Query('network') network?: string) {
     return this.sandboxService.generateKeypair(network);
   }
 
   @Post('fund')
   @ApiOperation({ summary: 'Fund an account via Friendbot on the target network' })
+  @ApiResponse({ status: 201, description: 'Account funded' })
+  @ApiResponse({ status: 400, description: 'Invalid public key or target network' })
   fund(@Body() dto: FundDto) {
     return this.sandboxService.fundFromFriendbot(dto.publicKey, dto.network);
   }
@@ -35,16 +41,15 @@ export class SandboxController {
   @ApiOperation({ summary: 'Get Horizon account details on the selected network' })
   @ApiParam({ name: 'publicKey', description: 'Stellar public key' })
   @ApiQuery({ name: 'network', required: false, description: 'Target network' })
-  getAccount(
-    @Param('publicKey') publicKey: string,
-    @Query('network') network?: string,
-  ) {
+  getAccount(@Param('publicKey') publicKey: string, @Query('network') network?: string) {
     return this.sandboxService.getAccount(publicKey, network);
   }
 
   @Post('payment')
   @UseGuards(JwtAuthGuard, ThrottlerGuard)
-  @ApiOperation({ summary: 'Submit a test payment between sandbox accounts on the selected network' })
+  @ApiOperation({
+    summary: 'Submit a test payment between sandbox accounts on the selected network',
+  })
   sendPayment(@Body() dto: PaymentDto) {
     return this.sandboxService.sendPayment(dto);
   }

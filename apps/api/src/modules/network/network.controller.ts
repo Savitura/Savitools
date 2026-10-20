@@ -26,7 +26,12 @@ export class NetworkController {
 
   @Get('status')
   @ApiOperation({ summary: 'Get current Stellar network status and fees' })
-  @ApiQuery({ name: 'network', required: false, enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
+  @ApiQuery({
+    name: 'network',
+    required: false,
+    enum: ['mainnet', 'testnet'],
+    description: 'Network to query (default: mainnet)',
+  })
   @ApiResponse({ status: 200, description: 'Network status retrieved' })
   async getStatus(@Query('network') network: string = 'mainnet') {
     const net = network === 'testnet' ? 'testnet' : 'mainnet';
@@ -35,10 +40,20 @@ export class NetworkController {
 
   @Get('status/history')
   @ApiOperation({ summary: 'Get network status history and uptime metrics' })
-  @ApiQuery({ name: 'network', required: false, enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
-  @ApiQuery({ name: 'from', required: false, description: 'ISO date lower bound (default: 60 minutes before to)' })
+  @ApiQuery({
+    name: 'network',
+    required: false,
+    enum: ['mainnet', 'testnet'],
+    description: 'Network to query (default: mainnet)',
+  })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'ISO date lower bound (default: 60 minutes before to)',
+  })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date upper bound (default: now)' })
   @ApiResponse({ status: 200, description: 'Network status history retrieved' })
+  @ApiResponse({ status: 400, description: 'Invalid network or ISO date range' })
   async getHistory(
     @Query('network') network: string = 'mainnet',
     @Query('from') from?: string,
@@ -103,7 +118,10 @@ export class NetworkController {
   @ApiResponse({ status: 200, description: 'Verification result' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   verifyPassphrase(@Body() body: VerifyNetworkPassphraseDto) {
-    return this.networkService.verifyNetworkPassphrase(body.horizonUrl, body.expectedPassphrase ?? '');
+    return this.networkService.verifyNetworkPassphrase(
+      body.horizonUrl,
+      body.expectedPassphrase ?? '',
+    );
   }
 
   @Put('profiles/:id/default')

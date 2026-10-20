@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { FederationService } from './federation.service';
 import { ResolveQueryDto } from './dto/resolve-query.dto';
 import { TomlQueryDto } from './dto/toml-query.dto';
@@ -23,6 +23,8 @@ export class FederationController {
     description: 'Stellar public key (G…), federation address, or domain',
     example: 'alice*stellar.org',
   })
+  @ApiResponse({ status: 200, description: 'Resolved federation record or domain result' })
+  @ApiResponse({ status: 400, description: 'Invalid or missing address/domain' })
   resolve(@Query() query: ResolveQueryDto) {
     return this.federationService.resolveFederation(query.address);
   }
@@ -39,13 +41,17 @@ export class FederationController {
   }
 
   @Get('asset-metadata')
-  @ApiOperation({ summary: 'Fetch declared Stellar asset metadata after validating the issuer home domain' })
+  @ApiOperation({
+    summary: 'Fetch declared Stellar asset metadata after validating the issuer home domain',
+  })
   getAssetMetadata(@Query() query: AssetMetadataQueryDto) {
     return this.federationService.getAssetMetadata(query.domain, query.code, query.issuer);
   }
 
   @Get('validate-home-domain')
-  @ApiOperation({ summary: 'Check that a stellar.toml declares an issuer for its claimed home domain' })
+  @ApiOperation({
+    summary: 'Check that a stellar.toml declares an issuer for its claimed home domain',
+  })
   validateHomeDomain(@Query() query: HomeDomainQueryDto) {
     return this.federationService.validateHomeDomain(query.domain, query.issuer);
   }

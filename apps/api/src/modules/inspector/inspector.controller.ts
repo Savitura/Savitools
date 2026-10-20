@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { DecodeXDrDto } from './dto/decode-xdr.dto';
 import { InspectAuthEntryDto } from './dto/inspect-auth-entry.dto';
@@ -33,10 +33,7 @@ export class InspectorController {
     @Res({ passthrough: true }) reply: FastifyReply,
     @Query('network') network?: 'testnet' | 'mainnet',
   ) {
-    const breakdown = await this.inspectorService.inspectTransaction(
-      hash,
-      network ?? 'testnet',
-    );
+    const breakdown = await this.inspectorService.inspectTransaction(hash, network ?? 'testnet');
     reply.header(
       'Content-Disposition',
       `attachment; filename="transaction-${hash.slice(0, 12)}.csv"`,
@@ -50,7 +47,11 @@ export class InspectorController {
   })
   @ApiParam({ name: 'hash', description: 'Transaction hash (64 hex chars)' })
   @ApiQuery({ name: 'network', required: false, enum: ['testnet', 'mainnet'] })
-  @ApiQuery({ name: 'contractId', required: false, description: 'Filter by contract ID (substring)' })
+  @ApiQuery({
+    name: 'contractId',
+    required: false,
+    description: 'Filter by contract ID (substring)',
+  })
   @ApiQuery({ name: 'eventName', required: false, description: 'Filter by event name (substring)' })
   getTransactionEvents(
     @Param('hash') hash: string,
@@ -96,6 +97,11 @@ export class InspectorController {
 
   @Post('decode-xdr')
   @ApiOperation({ summary: 'Decode raw XDR (offline, no Horizon call)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Decoded transaction, result, or Soroban authorization entry',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid XDR or network' })
   decodeXdr(@Body() dto: DecodeXDrDto) {
     return this.inspectorService.decodeXdr(dto.xdr, dto.network ?? 'testnet');
   }

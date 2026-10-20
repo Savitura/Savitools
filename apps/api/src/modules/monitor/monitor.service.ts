@@ -15,11 +15,7 @@ import { Watch } from './entities/watch.entity';
 import { AlertRuleDto, CreateWatchDto } from './dto/create-watch.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { RegisterWebhookDto } from './dto/register-webhook.dto';
-import {
-  EXPORT_CHUNK_SIZE,
-  EXPORT_MAX_ROWS,
-  SearchEventsQueryDto,
-} from './dto/search-events.dto';
+import { EXPORT_CHUNK_SIZE, EXPORT_MAX_ROWS, SearchEventsQueryDto } from './dto/search-events.dto';
 import { MonitorQueueService } from './monitor-queue.service';
 import {
   AlertRuleDefinition,
@@ -29,6 +25,7 @@ import {
 } from './monitor.types';
 import { StreamManager } from './stream-manager.service';
 import { WatchRegistry } from './watch-registry.service';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';
 
 @Injectable()
@@ -46,6 +43,7 @@ export class MonitorService implements OnApplicationBootstrap {
     private readonly streamManager: StreamManager,
     private readonly queue: MonitorQueueService,
     private readonly encryptionService: EncryptionService,
+    private readonly runtime: MonitorRuntimeConfig,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -57,9 +55,15 @@ export class MonitorService implements OnApplicationBootstrap {
     const publicKey = dto.publicKey.trim();
     const type = this.watchType(publicKey);
     this.validateEventTypes(type, dto.eventTypes);
-    const alertRules = (dto.alertRules ?? []).map((rule) =>
-      this.toAlertRule(rule, type),
-    );
+    const alertRules = (dto.alertRules ?? []).map((rule) => this.toAlertRule(rule, type));
+
+    const maxWatches = this.runtime.maxWatchesPerUser;
+    const watchCount = await this.watchRepository.count({ where: { userId } });
+    if (watchCount >= maxWatches) {
+      throw new BadRequestException(
+        `Watch limit reached: each user may keep at most ${maxWatches} watches. Delete an existing watch before creating another.`,
+      );
+    }
 
     const key = `${dto.network ?? 'testnet'}:${type}:${publicKey}`;
     const existing = this.registry.get(key)[0];
@@ -206,11 +210,7 @@ export class MonitorService implements OnApplicationBootstrap {
     return rule;
   }
 
-  async resendAlert(
-    userId: string,
-    watchId: string,
-    alertId: string,
-  ): Promise<AlertEvent> {
+  async resendAlert(userId: string, watchId: string, alertId: string): Promise<AlertEvent> {
     await this.requireWatch(userId, watchId);
     const alert = await this.alertEventRepository.findOne({
       where: { id: alertId, watchId },
@@ -276,10 +276,7 @@ export class MonitorService implements OnApplicationBootstrap {
    * The CSV export used to call `searchEvents` per chunk, so it re-ran a COUNT
    * over the user's entire event history once per chunk (Savitura/Savitools#288).
    */
-  private async findEventPage(
-    userId: string,
-    query: SearchEventsQueryDto,
-  ): Promise<WatchEvent[]> {
+  private async findEventPage(userId: string, query: SearchEventsQueryDto): Promise<WatchEvent[]> {
     return this.buildEventsQuery(userId, query)
       .skip((query.page - 1) * query.limit)
       .take(query.limit)
@@ -454,10 +451,7 @@ export class MonitorService implements OnApplicationBootstrap {
     throw new BadRequestException('Invalid Stellar account or contract ID');
   }
 
-  private validateEventTypes(
-    type: WatchType,
-    eventTypes: WatchEventType[],
-  ): void {
+  private validateEventTypes(type: WatchType, eventTypes: WatchEventType[]): void {
     const invalid = eventTypes.some((eventType) =>
       type === 'account' ? eventType === 'contract' : eventType !== 'contract',
     );
@@ -470,10 +464,7 @@ export class MonitorService implements OnApplicationBootstrap {
     }
   }
 
-  private toAlertRule(
-    dto: AlertRuleDto,
-    watchType: WatchType,
-  ): AlertRuleDefinition {
+  private toAlertRule(dto: AlertRuleDto, watchType: WatchType): AlertRuleDefinition {
     if (
       watchType === 'contract' &&
       dto.type !== 'any_activity' &&
@@ -490,9 +481,7 @@ export class MonitorService implements OnApplicationBootstrap {
         dto.type === 'balance_below') &&
       !this.validThreshold(dto.threshold)
     ) {
-      throw new BadRequestException(
-        'Amount rules require a positive threshold',
-      );
+      throw new BadRequestException('Amount rules require a positive threshold');
     }
     if (dto.type === 'asset_received' && !dto.asset?.trim()) {
       throw new BadRequestException('asset_received requires an asset');
@@ -500,13 +489,8 @@ export class MonitorService implements OnApplicationBootstrap {
     if (dto.type === 'event_topic_equals' && !dto.topic?.trim()) {
       throw new BadRequestException('event_topic_equals requires a topic');
     }
-    if (
-      dto.type === 'transaction_count' &&
-      !/^[1-9]\d*$/.test(dto.threshold?.trim() ?? '')
-    ) {
-      throw new BadRequestException(
-        'transaction_count requires a positive whole-number threshold',
-      );
+    if (dto.type === 'transaction_count' && !/^[1-9]\d*$/.test(dto.threshold?.trim() ?? '')) {
+      throw new BadRequestException('transaction_count requires a positive whole-number threshold');
     }
 
     const channels: NotificationChannel[] = dto.channels?.length
