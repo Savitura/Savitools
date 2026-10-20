@@ -6,6 +6,15 @@ All notable changes to SaviTools are documented in this file.
 
 ### Fixed
 
+- **Webhook payload truncation** (#127): truncating a webhook payload no longer
+  cuts binary or UTF-8 data at an arbitrary offset. Text is cut between
+  characters, base64 and hex values are cut on whole encoded units so the
+  retained prefix still decodes, and a JSON payload is shortened into a
+  document that still parses. Shortened values carry a `[TRUNCATED]` marker,
+  and a `WebhookHistoryEntry` records `payloadTruncated` / `responseBodyEncoding`
+  so a truncated event is never stored silently. A truncated response body that
+  is not text is stored as base64 instead of being mangled into replacement
+  characters. Payloads and bodies within the limit are unchanged.
 - **Client-side wallet signing** (#422, #420): `POST /wallet/payment` now accepts
   a client-built, client-signed transaction envelope (`signedXdr`) instead of the
   source secret. The secret key never crosses the network. `StellarTestnetService`

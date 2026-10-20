@@ -13,6 +13,14 @@ import {
   signatureHeaders,
   signingStatus,
 } from './signature';
+import {
+  PayloadEncoding,
+  TRUNCATION_MARKER,
+  closeTruncatedJson,
+  truncateJsonPayload,
+  utf8ByteLength,
+  utf8SafePrefixLength,
+} from './payload-truncation';
 import * as crypto from 'crypto';
 
 export interface WebhookSignatureInfo {
@@ -54,6 +62,21 @@ export interface WebhookHistoryEntry {
    * strips those headers and re-signs under the current format.
    */
   legacySignature?: boolean;
+  /**
+   * Set when the request payload was larger than the outbound limit and had
+   * to be shortened before it went out. The recorded `payload` is the
+   * shortened one — the same value that was serialised, signed and sent — and
+   * every shortened value carries a truncation marker, so the omission is
+   * visible instead of silent.
+   */
+  payloadTruncated?: boolean;
+  /**
+   * Set when the response body was not text and had to be encoded to be
+   * stored. `base64` means the receiver answered with bytes that are not
+   * UTF-8 (serialised `ScVal` bytes, for instance), so `responseBody` holds
+   * the base64 of those bytes and has to be decoded before use.
+   */
+  responseBodyEncoding?: PayloadEncoding;
 }
 
 export const OUTBOUND_TIMEOUT_MS = 10_000;
@@ -101,33 +124,42 @@ function stripRecordedSignatureHeaders(
   );
 }
 
-async function readBodyWithLimit(
+/**
+ * Reads at most `limit` bytes of a response body.
+ *
+ * The bytes are taken exactly, not chunk by chunk: the previous reader threw
+ * away the whole chunk that crossed the limit, so a body could be cut far
+ * short of the limit it was allowed. What comes back is the raw prefix; how
+ * it is represented depends on the content type.
+ */
+async function readBodyBytes(
   stream: ReadableStream<Uint8Array> | null,
   limit: number,
-): Promise<{ text: string; truncated: boolean }> {
+): Promise<{ bytes: Buffer; truncated: boolean }> {
   if (!stream) {
-    return { text: '', truncated: false };
+    return { bytes: Buffer.alloc(0), truncated: false };
   }
 
-  const decoder = new TextDecoder();
+  const chunks: Buffer[] = [];
   let received = 0;
   let truncated = false;
-  let text = '';
   const reader = stream.getReader();
 
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      received += value.byteLength;
-      if (received > limit) {
+      if (received + value.byteLength > limit) {
+        // Keep the part of this chunk that still fits, then stop reading.
+        const keep = limit - received;
+        if (keep > 0) {
+          chunks.push(Buffer.from(value.subarray(0, keep)));
+        }
         truncated = true;
         break;
       }
-      text += decoder.decode(value, { stream: true });
-    }
-    if (!truncated) {
-      text += decoder.decode();
+      chunks.push(Buffer.from(value));
+      received += value.byteLength;
     }
   } finally {
     try {
@@ -137,7 +169,95 @@ async function readBodyWithLimit(
     }
   }
 
-  return { text, truncated };
+  return { bytes: Buffer.concat(chunks), truncated };
+}
+
+/** The bare media type of a `Content-Type` header, lower-cased. */
+function mediaType(contentType: string | undefined): string {
+  return (contentType ?? '').split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * Whether a response body is text and can therefore be cut on a character
+ * boundary. An unknown content type is sniffed: the bytes decide.
+ */
+function isTextualContentType(contentType: string | undefined): boolean {
+  const type = mediaType(contentType);
+  if (type === '') {
+    return true;
+  }
+  if (type.startsWith('text/')) {
+    return true;
+  }
+  return (
+    type === 'application/json' ||
+    type.endsWith('+json') ||
+    type === 'application/xml' ||
+    type.endsWith('+xml') ||
+    type === 'application/javascript' ||
+    type === 'application/x-www-form-urlencoded'
+  );
+}
+
+/** Whether a response body is a JSON document that has to stay parseable. */
+function isJsonContentType(contentType: string | undefined): boolean {
+  const type = mediaType(contentType);
+  return type === 'application/json' || type.endsWith('+json');
+}
+
+/** Whether `bytes` decode as UTF-8 without any invalid sequence. */
+function isValidUtf8(bytes: Buffer): boolean {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How a response body is stored in the history entry.
+ *
+ * A body within the limit is stored exactly as it arrived. A body over the
+ * limit is cut on the boundary its own encoding allows: text on a character
+ * boundary, a JSON document closed back into a value that still parses, and
+ * bytes that are not text base64-encoded rather than mangled into
+ * replacement characters.
+ */
+function representBody(
+  bytes: Buffer,
+  truncated: boolean,
+  contentType: string | undefined,
+): { body: string; encoding?: PayloadEncoding } {
+  if (!truncated) {
+    return { body: bytes.toString('utf8') };
+  }
+
+  const markerCost = utf8ByteLength(TRUNCATION_MARKER);
+  const keep = utf8SafePrefixLength(bytes, Math.max(0, MAX_RESPONSE_BODY_BYTES - markerCost));
+  const textBytes = bytes.subarray(0, keep);
+  const text = textBytes.toString('utf8');
+
+  if (!isTextualContentType(contentType) || !isValidUtf8(textBytes)) {
+    // The bytes are not text. Decoding them as UTF-8 would replace every
+    // byte that is not valid UTF-8 with U+FFFD and lose the data, so the
+    // bytes are kept in a form that can be decoded back. Only as many bytes
+    // as fit the limit once encoded are kept.
+    const binaryKeep = Math.floor((MAX_RESPONSE_BODY_BYTES - markerCost) / 4) * 3;
+    return {
+      body: bytes.subarray(0, binaryKeep).toString('base64') + TRUNCATION_MARKER,
+      encoding: 'base64',
+    };
+  }
+
+  if (isJsonContentType(contentType)) {
+    const closed = closeTruncatedJson(text, { requireMarker: true });
+    if (closed !== null) {
+      return { body: closed };
+    }
+  }
+
+  return { body: text + TRUNCATION_MARKER };
 }
 
 @Injectable()
@@ -219,7 +339,13 @@ export class WebhookService {
     initialUrl: string,
     headers: Record<string, string>,
     body?: string,
-  ): Promise<{ status: number | null; headers: Record<string, string>; body: string; truncated: boolean }> {
+  ): Promise<{
+    status: number | null;
+    headers: Record<string, string>;
+    body: string;
+    truncated: boolean;
+    encoding?: PayloadEncoding;
+  }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), OUTBOUND_TIMEOUT_MS);
 
@@ -257,12 +383,16 @@ export class WebhookService {
       response.headers.forEach((val, key) => {
         responseHeaders[key] = val;
       });
-      const { text, truncated } = await readBodyWithLimit(
-        response.body,
-        MAX_RESPONSE_BODY_BYTES,
-      );
+      const { bytes, truncated } = await readBodyBytes(response.body, MAX_RESPONSE_BODY_BYTES);
+      const represented = representBody(bytes, truncated, responseHeaders['content-type']);
 
-      return { status: response.status, headers: responseHeaders, body: text, truncated };
+      return {
+        status: response.status,
+        headers: responseHeaders,
+        body: represented.body,
+        truncated,
+        encoding: represented.encoding,
+      };
     } finally {
       clearTimeout(timeout);
     }
@@ -285,11 +415,18 @@ export class WebhookService {
       payload = template ? (template.samplePayload as Record<string, unknown>) : { event: dto.eventType, timestamp: new Date().toISOString() };
     }
 
-    const body = JSON.stringify(payload);
-    if (Buffer.byteLength(body, 'utf8') > MAX_REQUEST_BODY_BYTES) {
-      throw new BadGatewayException(
-        `Request payload exceeds the ${MAX_REQUEST_BODY_BYTES}-byte limit`,
-      );
+    // A payload over the limit is shortened instead of being cut at an
+    // arbitrary offset: the body that goes out stays valid JSON, the
+    // shortened values carry a truncation marker, and the recorded payload
+    // is the same value that was serialised, signed and sent. A payload
+    // within the limit is left exactly as it was.
+    let body = JSON.stringify(payload);
+    let payloadTruncated = false;
+    if (utf8ByteLength(body) > MAX_REQUEST_BODY_BYTES) {
+      const shortened = truncateJsonPayload(payload, MAX_REQUEST_BODY_BYTES);
+      payload = shortened.payload as Record<string, unknown>;
+      body = JSON.stringify(payload);
+      payloadTruncated = true;
     }
 
     await assertSafeWebhookDestination(new URL(dto.endpointUrl));
@@ -327,6 +464,7 @@ export class WebhookService {
       let responseStatus: number | null = null;
       const responseHeaders: Record<string, string> = {};
       let responseBody = '';
+      let responseBodyEncoding: PayloadEncoding | undefined;
       let errorMessage: string | undefined;
 
       try {
@@ -339,6 +477,7 @@ export class WebhookService {
         responseStatus = outcome.status;
         Object.assign(responseHeaders, outcome.headers);
         responseBody = outcome.body;
+        responseBodyEncoding = outcome.encoding;
         if (outcome.truncated) {
           errorMessage = `Response body exceeded the ${MAX_RESPONSE_BODY_BYTES}-byte limit and was truncated`;
         }
@@ -372,6 +511,8 @@ export class WebhookService {
         error: errorMessage,
         repeatIndex: repeatCount > 1 ? i + 1 : undefined,
         signature: signatureInfo,
+        payloadTruncated: payloadTruncated || undefined,
+        responseBodyEncoding,
       };
 
       this.recordHistory(userId, entry);

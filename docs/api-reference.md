@@ -1551,9 +1551,21 @@ the Webhook Tester UI) can recompute the identical HMAC from `signature.timestam
 `requestHeaders` is redacted before storage; `signature.signature` carries the value that went
 on the wire.
 
+**Size limits:** a request payload over the 64 KiB outbound limit is shortened instead of being
+cut at an arbitrary offset. The body that goes out is still valid JSON, the shortened values
+carry a `[TRUNCATED]` marker, and the recorded `payload` is the same value that was serialised,
+signed and sent — so a replay sends the same shortened payload. Such an entry carries
+`payloadTruncated: true`. A payload within the limit is sent and recorded unchanged.
+
+A response body over the 64 KiB capture limit is shortened as well, and the entry then reports
+`error: "Response body exceeded the 65536-byte limit and was truncated"`. The cut respects the
+body's own encoding: text is cut between characters, a JSON body is closed back into a document
+that still parses, and a body that is not text (serialised `ScVal` bytes, for instance) is stored
+as base64 with `responseBodyEncoding: "base64"` so it can be decoded back.
+
 **Errors:**
 - `400`: Invalid webhook payload or an unsafe destination
-- `502`: Request payload exceeds the size limit, or the destination failed
+- `502`: The destination failed
 
 ---
 

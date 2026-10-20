@@ -1057,6 +1057,17 @@ export interface WebhookHistoryEntry {
   repeatIndex?: number;
   signature?: WebhookSignatureInfo;
   legacySignature?: boolean;
+  /**
+   * Set when the request payload was over the outbound limit and had to be
+   * shortened. The recorded payload is the shortened one, and the shortened
+   * values carry a truncation marker.
+   */
+  payloadTruncated?: boolean;
+  /**
+   * Set when the response body was not text and had to be encoded to be
+   * stored. `base64` means the body has to be decoded before use.
+   */
+  responseBodyEncoding?: "utf-8" | "base64" | "hex";
 }
 
 export interface WebhookSigningStatus {

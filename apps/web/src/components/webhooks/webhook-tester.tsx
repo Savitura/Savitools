@@ -788,6 +788,27 @@ export function WebhookTester() {
                 <span>{formatTime(result.timestamp)}</span>
               </div>
 
+              {result.payloadTruncated ? (
+                <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-400 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                  <span>
+                    The payload was over the outbound limit, so it was shortened before it was sent.
+                    The values that were cut carry a <span className="font-mono">[TRUNCATED]</span>{' '}
+                    marker.
+                  </span>
+                </p>
+              ) : null}
+
+              {result.responseBodyEncoding === 'base64' ? (
+                <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-400 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                  <span>
+                    The response body was not text, so it is stored as base64. Decode it before
+                    reading it.
+                  </span>
+                </p>
+              ) : null}
+
               {result.legacySignature ? (
                 <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-400 flex items-start gap-1.5">
                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -901,6 +922,14 @@ export function WebhookTester() {
                           className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
                         >
                           legacy
+                        </span>
+                      )}
+                      {item.payloadTruncated && (
+                        <span
+                          title="The payload was over the outbound limit and was shortened"
+                          className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
+                        >
+                          truncated
                         </span>
                       )}
                     </div>

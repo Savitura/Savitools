@@ -2,7 +2,14 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { createHmac } from 'crypto';
-import { WebhookService, MAX_RESPONSE_BODY_BYTES, REDACTED, WebhookHistoryEntry } from './webhook.service';
+import {
+  WebhookService,
+  MAX_REQUEST_BODY_BYTES,
+  MAX_RESPONSE_BODY_BYTES,
+  REDACTED,
+  WebhookHistoryEntry,
+} from './webhook.service';
+import { TRUNCATION_MARKER } from './payload-truncation';
 import {
   LEGACY_ISO_TIMESTAMP_HEADER,
   LEGACY_SIGNATURE_HEADER,
@@ -45,6 +52,24 @@ function streamResponse(chunks: Uint8Array[]): Response {
     },
   });
   return new Response(stream, { status: 200 });
+}
+
+function streamResponseWithHeaders(
+  chunks: Uint8Array[],
+  headers: Record<string, string>,
+): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers });
+}
+
+/** Serialised `ScVal` bytes: the shape a receiver answers with. */
+function scValBytes(length: number): Buffer {
+  return Buffer.from(Array.from({ length }, (_, index) => index % 256));
 }
 
 describe('WebhookService', () => {
@@ -225,6 +250,193 @@ describe('WebhookService', () => {
 
       expect(entry.responseBody.length).toBeLessThanOrEqual(MAX_RESPONSE_BODY_BYTES);
       expect(entry.error).toMatch(/truncated/i);
+    });
+
+    it('marks a truncated response body so the omission is visible', async () => {
+      const oversized = new TextEncoder().encode('a'.repeat(MAX_RESPONSE_BODY_BYTES + 1));
+      fetchMock.mockResolvedValue(streamResponse([oversized]));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string };
+
+      expect(entry.responseBody).toContain(TRUNCATION_MARKER);
+    });
+
+    it('keeps the retained prefix of a truncated text body intact', async () => {
+      // The body is cut in the middle of a three-byte character.
+      const prefix = 'a'.repeat(MAX_RESPONSE_BODY_BYTES - 1);
+      const body = Buffer.from(`${prefix}€`, 'utf8');
+      fetchMock.mockResolvedValue(streamResponse([body]));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string };
+
+      // No replacement character: the character was not cut in half.
+      expect(entry.responseBody).not.toContain('�');
+      expect(entry.responseBody).toContain(TRUNCATION_MARKER);
+    });
+
+    it('keeps a truncated JSON response parseable', async () => {
+      const document = JSON.stringify({ ok: true, blob: 'x'.repeat(MAX_RESPONSE_BODY_BYTES) });
+      fetchMock.mockResolvedValue(
+        streamResponseWithHeaders([Buffer.from(document, 'utf8')], {
+          'content-type': 'application/json',
+        }),
+      );
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string };
+
+      // The stored body is still a JSON document, not half a document.
+      expect(() => JSON.parse(entry.responseBody)).not.toThrow();
+      expect(JSON.parse(entry.responseBody).ok).toBe(true);
+      expect(entry.responseBody).toContain(TRUNCATION_MARKER);
+    });
+
+    it('stores a truncated binary body so its bytes can be decoded back', async () => {
+      const bytes = scValBytes(MAX_RESPONSE_BODY_BYTES + 512);
+      fetchMock.mockResolvedValue(
+        streamResponseWithHeaders([bytes], { 'content-type': 'application/octet-stream' }),
+      );
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string; responseBodyEncoding?: string };
+
+      // Binary bytes are not text: they are kept in a form that still decodes
+      // to the bytes they were cut from, instead of being mangled into
+      // replacement characters.
+      expect(entry.responseBodyEncoding).toBe('base64');
+      expect(entry.responseBody).toContain(TRUNCATION_MARKER);
+      const retained = entry.responseBody.slice(0, -TRUNCATION_MARKER.length);
+      const decoded = Buffer.from(retained, 'base64');
+      expect(decoded).toEqual(bytes.subarray(0, decoded.length));
+      expect(decoded.length).toBeGreaterThan(0);
+    });
+
+    it('recognises a binary body that arrives without a content type', async () => {
+      const bytes = scValBytes(MAX_RESPONSE_BODY_BYTES + 512);
+      fetchMock.mockResolvedValue(streamResponse([bytes]));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string; responseBodyEncoding?: string };
+
+      // The bytes are not valid UTF-8, so they are not treated as text.
+      expect(entry.responseBodyEncoding).toBe('base64');
+      const retained = entry.responseBody.slice(0, -TRUNCATION_MARKER.length);
+      expect(Buffer.from(retained, 'base64').length).toBeGreaterThan(0);
+    });
+
+    it('keeps a stored binary body inside the limit', async () => {
+      const bytes = scValBytes(MAX_RESPONSE_BODY_BYTES + 512);
+      fetchMock.mockResolvedValue(
+        streamResponseWithHeaders([bytes], { 'content-type': 'application/octet-stream' }),
+      );
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string };
+
+      expect(entry.responseBody.length).toBeLessThanOrEqual(MAX_RESPONSE_BODY_BYTES);
+    });
+
+    it('leaves a response body within the limit exactly as it arrived', async () => {
+      fetchMock.mockResolvedValue(bodyResponse('all good'));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+      })) as { responseBody: string; responseBodyEncoding?: string };
+
+      expect(entry.responseBody).toBe('all good');
+      expect(entry.responseBody).not.toContain(TRUNCATION_MARKER);
+      expect(entry.responseBodyEncoding).toBeUndefined();
+    });
+
+    it('shortens an oversized request payload into a valid JSON body', async () => {
+      const oversized = {
+        event: 'campaign.funded',
+        data: { blob: 'A'.repeat(MAX_REQUEST_BODY_BYTES * 2) },
+      };
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+        payload: oversized,
+      })) as WebhookHistoryEntry;
+
+      const sentBody = fetchMock.mock.calls[0][1].body as string;
+      // What went out is valid JSON and within the limit.
+      expect(() => JSON.parse(sentBody)).not.toThrow();
+      expect(Buffer.byteLength(sentBody, 'utf8')).toBeLessThanOrEqual(MAX_REQUEST_BODY_BYTES);
+      expect(sentBody).toContain(TRUNCATION_MARKER);
+      // The recorded payload is the payload that was sent.
+      expect(entry.payloadTruncated).toBe(true);
+      expect(JSON.stringify(entry.payload)).toBe(sentBody);
+    });
+
+    it('does not corrupt a binary value in an oversized request payload', async () => {
+      const encoded = scValBytes(MAX_REQUEST_BODY_BYTES * 2).toString('base64');
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+        payload: { topic: encoded },
+      })) as WebhookHistoryEntry;
+
+      const topic = (entry.payload as { topic: string }).topic;
+      const retained = topic.slice(0, -TRUNCATION_MARKER.length);
+      expect(retained.length % 4).toBe(0);
+      // The retained prefix decodes back to the bytes it was cut from.
+      expect(Buffer.from(retained, 'base64')).toEqual(
+        Buffer.from(encoded, 'base64').subarray(0, (retained.length / 4) * 3),
+      );
+    });
+
+    it('leaves a request payload within the limit untouched', async () => {
+      const payload = { event: 'campaign.funded', amount: '1000' };
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+        payload,
+      })) as WebhookHistoryEntry;
+
+      const sentBody = fetchMock.mock.calls[0][1].body as string;
+      expect(sentBody).toBe(JSON.stringify(payload));
+      expect(entry.payload).toBe(payload);
+      expect(entry.payloadTruncated).toBeUndefined();
+      expect(sentBody).not.toContain(TRUNCATION_MARKER);
+    });
+
+    it('replays the shortened payload rather than the original one', async () => {
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const entry = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'e',
+        payload: { blob: 'A'.repeat(MAX_REQUEST_BODY_BYTES * 2) },
+      })) as WebhookHistoryEntry;
+      fetchMock.mockClear();
+
+      await service.replayWebhook('user-a', entry.id);
+
+      const replayBody = fetchMock.mock.calls[0][1].body as string;
+      expect(() => JSON.parse(replayBody)).not.toThrow();
+      expect(replayBody).toBe(JSON.stringify(entry.payload));
     });
   });
 
