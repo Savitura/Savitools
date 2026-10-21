@@ -2,7 +2,12 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { createHmac } from 'crypto';
-import { WebhookService, MAX_RESPONSE_BODY_BYTES, REDACTED, WebhookHistoryEntry } from './webhook.service';
+import {
+  WebhookService,
+  MAX_RESPONSE_BODY_BYTES,
+  REDACTED,
+  WebhookHistoryEntry,
+} from './webhook.service';
 import {
   LEGACY_ISO_TIMESTAMP_HEADER,
   LEGACY_SIGNATURE_HEADER,
@@ -19,8 +24,7 @@ const SECRET = 'whsec_test-secret-123';
 const KAT_PAYLOAD = { event: 'campaign.funded', amount: '1000' };
 const KAT_BODY = JSON.stringify(KAT_PAYLOAD);
 const KAT_TIMESTAMP = 1_700_000_000;
-const KAT_SIGNATURE =
-  'sha256=8fdd9825bcf035086dfda168a689ff2386e1bf78eb255579bc6bbe2fe2ed590a';
+const KAT_SIGNATURE = 'sha256=8fdd9825bcf035086dfda168a689ff2386e1bf78eb255579bc6bbe2fe2ed590a';
 
 function urlFor(ip: string, path = '/hook'): string {
   return `http://${ip}${path}`;
@@ -95,6 +99,30 @@ describe('WebhookService', () => {
     expect(found?.samplePayload).toEqual({ test: true });
   });
 
+  it('returns webhook history through the shared pagination envelope', async () => {
+    fetchMock.mockResolvedValue(bodyResponse('ok'));
+    for (const eventType of ['one', 'two', 'three']) {
+      await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType,
+      });
+    }
+
+    const page = service.getHistory('user-a', { page: 2, limit: 2 });
+
+    expect(page.items).toHaveLength(1);
+    expect(page).toMatchObject({
+      page: 2,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+      nextPage: null,
+      previousPage: 1,
+    });
+  });
+
   describe('user isolation', () => {
     it('namespaces history by user and hides other users entries', async () => {
       fetchMock.mockResolvedValue(bodyResponse('ok'));
@@ -116,15 +144,18 @@ describe('WebhookService', () => {
         eventType: 'campaign.funded',
       })) as { id: string };
 
-      await expect(service.replayWebhook('user-b', entry.id)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.replayWebhook('user-b', entry.id)).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('ssrf protection', () => {
     it('rejects private, loopback and metadata destinations without fetching', async () => {
-      const forbidden = ['http://127.0.0.1/hook', 'http://169.254.169.254/latest/meta-data/', 'http://192.168.1.10/hook', 'http://10.0.0.5/hook'];
+      const forbidden = [
+        'http://127.0.0.1/hook',
+        'http://169.254.169.254/latest/meta-data/',
+        'http://192.168.1.10/hook',
+        'http://10.0.0.5/hook',
+      ];
 
       for (const endpointUrl of forbidden) {
         await expect(
@@ -192,9 +223,7 @@ describe('WebhookService', () => {
 
   describe('secret redaction', () => {
     it('redacts authorization, cookie, signature and secret-shaped headers before persistence', async () => {
-      fetchMock.mockResolvedValue(
-        bodyResponse('ok', { 'set-cookie': 'session=abc123; HttpOnly' }),
-      );
+      fetchMock.mockResolvedValue(bodyResponse('ok', { 'set-cookie': 'session=abc123; HttpOnly' }));
 
       const entry = (await service.sendWebhook('user-a', {
         endpointUrl: urlFor(PUBLIC_IP_1),
@@ -560,7 +589,9 @@ describe('WebhookService', () => {
     it('flags recorded legacy deliveries when history is read', async () => {
       const legacy = await recordLegacyDelivery();
 
-      expect(service.getHistory('user-a').find((h) => h.id === legacy.id)?.legacySignature).toBe(true);
+      expect(service.getHistory('user-a').find((h) => h.id === legacy.id)?.legacySignature).toBe(
+        true,
+      );
     });
 
     it('does not flag deliveries recorded under the current contract', async () => {

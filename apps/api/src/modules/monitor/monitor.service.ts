@@ -14,6 +14,11 @@ import { WatchEvent } from './entities/watch-event.entity';
 import { Watch } from './entities/watch.entity';
 import { AlertRuleDto, CreateWatchDto } from './dto/create-watch.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import {
+  buildPaginatedResult,
+  normalizePagination,
+  type PaginatedResult,
+} from '../../common/dto/paginated-response';
 import { RegisterWebhookDto } from './dto/register-webhook.dto';
 import { EXPORT_CHUNK_SIZE, EXPORT_MAX_ROWS, SearchEventsQueryDto } from './dto/search-events.dto';
 import { MonitorQueueService } from './monitor-queue.service';
@@ -101,19 +106,17 @@ export class MonitorService implements OnApplicationBootstrap {
     });
   }
 
-  async listWatches(
-    userId: string,
-    query?: PaginationQueryDto,
-  ): Promise<{ items: Watch[]; page: number; limit: number; total: number }> {
-    const page = query?.page ?? 1;
-    const limit = query?.limit ?? 50;
+  async listWatches(userId: string, query?: PaginationQueryDto): Promise<PaginatedResult<Watch>> {
+    const { page, limit } = normalizePagination(query);
     const [items, total] = await this.watchRepository.findAndCount({
       where: { userId },
-      order: { createdAt: 'ASC' },
+      // `id` is the tiebreaker so rows created in the same millisecond keep a
+      // stable order across page boundaries.
+      order: { createdAt: 'ASC', id: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
     });
-    return { items, page, limit, total };
+    return buildPaginatedResult(items, total, { page, limit });
   }
 
   async getWatch(userId: string, watchId: string): Promise<Watch> {
@@ -161,40 +164,32 @@ export class MonitorService implements OnApplicationBootstrap {
     userId: string,
     watchId: string,
     query: PaginationQueryDto,
-  ): Promise<{
-    items: WatchEvent[];
-    page: number;
-    limit: number;
-    total: number;
-  }> {
+  ): Promise<PaginatedResult<WatchEvent>> {
     await this.requireWatch(userId, watchId);
+    const { page, limit } = normalizePagination(query);
     const [items, total] = await this.watchEventRepository.findAndCount({
       where: { watchId },
-      order: { createdAt: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return { items, page: query.page, limit: query.limit, total };
+    return buildPaginatedResult(items, total, { page, limit });
   }
 
   async getAlerts(
     userId: string,
     watchId: string,
     query: PaginationQueryDto,
-  ): Promise<{
-    items: AlertEvent[];
-    page: number;
-    limit: number;
-    total: number;
-  }> {
+  ): Promise<PaginatedResult<AlertEvent>> {
     await this.requireWatch(userId, watchId);
+    const { page, limit } = normalizePagination(query);
     const [items, total] = await this.alertEventRepository.findAndCount({
       where: { watchId },
-      order: { createdAt: 'DESC' },
-      skip: (query.page - 1) * query.limit,
-      take: query.limit,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return { items, page: query.page, limit: query.limit, total };
+    return buildPaginatedResult(items, total, { page, limit });
   }
 
   async addAlertRule(
@@ -290,13 +285,14 @@ export class MonitorService implements OnApplicationBootstrap {
   async searchEvents(
     userId: string,
     query: SearchEventsQueryDto,
-  ): Promise<{ items: WatchEvent[]; page: number; limit: number; total: number }> {
+  ): Promise<PaginatedResult<WatchEvent>> {
+    const { page, limit } = normalizePagination(query);
     const [items, total] = await this.buildEventsQuery(userId, query)
-      .skip((query.page - 1) * query.limit)
-      .take(query.limit)
+      .skip((page - 1) * limit)
+      .take(limit)
       .getManyAndCount();
 
-    return { items, page: query.page, limit: query.limit, total };
+    return buildPaginatedResult(items, total, { page, limit });
   }
 
   /**

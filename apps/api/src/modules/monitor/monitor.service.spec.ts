@@ -146,6 +146,42 @@ describe('MonitorService', () => {
     expect(created.alertRules[0].topic).toBe('transfer');
   });
 
+  it('lists watches with the shared pagination envelope and stable ordering', async () => {
+    const findAndCount = jest.fn().mockResolvedValue([[{ id: 'watch-one' }], 3]);
+    const service = new MonitorService(
+      { findAndCount } as unknown as Repository<Watch>,
+      {} as Repository<WatchEvent>,
+      {} as Repository<AlertEvent>,
+      {} as Repository<MonitorWebhook>,
+      {} as WatchRegistry,
+      {} as StreamManager,
+      {} as MonitorQueueService,
+      {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
+    );
+
+    const result = await service.listWatches('user-one', { page: 2, limit: 2 });
+
+    expect(findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        order: { createdAt: 'ASC', id: 'ASC' },
+        skip: 2,
+        take: 2,
+      }),
+    );
+    expect(result).toMatchObject({
+      items: [{ id: 'watch-one' }],
+      page: 2,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+      nextPage: null,
+      previousPage: 1,
+    });
+  });
+
   it('rejects event_topic_equals without a topic', async () => {
     const watchRepository = {
       create: jest.fn((value) => value),

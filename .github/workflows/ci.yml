@@ -58,6 +58,10 @@ jobs:
       - run: npm ci
       - run: npx turbo build
 
+      - run: npm run sbom
+        env:
+          CYCLONEDX_COMPONENTS: 'projects,@savitools/api,@savitools/web'
+
   test:
     name: Test
     runs-on: ubuntu-latest

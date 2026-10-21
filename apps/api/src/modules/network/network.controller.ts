@@ -15,6 +15,7 @@ import { ApiCookieAuth, ApiOperation, ApiQuery, ApiTags, ApiResponse } from '@ne
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateNetworkProfileDto } from './dto/create-network-profile.dto';
+import { ImportNetworkProfileDto } from './dto/import-network-profile.dto';
 import { UpdateNetworkProfileDto } from './dto/update-network-profile.dto';
 import { VerifyNetworkPassphraseDto } from './dto/verify-network-passphrase.dto';
 import { NetworkService } from './network.service';
@@ -151,7 +152,7 @@ export class NetworkController {
   @ApiOperation({ summary: 'Import a network profile from JSON' })
   @ApiResponse({ status: 201, description: 'Profile imported' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  importProfile(@CurrentUser() user: { id: string }, @Body() body: CreateNetworkProfileDto) {
+  importProfile(@CurrentUser() user: { id: string }, @Body() body: ImportNetworkProfileDto) {
     return this.networkService.importNetworkProfile(user.id, body);
   }
 }

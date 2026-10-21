@@ -4,6 +4,9 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
+import type { WebhookMethod } from './webhook-method';
+
+export type { WebhookMethod } from './webhook-method';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -746,7 +749,12 @@ export interface NetworkProfileInput {
   isDefault?: boolean;
 }
 
-export type NetworkProfileExport = NetworkProfileInput;
+export interface NetworkProfileExport extends Omit<NetworkProfileInput, 'name'> {
+  /** Present on exports written after the versioned contract landed. */
+  schemaVersion?: number;
+  /** Legacy exports could omit the display name. */
+  name?: string;
+}
 
 export interface NetworkPassphraseVerificationResult {
   match: boolean;
@@ -783,10 +791,16 @@ export async function setDefaultNetworkProfile(id: string) {
   });
 }
 
-export async function verifyNetworkPassphrase(horizonUrl: string, expectedPassphrase?: string) {
+export async function verifyNetworkPassphrase(
+  horizonUrl: string,
+  expectedPassphrase?: string,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+) {
   return apiFetch<NetworkPassphraseVerificationResult>('/network/profiles/verify', {
     method: 'POST',
     body: JSON.stringify({ horizonUrl, expectedPassphrase }),
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -1121,7 +1135,7 @@ export interface WebhookSendRequest {
   eventType: string;
   payload?: Record<string, unknown>;
   secret?: string;
-  method?: string;
+  method?: WebhookMethod;
   headers?: Record<string, string>;
   repeatCount?: number;
   repeatIntervalMs?: number;
@@ -1193,8 +1207,55 @@ export async function sendWebhook(dto: WebhookSendRequest) {
   });
 }
 
-export async function fetchWebhookHistory() {
-  return apiFetch<WebhookHistoryEntry[]>('/webhooks/history');
+export interface WebhookHistoryPage {
+  items: WebhookHistoryEntry[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  nextPage: number | null;
+  previousPage: number | null;
+}
+
+/**
+ * Fetch one page of history. The API returns the shared pagination envelope;
+ * the bare-array branch keeps older deployments (and existing callers) working
+ * while they roll forward.
+ */
+export async function fetchWebhookHistoryPage(page = 1, limit = 25): Promise<WebhookHistoryPage> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const result = await apiFetch<WebhookHistoryPage | WebhookHistoryEntry[]>(
+    `/webhooks/history?${params.toString()}`,
+  );
+  if (Array.isArray(result)) {
+    const start = (page - 1) * limit;
+    const items = result.slice(start, start + limit);
+    const total = result.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1 && totalPages > 0,
+      nextPage: page < totalPages ? page + 1 : null,
+      previousPage: page > 1 && totalPages > 0 ? page - 1 : null,
+    };
+  }
+  return result;
+}
+
+export async function fetchWebhookHistory(options?: { page?: number; limit?: number }) {
+  if (!options?.page && !options?.limit) {
+    const result = await apiFetch<WebhookHistoryPage | WebhookHistoryEntry[]>('/webhooks/history');
+    return Array.isArray(result) ? result : result.items;
+  }
+  const data = await fetchWebhookHistoryPage(options.page, options.limit);
+  return data.items;
 }
 
 export async function replayWebhook(id: string) {

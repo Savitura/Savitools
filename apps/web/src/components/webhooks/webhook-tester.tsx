@@ -38,6 +38,15 @@ import {
   signPayload,
   signedPayload,
 } from '@/lib/webhook-signature';
+import {
+  DEFAULT_WEBHOOK_METHOD,
+  WEBHOOK_METHODS,
+  parseWebhookMethod,
+  restoreWebhookMethod,
+  type WebhookMethod,
+} from '@/lib/webhook-method';
+
+export { WEBHOOK_METHODS, type WebhookMethod } from '@/lib/webhook-method';
 
 function formatJson(data: unknown): string {
   try {
@@ -76,7 +85,8 @@ function escapeForSingleQuotes(value: string): string {
  */
 function curlFor(entry: WebhookHistoryEntry): string {
   const body = entry.signature?.body ?? JSON.stringify(entry.payload);
-  return `curl -s -X ${entry.method || 'POST'} '${entry.endpointUrl}' \
+  const method = parseWebhookMethod(entry.method);
+  return `curl -s -X ${method} '${entry.endpointUrl}' \
   ${Object.entries(entry.requestHeaders)
     .map(([k, v]) => `-H '${k}: ${v}'`)
     .join(
@@ -113,7 +123,8 @@ export function WebhookTester() {
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const { registerContextActions } = useCommandPalette();
   const [endpointUrl, setEndpointUrl] = useState('');
-  const [method, setMethod] = useState<'POST' | 'PUT' | 'PATCH' | 'GET'>('POST');
+  const [method, setMethod] = useState<WebhookMethod>(DEFAULT_WEBHOOK_METHOD);
+  const [methodWarning, setMethodWarning] = useState<string | null>(null);
   const [selectedEventType, setSelectedEventType] = useState('');
   const [payloadEditor, setPayloadEditor] = useState('');
   const [payloadValid, setPayloadValid] = useState(true);
@@ -287,6 +298,12 @@ export function WebhookTester() {
     setEventDropdownOpen(false);
   };
 
+  const restoreMethodFromHistory = (value: unknown) => {
+    const restored = restoreWebhookMethod(value);
+    setMethod(restored.method);
+    setMethodWarning(restored.warning);
+  };
+
   const handleSend = useCallback(async () => {
     if (!endpointUrl) {
       setSendError('Please enter a target endpoint URL');
@@ -406,7 +423,7 @@ export function WebhookTester() {
       setEndpointUrl(res.endpointUrl);
       setSelectedEventType(res.eventType);
       setPayloadEditor(formatJson(res.payload));
-      setMethod((res.method as any) || 'POST');
+      restoreMethodFromHistory(res.method);
       await loadHistory();
     } catch (err) {
       alert(apiErrorMessage(err, 'Failed to replay webhook'));
@@ -422,16 +439,26 @@ export function WebhookTester() {
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
             <Send className="h-4 w-4 text-primary" /> Target & Method
           </h3>
+          {methodWarning && (
+            <p className="flex items-start gap-1.5 text-[11px] text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              {methodWarning}
+            </p>
+          )}
           <div className="flex gap-2">
             <select
               value={method}
-              onChange={(e) => setMethod(e.target.value as any)}
+              onChange={(e) => {
+                setMethod(parseWebhookMethod(e.target.value));
+                setMethodWarning(null);
+              }}
               className="rounded-md border border-input bg-background px-3 py-2 text-xs font-bold uppercase"
             >
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="GET">GET</option>
+              {WEBHOOK_METHODS.map((supportedMethod) => (
+                <option key={supportedMethod} value={supportedMethod}>
+                  {supportedMethod}
+                </option>
+              ))}
             </select>
             <input
               type="url"
@@ -854,7 +881,7 @@ export function WebhookTester() {
                       setEndpointUrl(item.endpointUrl);
                       setSelectedEventType(item.eventType);
                       setPayloadEditor(formatJson(item.payload));
-                      setMethod((item.method as any) || 'POST');
+                      restoreMethodFromHistory(item.method);
                     }}
                   >
                     <div className="flex items-center gap-2">

@@ -7,10 +7,11 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { assertPublicHostname, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guard';
 import { BoundedTtlMap } from '../../common/bounded-ttl-map';
 import * as smolToml from 'smol-toml';
-import { assertPublicHostname, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guard';
 import { isStellarPublicKey } from '../../common/stellar-address';
+import { redactValue, isSensitiveKey, REDACTED } from '../../common/redaction';
 
 const FETCH_TIMEOUT = 15_000;
 export const DEFAULT_FEDERATION_PROBE_TIMEOUT_MS = 3_000;
@@ -20,7 +21,7 @@ export const DEFAULT_SEP24_POLL_INTERVAL_MS = 2_000;
 export const DEFAULT_FEDERATION_TOML_CACHE_TTL_MS = 5 * 60_000;
 export const DEFAULT_FEDERATION_TOML_CACHE_MAX_ENTRIES = 200;
 
-// ─── TOML input bounds (Savitura/Savitools#220) ──────────────────────────────
+// ─── SEP-24 interactive flow debugger (Savitura/Savitools#SEP24) ────────────
 /** Maximum stellar.toml response size accepted before parsing. */
 export const TOML_MAX_BYTES = 512 * 1024;
 /** Maximum nesting depth of the parsed document. */
@@ -266,29 +267,6 @@ const REDACTED_FIELD_KEYS = new Set([
   'passport_number',
   'national_id',
 ]);
-
-const REDACTED = '[REDACTED]';
-
-/** Deep-redact sensitive keys and JWT-shaped strings from any value. */
-function redactValue(value: unknown, keyHint?: string): unknown {
-  if (keyHint && REDACTED_FIELD_KEYS.has(keyHint.toLowerCase())) return REDACTED;
-  if (typeof value === 'string') {
-    // JWT shape: three base64url segments separated by dots.
-    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) return REDACTED;
-    // Stellar secret seeds start with S and are 56 chars.
-    if (/^S[A-Z2-7]{55}$/.test(value)) return REDACTED;
-    return value;
-  }
-  if (Array.isArray(value)) return value.map((v) => redactValue(v));
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = redactValue(v, k);
-    }
-    return out;
-  }
-  return value;
-}
 
 /** Reject non-https and non-public hosts before navigation. */
 async function assertSafeNavigationUrl(urlStr: string): Promise<URL> {
