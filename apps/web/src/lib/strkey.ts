@@ -16,9 +16,20 @@ import { Buffer } from 'buffer';
 
 /**
  * Stellar StrKey version bytes. Values match the Stellar core
- * `StrKeyType` definitions.
+ * `StrKeyType` definitions (version byte = unshifted type << 3).
+ *
+ * Specification:
+ * - ED25519_PUBLIC_KEY:  6 << 3 =  48 (G...)
+ * - PRIVATE_KEY:        18 << 3 = 144 (S...)
+ * - PRE_AUTH_TX:        19 << 3 = 152 (T...)
+ * - HASH_X:             23 << 3 = 184 (X...)
+ * - MUXED_ACCOUNT:      12 << 3 =  96 (M...)
+ * - SIGNED_PAYLOAD:     15 << 3 = 120 (P...)
+ * - CONTRACT:            2 << 3 =  16 (C...)
  */
 export const STRKEY_VERSIONS = {
+  ED25519_PUBLIC_KEY: 48,
+  /** Legacy alias for ED25519_PUBLIC_KEY. */
   EDNARD_KEYS: 48,
   PRIVATE_KEY: 144,
   PRE_AUTH_TX: 152,
@@ -32,6 +43,7 @@ export type StrKeyType = keyof typeof STRKEY_VERSIONS;
 
 /** Human-readable labels for each StrKey type. */
 export const STRKEY_LABELS: Record<StrKeyType, string> = {
+  ED25519_PUBLIC_KEY: 'Account public key (G…)',
   EDNARD_KEYS: 'Account public key (G…)',
   PRIVATE_KEY: 'Secret seed (S…)',
   PRE_AUTH_TX: 'Pre-authorized transaction hash (T…)',
@@ -43,6 +55,7 @@ export const STRKEY_LABELS: Record<StrKeyType, string> = {
 
 /** Expected payload length in bytes for each StrKey type. */
 export const STRKEY_PAYLOAD_LENGTH: Record<StrKeyType, number> = {
+  ED25519_PUBLIC_KEY: 32,
   EDNARD_KEYS: 32,
   PRIVATE_KEY: 32,
   PRE_AUTH_TX: 32,
@@ -52,9 +65,11 @@ export const STRKEY_PAYLOAD_LENGTH: Record<StrKeyType, number> = {
   CONTRACT: 32,
 };
 
-/** Reverse lookup from version byte to StrKey type. */
+/** Reverse lookup from version byte to StrKey type. Canonical types take precedence over legacy aliases. */
 const VERSION_TO_TYPE: ReadonlyMap<number, StrKeyType> = new Map(
-  Object.entries(STRKEY_VERSIONS).map(([type, version]) => [version, type as StrKeyType]),
+  Object.entries(STRKEY_VERSIONS)
+    .filter(([type]) => type !== 'EDNARD_KEYS')
+    .map(([type, version]) => [version, type as StrKeyType]),
 );
 
 // ------------------------------------------------------------------------
@@ -275,7 +290,10 @@ export function decodeStrKey(input: string): StrKeyDecoded {
   return {
     input: trimmed,
     type,
-    label: type !== null ? STRKEY_LABELS[type] : `Unsupported version byte 0x${versionByte.toString(16).padStart(2, '0')}`,
+    label:
+      type !== null
+        ? STRKEY_LABELS[type]
+        : `Unsupported version byte 0x${versionByte.toString(16).padStart(2, '0')}`,
     versionByte,
     payload,
     payloadLength: payload.length,
@@ -321,7 +339,7 @@ export function encodeStrKey(type: StrKeyType, payload: Uint8Array): string {
 
 /** List of supported StrKey types in a deterministic order for the UI. */
 export const STRKEY_TYPES_IN_ORDER: StrKeyType[] = [
-  'EDNARD_KEYS',
+  'ED25519_PUBLIC_KEY',
   'PRIVATE_KEY',
   'MUXED_ACCOUNT',
   'CONTRACT',

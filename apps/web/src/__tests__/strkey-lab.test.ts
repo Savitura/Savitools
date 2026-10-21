@@ -30,6 +30,7 @@ import {
  */
 const FIXTURE_PAYLOADS: Record<StrKeyType, Uint8Array> = {
   // All 0x01 bytes - a classic test vector that is easy to spot in hex.
+  ED25519_PUBLIC_KEY: new Uint8Array(Array.from({ length: 32 }, () => 0x01)),
   EDNARD_KEYS: new Uint8Array(Array.from({ length: 32 }, () => 0x01)),
   // All 0x02 bytes - distinct from the public key fixture.
   PRIVATE_KEY: new Uint8Array(Array.from({ length: 32 }, () => 0x02)),
@@ -38,9 +39,9 @@ const FIXTURE_PAYLOADS: Record<StrKeyType, Uint8Array> = {
   // All 0x04 bytes.
   HASH_X: new Uint8Array(Array.from({ length: 32 }, () => 0x04)),
   // 32-byte ed25519 public key + 8-byte muxed id.
-  MUXED_ACCOUNT: new Uint8Array(Array.from({ length: 40 }, ( _, i) => (i < 32 ? 0x05 : 0x06))),
+  MUXED_ACCOUNT: new Uint8Array(Array.from({ length: 40 }, (_, i) => (i < 32 ? 0x05 : 0x06))),
   // 32-byte hash + 8-byte signer key data.
-  SIGNED_PAYLOAD: new Uint8Array(Array.from({ length: 40 }, ( _, i) => (i < 32 ? 0x07 : 0x08))),
+  SIGNED_PAYLOAD: new Uint8Array(Array.from({ length: 40 }, (_, i) => (i < 32 ? 0x07 : 0x08))),
   // All 0x09 bytes.
   CONTRACT: new Uint8Array(Array.from({ length: 32 }, () => 0x09)),
 };
@@ -266,9 +267,30 @@ describe('secret masking', () => {
 
   it('identifies the secret type and not others', () => {
     expect(isSecretType('PRIVATE_KEY')).toBe(true);
+    expect(isSecretType('ED25519_PUBLIC_KEY')).toBe(false);
     expect(isSecretType('EDNARD_KEYS')).toBe(false);
     expect(isSecretType('CONTRACT')).toBe(false);
     expect(isSecretType(null)).toBe(false);
+  });
+
+  it('supports legacy EDNARD_KEYS alias for encoding identically to ED25519_PUBLIC_KEY', () => {
+    const encodedLegacy = encodeStrKey('EDNARD_KEYS', FIXTURE_PAYLOADS.EDNARD_KEYS);
+    const encodedCanonical = encodeStrKey(
+      'ED25519_PUBLIC_KEY',
+      FIXTURE_PAYLOADS.ED25519_PUBLIC_KEY,
+    );
+    expect(encodedLegacy).toBe(encodedCanonical);
+    expect(decodeStrKey(encodedLegacy).type).toBe('ED25519_PUBLIC_KEY');
+  });
+
+  it('matches the Stellar core StrKey version byte specifications', () => {
+    expect(STRKEY_VERSIONS.ED25519_PUBLIC_KEY).toBe(6 << 3); // 48
+    expect(STRKEY_VERSIONS.PRIVATE_KEY).toBe(18 << 3); // 144
+    expect(STRKEY_VERSIONS.PRE_AUTH_TX).toBe(19 << 3); // 152
+    expect(STRKEY_VERSIONS.HASH_X).toBe(23 << 3); // 184
+    expect(STRKEY_VERSIONS.MUXED_ACCOUNT).toBe(12 << 3); // 96
+    expect(STRKEY_VERSIONS.SIGNED_PAYLOAD).toBe(15 << 3); // 120
+    expect(STRKEY_VERSIONS.CONTRACT).toBe(2 << 3); // 16
   });
 
   it('never echoes the secret payload in the masked value', () => {
