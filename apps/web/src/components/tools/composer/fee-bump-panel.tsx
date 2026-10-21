@@ -1,6 +1,12 @@
 'use client';
 
-import { buildFeeBump, FeeBumpResult, inspectFeeBump, FeeBumpInspectResult } from '@/lib/composer-api';
+import {
+  buildFeeBump,
+  FeeBumpResult,
+  inspectFeeBump,
+  FeeBumpInspectResult,
+} from '@/lib/composer-api';
+import { apiErrorMessage } from '@/lib/api';
 import { Loader2, WrapText } from 'lucide-react';
 import { useState } from 'react';
 
@@ -46,7 +52,7 @@ export function FeeBumpPanel({ network, onResult }: FeeBumpPanelProps) {
       onResult(built);
     } catch (e) {
       setResult(null);
-      setError(e instanceof Error ? e.message : 'Failed to build fee-bump envelope');
+      setError(apiErrorMessage(e, 'Failed to build fee-bump envelope'));
     } finally {
       setBuilding(false);
     }
@@ -64,7 +70,7 @@ export function FeeBumpPanel({ network, onResult }: FeeBumpPanelProps) {
       setInspect(decoded);
     } catch (e) {
       setInspect(null);
-      setInspectError(e instanceof Error ? e.message : 'Failed to inspect envelope');
+      setInspectError(apiErrorMessage(e, 'Failed to inspect envelope'));
     } finally {
       setInspecting(false);
     }
@@ -184,7 +190,8 @@ export function FeeBumpPanel({ network, onResult }: FeeBumpPanelProps) {
                   </span>
                 </span>
                 <span>
-                  Total fee <span className="font-mono text-foreground/80">{result.fee}</span> stroops
+                  Total fee <span className="font-mono text-foreground/80">{result.fee}</span>{' '}
+                  stroops
                 </span>
                 <span>
                   Ops <span className="font-mono text-foreground/80">{result.operationCount}</span>
@@ -231,13 +238,22 @@ export function FeeBumpPanel({ network, onResult }: FeeBumpPanelProps) {
                     </span>
                   </span>
                   <span>
-                    Effective fee <span className="font-mono text-foreground/80">{inspect.effectiveFee}</span> stroops
+                    Effective fee{' '}
+                    <span className="font-mono text-foreground/80">{inspect.effectiveFee}</span>{' '}
+                    stroops
                   </span>
                   <span>
-                    Network minimum <span className="font-mono text-foreground/80">{inspect.networkMinimumFee}</span> stroops
+                    Network minimum{' '}
+                    <span className="font-mono text-foreground/80">
+                      {inspect.networkMinimumFee}
+                    </span>{' '}
+                    stroops
                   </span>
                   <span>
-                    Outer signatures <span className="font-mono text-foreground/80">{inspect.outerSignatures.length}</span>
+                    Outer signatures{' '}
+                    <span className="font-mono text-foreground/80">
+                      {inspect.outerSignatures.length}
+                    </span>
                   </span>
                   <span className="sm:col-span-2">
                     Envelope hash{' '}
@@ -261,17 +277,25 @@ export function FeeBumpPanel({ network, onResult }: FeeBumpPanelProps) {
                     </span>
                   </span>
                   <span>
-                    Sequence <span className="font-mono text-foreground/80">{inspect.inner.sequence}</span>
+                    Sequence{' '}
+                    <span className="font-mono text-foreground/80">{inspect.inner.sequence}</span>
                   </span>
                   <span>
-                    Inner fee <span className="font-mono text-foreground/80">{inspect.inner.fee}</span> stroops
+                    Inner fee{' '}
+                    <span className="font-mono text-foreground/80">{inspect.inner.fee}</span>{' '}
+                    stroops
                   </span>
                   <span>
-                    Type <span className="font-mono text-foreground/80">{inspect.inner.isSoroban ? 'Soroban' : 'Classic'}</span>
+                    Type{' '}
+                    <span className="font-mono text-foreground/80">
+                      {inspect.inner.isSoroban ? 'Soroban' : 'Classic'}
+                    </span>
                   </span>
                   <span className="sm:col-span-2">
                     Operations ({inspect.inner.operationCount}){' '}
-                    <span className="font-mono text-foreground/80">{inspect.inner.operations.join(', ')}</span>
+                    <span className="font-mono text-foreground/80">
+                      {inspect.inner.operations.join(', ')}
+                    </span>
                   </span>
                   {inspect.inner.timeBounds && (
                     <span className="sm:col-span-2">

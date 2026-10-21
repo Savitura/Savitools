@@ -38,7 +38,7 @@ describe('SorobanStorageService', () => {
 
   describe('queryStorage', () => {
     const validContractId = 'CBQHNAXSI55GX2GN6D67GK7BHVPSLJUGZQEU7WJ5LKR5PNUCGLIMAO4K';
-    
+
     it('should query storage entry successfully', async () => {
       const mockLedgerInfo = {
         sequence: 1000,
@@ -181,23 +181,27 @@ describe('SorobanStorageService', () => {
     });
 
     it('should reject identical ledger sequences', async () => {
-      await expect(service.compareStorage({
-        contractId: validContractId,
-        storageKey: 'counter',
-        ledgerSeq1: 1000,
-        ledgerSeq2: 1000,
-        network: 'testnet',
-      })).rejects.toThrow('Ledger sequences must be different');
+      await expect(
+        service.compareStorage({
+          contractId: validContractId,
+          storageKey: 'counter',
+          ledgerSeq1: 1000,
+          ledgerSeq2: 1000,
+          network: 'testnet',
+        }),
+      ).rejects.toThrow('Ledger sequences must be different');
     });
 
     it('should handle invalid contract ID', async () => {
-      await expect(service.compareStorage({
-        contractId: 'INVALID_CONTRACT_ID',
-        storageKey: 'counter',
-        ledgerSeq1: 1000,
-        ledgerSeq2: 1100,
-        network: 'testnet',
-      })).rejects.toThrow('Invalid contract ID format');
+      await expect(
+        service.compareStorage({
+          contractId: 'INVALID_CONTRACT_ID',
+          storageKey: 'counter',
+          ledgerSeq1: 1000,
+          ledgerSeq2: 1100,
+          network: 'testnet',
+        }),
+      ).rejects.toThrow('Invalid contract ID format');
     });
   });
 
@@ -242,8 +246,8 @@ describe('SorobanStorageService', () => {
     });
 
     it('should create address key', async () => {
-      const validAddress = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
-      
+      const validAddress = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+
       const result = await service.createTypedStorageKey({
         keyType: 'address',
         keyValue: validAddress,
@@ -275,25 +279,31 @@ describe('SorobanStorageService', () => {
     });
 
     it('should reject invalid key types', async () => {
-      await expect(service.createTypedStorageKey({
-        keyType: 'invalid' as any,
-        keyValue: 'test',
-      })).rejects.toThrow('Unsupported key type');
+      await expect(
+        service.createTypedStorageKey({
+          keyType: 'invalid' as any,
+          keyValue: 'test',
+        }),
+      ).rejects.toThrow('Unsupported key type');
     });
 
     it('should handle invalid additional keys JSON', async () => {
-      await expect(service.createTypedStorageKey({
-        keyType: 'symbol',
-        keyValue: 'test',
-        additionalKeys: 'invalid json',
-      })).rejects.toThrow('Invalid additional keys JSON format');
+      await expect(
+        service.createTypedStorageKey({
+          keyType: 'symbol',
+          keyValue: 'test',
+          additionalKeys: 'invalid json',
+        }),
+      ).rejects.toThrow('Invalid additional keys JSON format');
     });
 
     it('should handle invalid address format', async () => {
-      await expect(service.createTypedStorageKey({
-        keyType: 'address',
-        keyValue: 'INVALID_ADDRESS',
-      })).rejects.toThrow();
+      await expect(
+        service.createTypedStorageKey({
+          keyType: 'address',
+          keyValue: 'INVALID_ADDRESS',
+        }),
+      ).rejects.toThrow();
     });
   });
 

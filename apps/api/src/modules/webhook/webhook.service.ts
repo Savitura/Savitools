@@ -1,6 +1,19 @@
-import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SendWebhookDto } from './dto/send-webhook.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import {
+  buildPaginatedResult,
+  normalizePagination,
+  type PaginatedResult,
+} from '../../common/dto/paginated-response';
 import { WEBHOOK_TEMPLATES, WebhookTemplate } from './webhook-templates';
 import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../../common/ssrf-guard';
 import {
@@ -22,6 +35,7 @@ import {
   utf8SafePrefixLength,
 } from './payload-truncation';
 import * as crypto from 'crypto';
+import { redactHeaders as redactWebhookHeaders } from '../../common/redaction';
 
 export interface WebhookSignatureInfo {
   /** Exact value sent in TIMESTAMP_HEADER: integer Unix seconds. */
@@ -86,24 +100,14 @@ export const MAX_HISTORY_PER_USER = 50;
 export const MAX_HISTORY_USERS = 1_000;
 export const REDACTED = '[REDACTED]';
 
-const SECRET_HEADER_PATTERN =
-  /authorization|cookie|signature|secret|token|key|password|credential/i;
-
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const redacted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    redacted[key] = SECRET_HEADER_PATTERN.test(key) ? REDACTED : value;
-  }
-  return redacted;
+  return redactWebhookHeaders(headers);
 }
 
 const RECORDED_SIGNATURE_HEADER_NAMES = new Set(
-  [
-    LEGACY_SIGNATURE_HEADER,
-    LEGACY_ISO_TIMESTAMP_HEADER,
-    SIGNATURE_HEADER,
-    TIMESTAMP_HEADER,
-  ].map((name) => name.toLowerCase()),
+  [LEGACY_SIGNATURE_HEADER, LEGACY_ISO_TIMESTAMP_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER].map(
+    (name) => name.toLowerCase(),
+  ),
 );
 
 /**
@@ -114,9 +118,7 @@ const RECORDED_SIGNATURE_HEADER_NAMES = new Set(
  * decides its own signing state from scratch, so the request never carries a
  * timestamp that disagrees with the signature beside it.
  */
-function stripRecordedSignatureHeaders(
-  headers: Record<string, string>,
-): Record<string, string> {
+function stripRecordedSignatureHeaders(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers).filter(
       ([name]) => !RECORDED_SIGNATURE_HEADER_NAMES.has(name.toLowerCase()),
@@ -393,6 +395,9 @@ export class WebhookService {
         truncated,
         encoding: represented.encoding,
       };
+      const { text, truncated } = await readBodyWithLimit(response.body, MAX_RESPONSE_BODY_BYTES);
+
+      return { status: response.status, headers: responseHeaders, body: text, truncated };
     } finally {
       clearTimeout(timeout);
     }
@@ -412,7 +417,9 @@ export class WebhookService {
     } else {
       const userTemplates = this.getTemplates(userId);
       const template = userTemplates.find((t) => t.eventType === dto.eventType);
-      payload = template ? (template.samplePayload as Record<string, unknown>) : { event: dto.eventType, timestamp: new Date().toISOString() };
+      payload = template
+        ? (template.samplePayload as Record<string, unknown>)
+        : { event: dto.eventType, timestamp: new Date().toISOString() };
     }
 
     // A payload over the limit is shortened instead of being cut at an
@@ -458,7 +465,11 @@ export class WebhookService {
         const signedBody = sentBody ?? '';
         const signed = signatureHeaders({ secret, body: signedBody });
         Object.assign(headers, signed);
-        signatureInfo = { timestamp: signed[TIMESTAMP_HEADER], body: signedBody, signature: signed[SIGNATURE_HEADER] };
+        signatureInfo = {
+          timestamp: signed[TIMESTAMP_HEADER],
+          body: signedBody,
+          signature: signed[SIGNATURE_HEADER],
+        };
       }
 
       let responseStatus: number | null = null;
@@ -468,12 +479,7 @@ export class WebhookService {
       let errorMessage: string | undefined;
 
       try {
-        const outcome = await this.performRequest(
-          method,
-          dto.endpointUrl,
-          headers,
-          sentBody,
-        );
+        const outcome = await this.performRequest(method, dto.endpointUrl, headers, sentBody);
         responseStatus = outcome.status;
         Object.assign(responseHeaders, outcome.headers);
         responseBody = outcome.body;
@@ -525,9 +531,30 @@ export class WebhookService {
   /**
    * Returns recent webhook execution history. Note: history is kept in-memory
    * per replica and does not survive restarts or sync across replicas.
+   *
+   * Called without a query it keeps its historical array shape; the HTTP layer
+   * always passes the shared pagination DTO and receives the common envelope.
    */
-  getHistory(userId: string): WebhookHistoryEntry[] {
-    return this.annotateLegacyEntries(this.historyByUser.get(userId) ?? []);
+  getHistory(userId: string): WebhookHistoryEntry[];
+  getHistory(userId: string, query: PaginationQueryDto): PaginatedResult<WebhookHistoryEntry>;
+  getHistory(
+    userId: string,
+    query?: PaginationQueryDto,
+  ): WebhookHistoryEntry[] | PaginatedResult<WebhookHistoryEntry> {
+    const entries = this.annotateLegacyEntries(this.historyByUser.get(userId) ?? []);
+    if (!query) return entries;
+
+    const { page, limit } = normalizePagination(query);
+    // Deterministic newest-first ordering, with the id as a tiebreaker so an
+    // entry cannot change page when two deliveries share a timestamp.
+    const ordered = [...entries].sort(
+      (a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id),
+    );
+    const start = (page - 1) * limit;
+    return buildPaginatedResult(ordered.slice(start, start + limit), ordered.length, {
+      page,
+      limit,
+    });
   }
 
   /**

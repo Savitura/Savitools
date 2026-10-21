@@ -22,10 +22,10 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 
 /** Build and sign a payment envelope so the controller receives a real XDR. */
 function buildSignedPaymentXdr(source: Keypair, destination: string): string {
-  const transaction = new TransactionBuilder(
-    new Account(source.publicKey(), '0'),
-    { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
-  )
+  const transaction = new TransactionBuilder(new Account(source.publicKey(), '0'), {
+    fee: BASE_FEE,
+    networkPassphrase: Networks.TESTNET,
+  })
     .addOperation(
       Operation.payment({
         destination,
@@ -140,9 +140,9 @@ describe('WalletController', () => {
 
   describe('sendPayment', () => {
     it('rejects a malformed signed XDR through the real service', async () => {
-      await expect(
-        controller.sendPayment({ signedXdr: 'NOT_A_SIGNED_XDR' }),
-      ).rejects.toThrow('Invalid signed transaction XDR');
+      await expect(controller.sendPayment({ signedXdr: 'NOT_A_SIGNED_XDR' })).rejects.toThrow(
+        'Invalid signed transaction XDR',
+      );
     });
 
     it('submits a client-signed payment and returns the transaction hash', async () => {
@@ -216,9 +216,9 @@ describe('WalletController', () => {
       const code = 'TEST';
       const issuer = Keypair.random().publicKey();
 
-      expect(() =>
-        controller.getAssetTrustlines(code, issuer, 'not-a-boolean'),
-      ).toThrow(BadRequestException);
+      expect(() => controller.getAssetTrustlines(code, issuer, 'not-a-boolean')).toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws BadRequestException for invalid number filter', () => {
@@ -226,13 +226,7 @@ describe('WalletController', () => {
       const issuer = Keypair.random().publicKey();
 
       expect(() =>
-        controller.getAssetTrustlines(
-          code,
-          issuer,
-          undefined,
-          undefined,
-          'not-a-number',
-        ),
+        controller.getAssetTrustlines(code, issuer, undefined, undefined, 'not-a-number'),
       ).toThrow(BadRequestException);
     });
   });
@@ -272,7 +266,7 @@ describe('WalletController validation and auth guards', () => {
   describe('BalancesDto validation', () => {
     it('accepts valid G... stellar public key', async () => {
       const dto = plainToInstance(BalancesDto, {
-        publicKey: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+        publicKey: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
       });
       const errors = await validate(dto);
       expect(errors.length).toBe(0);

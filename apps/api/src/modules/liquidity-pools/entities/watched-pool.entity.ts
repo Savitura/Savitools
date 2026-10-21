@@ -1,10 +1,4 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('watched_pools')
 export class WatchedPool {
@@ -28,7 +22,7 @@ export class WatchedPool {
   @Column({ name: 'asset_b', length: 64 })
   assetB!: string;
 
-  @Column({ name: 'label', length: 120, nullable: true })
+  @Column({ name: 'label', type: 'varchar', length: 120, nullable: true })
   label!: string | null;
 
   @CreateDateColumn({ name: 'created_at' })

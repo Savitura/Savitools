@@ -29,7 +29,7 @@ the same thing even as sections are added.
    "item 4"s ended up in this file once already
    ([#243](https://github.com/Savitura/Savitools/issues/243)).
 3. **Format:** `N. **A bold, falsifiable claim.** Evidence — the file paths and
-   symbols that prove it, plus the reasoning that is not visible in the code.`
+symbols that prove it, plus the reasoning that is not visible in the code.`
 4. **Verify before you write.** Every claim must be checkable against the code
    (path + behaviour) or against a linked, resolvable issue/PR. If you can point
    at neither, do not record it.
@@ -71,10 +71,12 @@ Section for [issue #78](https://github.com/Savitura/Savitools/issues/78)
    more than 60 s in the future (sender clock skew).
 
 4. **The signing secret resolves per request, then falls back to
-   `WEBHOOK_SIGNING_SECRET`.** `WebhookService.sendWebhook` (via
-   `resolveSecret`) and `EventsService.replayEvents` sign with the
-   caller-supplied `secret` when present, otherwise with
+   `WEBHOOK_SIGNING_SECRET` (except contract event replay).** `WebhookService.sendWebhook` (via
+   `resolveSecret`) signs with the caller-supplied `secret` when present, otherwise with
    `WEBHOOK_SIGNING_SECRET`; when neither is set the webhook goes out unsigned.
+   `EventsService.replayEvents` uses the caller-supplied `secret` when present or generates a
+   throwaway secret returned in `ReplaySummary.secret`, and never falls back to
+   `WEBHOOK_SIGNING_SECRET` to prevent an arbitrary payload signing oracle.
    Monitor alerts always sign with the per-webhook DB secret
    (`NotificationWorkerService.decryptAndUpgradeSecret`), never the env var.
    `GET /webhooks/signing` (`WebhookController.getSigningStatus`) is
@@ -261,7 +263,7 @@ Section for [issue #352](https://github.com/Savitura/Savitools/issues/352).
 
 26. **`MAX_SIGNERS` is 21, one more than SEP-0023's 20.** SEP-0023 allows 20 additional
     signers plus the master key, and a request has to be able to describe the master key
-    too, so the accepted list is one longer than the protocol's cap on *additional*
+    too, so the accepted list is one longer than the protocol's cap on _additional_
     signers. The number is exported from `multisig-weights.ts` and published by
     `GET /multisig/limits` so the two cannot drift.
 
@@ -271,7 +273,7 @@ Section for [issue #352](https://github.com/Savitura/Savitools/issues/352).
     asks for both has a configuration that does not exist, and telling them so is the
     point of a simulator.
 
-28. **Time bounds accept unix seconds *and* ISO 8601, and the numeric branch is anchored
+28. **Time bounds accept unix seconds _and_ ISO 8601, and the numeric branch is anchored
     before the date branch.** Horizon reports transaction time bounds in unix seconds
     while operators read them as timestamps, so `parseTimeBound` accepts both. The order
     matters: `Date.parse('-5')` yields a real instant in Node, so without anchoring the

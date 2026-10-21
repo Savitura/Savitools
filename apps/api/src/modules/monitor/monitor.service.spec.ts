@@ -8,6 +8,7 @@ import { MonitorService } from './monitor.service';
 import { StreamManager } from './stream-manager.service';
 import { WatchRegistry } from './watch-registry.service';
 import { AlertRuleDto } from './dto/create-watch.dto';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 
 describe('MonitorService', () => {
   it('closes the stream after deleting the last watch for a public key', async () => {
@@ -38,6 +39,7 @@ describe('MonitorService', () => {
       streamManager,
       {} as MonitorQueueService,
       {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
     );
 
     await service.deleteWatch('user-one', 'watch-one');
@@ -61,6 +63,7 @@ describe('MonitorService', () => {
     const watchRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => ({ id: 'watch-two', ...value })),
+      count: jest.fn().mockResolvedValue(0),
     } as unknown as Repository<Watch>;
     const registry = {
       get: jest.fn().mockReturnValue([existing]),
@@ -79,6 +82,7 @@ describe('MonitorService', () => {
       streamManager,
       {} as MonitorQueueService,
       {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
     );
 
     const created = await service.createWatch('user-two', {
@@ -96,15 +100,14 @@ describe('MonitorService', () => {
     expect(created.status).toBe('streaming');
     expect(created.lastEventAt).toEqual(existing.lastEventAt);
     expect(registry.add).toHaveBeenCalledWith(created);
-    expect(streamManager.start).toHaveBeenCalledWith(
-      'testnet:account:GAAAAAAAA',
-    );
+    expect(streamManager.start).toHaveBeenCalledWith('testnet:account:GAAAAAAAA');
   });
 
   it('copies topic from DTO to alert rule definition', async () => {
     const watchRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => ({ id: 'watch-three', ...value })),
+      count: jest.fn().mockResolvedValue(0),
     } as unknown as Repository<Watch>;
     const registry = {
       get: jest.fn().mockReturnValue([]),
@@ -123,6 +126,7 @@ describe('MonitorService', () => {
       streamManager,
       {} as MonitorQueueService,
       {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
     );
 
     const dto: AlertRuleDto = {
@@ -142,10 +146,47 @@ describe('MonitorService', () => {
     expect(created.alertRules[0].topic).toBe('transfer');
   });
 
+  it('lists watches with the shared pagination envelope and stable ordering', async () => {
+    const findAndCount = jest.fn().mockResolvedValue([[{ id: 'watch-one' }], 3]);
+    const service = new MonitorService(
+      { findAndCount } as unknown as Repository<Watch>,
+      {} as Repository<WatchEvent>,
+      {} as Repository<AlertEvent>,
+      {} as Repository<MonitorWebhook>,
+      {} as WatchRegistry,
+      {} as StreamManager,
+      {} as MonitorQueueService,
+      {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
+    );
+
+    const result = await service.listWatches('user-one', { page: 2, limit: 2 });
+
+    expect(findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        order: { createdAt: 'ASC', id: 'ASC' },
+        skip: 2,
+        take: 2,
+      }),
+    );
+    expect(result).toMatchObject({
+      items: [{ id: 'watch-one' }],
+      page: 2,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+      nextPage: null,
+      previousPage: 1,
+    });
+  });
+
   it('rejects event_topic_equals without a topic', async () => {
     const watchRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => ({ id: 'watch-four', ...value })),
+      count: jest.fn().mockResolvedValue(0),
     } as unknown as Repository<Watch>;
     const registry = {
       get: jest.fn().mockReturnValue([]),
@@ -164,6 +205,7 @@ describe('MonitorService', () => {
       streamManager,
       {} as MonitorQueueService,
       {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
     );
 
     await expect(
@@ -174,5 +216,48 @@ describe('MonitorService', () => {
         alertRules: [{ type: 'event_topic_equals', channels: ['in_app'] }],
       }),
     ).rejects.toThrow('event_topic_equals requires a topic');
+  });
+
+  it('rejects a new watch once the per-user limit is reached', async () => {
+    const watchRepository = {
+      count: jest.fn().mockResolvedValue(25),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => ({ id: 'watch-limit', ...value })),
+    } as unknown as Repository<Watch>;
+    const registry = {
+      get: jest.fn(),
+      add: jest.fn(),
+      keyFor: jest.fn(),
+    } as unknown as WatchRegistry;
+    const streamManager = {
+      start: jest.fn(),
+    } as unknown as StreamManager;
+    const service = new MonitorService(
+      watchRepository,
+      {} as Repository<WatchEvent>,
+      {} as Repository<AlertEvent>,
+      {} as Repository<MonitorWebhook>,
+      registry,
+      streamManager,
+      {} as MonitorQueueService,
+      {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
+    );
+
+    await expect(
+      service.createWatch('user-limited', {
+        publicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+        eventTypes: ['payment'],
+        network: 'testnet',
+        alertRules: [],
+      }),
+    ).rejects.toThrow(/Watch limit reached: each user may keep at most 25 watches/);
+
+    expect(watchRepository.count).toHaveBeenCalledWith({
+      where: { userId: 'user-limited' },
+    });
+    expect(watchRepository.save).not.toHaveBeenCalled();
+    expect(registry.add).not.toHaveBeenCalled();
+    expect(streamManager.start).not.toHaveBeenCalled();
   });
 });

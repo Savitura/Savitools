@@ -1,5 +1,5 @@
 import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/common';
-import { ApiErrorEnvelope, ApiExceptionFilter } from './api-exception.filter';
+import { ApiErrorEnvelope, ApiSuccessEnvelope, ApiEnvelope, ApiExceptionFilter } from './api-exception.filter';
 import { REQUEST_ID_HEADER } from '../interceptors/request-id.interceptor';
 
 function hostFor(request: Record<string, unknown>) {
@@ -37,6 +37,7 @@ describe('ApiExceptionFilter', () => {
       path: '/api/v1/monitor/stream',
     });
     expect(typeof envelope.timestamp).toBe('string');
+    expect(envelope.details).toBeUndefined();
   });
 
   it('keeps validation message arrays intact', () => {
@@ -67,6 +68,33 @@ describe('ApiExceptionFilter', () => {
     expect(reply.status).toHaveBeenCalledWith(500);
     expect(envelope.message).toBe('Internal server error');
     expect(JSON.stringify(envelope)).not.toContain('ECONNREFUSED');
+    expect(envelope.details).toBeUndefined();
+  });
+
+  it('preserves success envelope shape via generic helper', () => {
+    const successEnvelope: ApiSuccessEnvelope<string> = {
+      statusCode: 200,
+      data: 'hello',
+      requestId: 'req-123',
+      timestamp: new Date().toISOString(),
+    };
+    expect(successEnvelope).toMatchObject({
+      statusCode: 200,
+      data: 'hello',
+      requestId: 'req-123',
+    });
+  });
+
+  it('validates envelope union type', () => {
+    const errorEnvelope: ApiEnvelope = {
+      statusCode: 404,
+      message: 'Not found',
+      error: 'Not Found',
+      path: '/api/v1/x',
+      timestamp: new Date().toISOString(),
+      requestId: null,
+    };
+    expect(errorEnvelope.statusCode).toBe(404);
   });
 
   it('reuses the request id the interceptor stored', () => {

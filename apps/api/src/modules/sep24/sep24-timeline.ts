@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { REDACTED, redactValue, redactString, redactHeaders, isSensitiveKey } from '../../common/redaction';
 
 export type TimelineEntryKind =
   | 'discovery'
@@ -30,86 +31,6 @@ export interface TimelineExport {
   anchorDomain: string;
   generatedAt: string;
   entries: TimelineEntry[];
-}
-
-const SENSITIVE_KEY_PATTERNS = [
-  /key/i,
-  /jwt/i,
-  /token/i,
-  /secret/i,
-  /signature/i,
-  /signing_key/i,
-  /private/i,
-  /password/i,
-  /authorization/i,
-  /credential/i,
-];
-
-const SENSITIVE_FIELD_PATTERNS = [
-  /^(first_name)$/i,
-  /^(last_name)$/i,
-  /^(email)$/i,
-  /^(phone_number)$/i,
-  /^(phone)$/i,
-  /^(address)$/i,
-  /^(birth_date)$/i,
-  /^(birth_place)$/i,
-  /^(id_number)$/i,
-  /^(tax_id)$/i,
-  /^(ssn)$/i,
-  /^(document_number)$/i,
-  /^(account_number)$/i,
-  /^(routing_number)$/i,
-  /^(card_number)$/i,
-  /^(cvv)$/i,
-];
-
-const REDACTED = '[REDACTED]';
-
-function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEY_PATTERNS.some((pattern) => pattern.test(key));
-}
-
-function isSensitiveField(key: string): boolean {
-  return SENSITIVE_FIELD_PATTERNS.some((pattern) => pattern.test(key));
-}
-
-function redactString(value: string): string {
-  if (!value) {
-    return value;
-  }
-  // Redact JWT tokens (3 base64url segments separated by dots).
-  const jwtRegex = /[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
-  let out = value.replace(jwtRegex, REDACTED);
-  // Redact Stellar secret seeds (S…, 56-char StrKey) wherever they appear,
-  // even under a key that is not itself flagged as sensitive.
-  out = out.replace(/S[A-Z2-7]{55}/g, REDACTED);
-  // Redact longer bearer-style tokens.
-  out = out.replace(/Bearer\s+[A-Za-z0-9_.-]+/gi, `Bearer ${REDACTED}`);
-  return out;
-}
-
-export function redactValue(value: unknown, keyHint?: string): unknown {
-  if (keyHint && (isSensitiveKey(keyHint) || isSensitiveField(keyHint))) {
-    return REDACTED;
-  }
-  if (value === null || value === undefined) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return redactString(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, keyHint));
-  }
-  if (typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = redactValue(v, k);
-    }
-    return out;
-  }
-  return value;
 }
 
 export class Sep24Timeline {

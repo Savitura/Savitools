@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WebhookController } from './webhook.controller';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 function guardNames(handler: (...args: unknown[]) => unknown): string[] {
   const guards = Reflect.getMetadata('__guards__', handler) as Array<new () => unknown>;
@@ -60,7 +61,11 @@ describe('WebhookController authorization', () => {
 
   it('returns 401 when the token is invalid', () => {
     const guard = new JwtAuthGuard(
-      { verify: () => { throw new Error('jwt expired'); } } as never,
+      {
+        verify: () => {
+          throw new Error('jwt expired');
+        },
+      } as never,
       { getOrThrow: () => 'secret' } as never,
     );
     const context = {
@@ -70,5 +75,24 @@ describe('WebhookController authorization', () => {
     };
 
     expect(() => guard.canActivate(context as never)).toThrow(UnauthorizedException);
+  });
+  it('serves history with the shared pagination envelope', () => {
+    const envelope = {
+      items: [],
+      page: 2,
+      limit: 5,
+      total: 6,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+      nextPage: null,
+      previousPage: 1,
+    };
+    const getHistory = jest.fn().mockReturnValue(envelope);
+    const controller = new WebhookController({ getHistory } as never);
+
+    const query = Object.assign(new PaginationQueryDto(), { page: 2, limit: 5 });
+    expect(controller.getHistory({ id: 'user-1' }, query)).toEqual(envelope);
+    expect(getHistory).toHaveBeenCalledWith('user-1', query);
   });
 });

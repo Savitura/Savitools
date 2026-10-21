@@ -3,16 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Plus, Trash2, Loader2, Wifi, WifiOff } from 'lucide-react';
-import { API_ORIGIN, apiFetch } from '@/lib/api';
+import { API_ORIGIN, apiErrorMessage, apiFetch } from '@/lib/api';
 import { AlertPanel } from './alert-dialog';
 import { LiveFeed } from './live-feed';
 import { AlertEvent, Watch, WatchEvent } from './monitor-types';
 import { WatchForm } from './watch-form';
-import {
-  MonitorWatchesSkeleton,
-  MonitorNoWatchesState,
-  ErrorState,
-} from '../tools/state-display';
+import { MonitorWatchesSkeleton, MonitorNoWatchesState, ErrorState } from '../tools/state-display';
+import { AsyncStatusAnnouncer, type AsyncStatusAnnouncement } from '@/components/ui/live-region';
 
 type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -35,8 +32,7 @@ export function MonitorDashboard() {
       setWatches(items);
       setActiveWatchId((current) => current ?? items[0]?.id ?? null);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load watches';
-      setWatchesError(message);
+      setWatchesError(apiErrorMessage(err, 'Failed to load watches'));
       setWatches([]);
     } finally {
       setWatchesLoading(false);
@@ -73,23 +69,18 @@ export function MonitorDashboard() {
       setSocketError(err.message || 'Failed to establish live stream connection');
     });
 
-    socket.on(
-      'watch_event',
-      ({ watchId, event }: { watchId: string; event: WatchEvent }) => {
-        setLiveEvents((current) =>
-          current.some((item) => item.id === event.id)
-            ? current
-            : [{ ...event, watchId }, ...current].slice(0, 500),
-        );
-        setWatches((current) =>
-          current.map((watch) =>
-            watch.id === watchId
-              ? { ...watch, lastEventAt: event.occurredAt }
-              : watch,
-          ),
-        );
-      },
-    );
+    socket.on('watch_event', ({ watchId, event }: { watchId: string; event: WatchEvent }) => {
+      setLiveEvents((current) =>
+        current.some((item) => item.id === event.id)
+          ? current
+          : [{ ...event, watchId }, ...current].slice(0, 500),
+      );
+      setWatches((current) =>
+        current.map((watch) =>
+          watch.id === watchId ? { ...watch, lastEventAt: event.occurredAt } : watch,
+        ),
+      );
+    });
     socket.on(
       'watch_status',
       (
@@ -98,26 +89,18 @@ export function MonitorDashboard() {
         },
       ) => {
         setWatches((current) =>
-          current.map((watch) =>
-            watch.id === status.watchId ? { ...watch, ...status } : watch,
-          ),
+          current.map((watch) => (watch.id === status.watchId ? { ...watch, ...status } : watch)),
         );
       },
     );
     socket.on('alert_event', ({ alert }: { alert: AlertEvent }) =>
       setLiveAlerts((current) =>
-        [alert, ...current.filter((item) => item.id !== alert.id)].slice(
-          0,
-          500,
-        ),
+        [alert, ...current.filter((item) => item.id !== alert.id)].slice(0, 500),
       ),
     );
     socket.on('alert_status', ({ alert }: { alert: AlertEvent }) =>
       setLiveAlerts((current) =>
-        [alert, ...current.filter((item) => item.id !== alert.id)].slice(
-          0,
-          500,
-        ),
+        [alert, ...current.filter((item) => item.id !== alert.id)].slice(0, 500),
       ),
     );
 
@@ -152,8 +135,35 @@ export function MonitorDashboard() {
     });
   };
 
+  const monitorStatus: AsyncStatusAnnouncement | null = watchesError
+    ? {
+        tone: 'error',
+        message: `Failed to load ledger watches: ${watchesError}`,
+        key: `watches-error:${watchesError}`,
+      }
+    : socketStatus === 'error'
+      ? {
+          tone: 'error',
+          message: `Live event stream error: ${socketError ?? 'connection failed'}`,
+          key: `socket-error:${socketError ?? ''}`,
+        }
+      : watchesLoading
+        ? { tone: 'loading', message: 'Loading ledger watches…' }
+        : socketStatus === 'connecting'
+          ? { tone: 'loading', message: 'Connecting to live event stream…' }
+          : socketStatus === 'disconnected'
+            ? { tone: 'error', message: 'Live event stream disconnected.' }
+            : {
+                tone: 'success',
+                message: `${watches.length} ledger watch${
+                  watches.length === 1 ? '' : 'es'
+                } loaded. Live event stream connected.`,
+                key: `monitor-ready:${watches.length}`,
+              };
+
   return (
     <div className="space-y-3">
+      <AsyncStatusAnnouncer status={monitorStatus} />
       {/* Stream connection status bar */}
       <div
         className={`flex items-center justify-between rounded-xl border px-4 py-2.5 text-xs ${
@@ -190,9 +200,7 @@ export function MonitorDashboard() {
                   : 'Stream error'}
           </span>
           {socketError && (
-            <span className="text-muted-foreground/70 truncate max-w-xs">
-              — {socketError}
-            </span>
+            <span className="text-muted-foreground/70 truncate max-w-xs">— {socketError}</span>
           )}
         </div>
         {socketStatus !== 'connected' && (
@@ -247,8 +255,7 @@ export function MonitorDashboard() {
                   key={watch.id}
                   onClick={() => setActiveWatchId(watch.id)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ')
-                      setActiveWatchId(watch.id);
+                    if (event.key === 'Enter' || event.key === ' ') setActiveWatchId(watch.id);
                   }}
                   role="button"
                   tabIndex={0}
@@ -282,9 +289,7 @@ export function MonitorDashboard() {
                   <div className="mt-3 flex items-center justify-between text-[11px]">
                     <StatusBadge watch={watch} />
                     <span className="text-muted-foreground">
-                      {watch.lastEventAt
-                        ? relativeTime(watch.lastEventAt)
-                        : 'No events'}
+                      {watch.lastEventAt ? relativeTime(watch.lastEventAt) : 'No events'}
                     </span>
                   </div>
                 </div>
@@ -298,23 +303,15 @@ export function MonitorDashboard() {
         <main className="grid min-w-0 flex-1 grid-rows-[minmax(0,1fr)_260px]">
           <LiveFeed
             watch={activeWatch}
-            liveEvents={liveEvents.filter(
-              (event) => event.watchId === activeWatchId,
-            )}
+            liveEvents={liveEvents.filter((event) => event.watchId === activeWatchId)}
           />
           <AlertPanel
             watch={activeWatch}
-            liveAlerts={liveAlerts.filter(
-              (alert) => alert.watchId === activeWatchId,
-            )}
+            liveAlerts={liveAlerts.filter((alert) => alert.watchId === activeWatchId)}
           />
         </main>
 
-        <WatchForm
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          onAdd={addWatch}
-        />
+        <WatchForm open={drawerOpen} onClose={() => setDrawerOpen(false)} onAdd={addWatch} />
       </div>
     </div>
   );
@@ -339,16 +336,11 @@ function StatusBadge({ watch }: { watch: Watch }) {
 }
 
 function truncateKey(value: string): string {
-  return value.length > 18
-    ? `${value.slice(0, 8)}...${value.slice(-6)}`
-    : value;
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
 }
 
 function relativeTime(value: string): string {
-  const seconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(value).getTime()) / 1_000),
-  );
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1_000));
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ago`;
   return `${Math.floor(seconds / 3_600)}h ago`;
