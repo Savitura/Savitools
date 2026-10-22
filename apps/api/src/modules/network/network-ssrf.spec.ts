@@ -7,14 +7,11 @@ import { NetworkSample } from './entities/network-sample.entity';
 import { NetworkProfile } from './entities/network-profile.entity';
 
 const lookupMock = jest.fn();
-jest.mock('dns/promises', () => (
-  Object.assign(
-    (...args: unknown[]) => lookupMock(...args),
-    {
-      lookup: (...args: unknown[]) => lookupMock(...args),
-    }
-  )
-));
+jest.mock('dns/promises', () =>
+  Object.assign((...args: unknown[]) => lookupMock(...args), {
+    lookup: (...args: unknown[]) => lookupMock(...args),
+  }),
+);
 
 const originalFetch = global.fetch;
 
@@ -49,14 +46,14 @@ describe('NetworkService SSRF Guard', () => {
 
   it('rejects loopback IP in horizonUrl', async () => {
     await expect(
-      service.verifyNetworkPassphrase('http://127.0.0.1:8000', 'passphrase')
+      service.verifyNetworkPassphrase('http://127.0.0.1:8000', 'passphrase'),
     ).rejects.toThrow(BadRequestException);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('rejects link-local metadata IP (169.254.169.254)', async () => {
     await expect(
-      (service as any).assertHorizonPassphrase('http://169.254.169.254/', 'passphrase')
+      (service as any).assertHorizonPassphrase('http://169.254.169.254/', 'passphrase'),
     ).rejects.toThrow(BadRequestException);
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -64,12 +61,12 @@ describe('NetworkService SSRF Guard', () => {
   it('rejects internal host via DNS rebinding', async () => {
     lookupMock.mockResolvedValue([{ address: '10.0.0.1', family: 4 }]);
     await expect(
-      service.verifyNetworkPassphrase('http://internal.example', 'passphrase')
+      service.verifyNetworkPassphrase('http://internal.example', 'passphrase'),
     ).rejects.toThrow(BadRequestException);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('allows public host, pins resolved IP, and fetches successfully', async () => {
+  it('allows a public host after resolving it and fetches without following redirects', async () => {
     lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
@@ -79,12 +76,15 @@ describe('NetworkService SSRF Guard', () => {
 
     const result = await service.verifyNetworkPassphrase(
       'https://horizon-testnet.stellar.org',
-      'Test SDF Network ; September 2015'
+      'Test SDF Network ; September 2015',
     );
     expect(result.match).toBe(true);
+    expect(lookupMock).toHaveBeenCalledWith('horizon-testnet.stellar.org', { all: true });
+    // The URL keeps its hostname: swapping in the resolved IP would break TLS
+    // certificate checks for https Horizon hosts.
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('93.184.216.34'),
-      expect.any(Object)
+      'https://horizon-testnet.stellar.org',
+      expect.objectContaining({ redirect: 'manual' }),
     );
   });
 
@@ -102,7 +102,7 @@ describe('NetworkService SSRF Guard', () => {
     });
 
     await expect(
-      service.verifyNetworkPassphrase('https://public-redirect.example', 'passphrase')
+      service.verifyNetworkPassphrase('https://public-redirect.example', 'passphrase'),
     ).rejects.toThrow(BadRequestException);
   });
 });

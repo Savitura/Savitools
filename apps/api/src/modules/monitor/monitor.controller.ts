@@ -16,6 +16,7 @@ import {
   Logger,
   OnModuleDestroy,
 } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { MonitorService } from './monitor.service';
 import { CreateWatchDto } from './dto/create-watch.dto';
@@ -50,6 +51,7 @@ const SSE_IDLE_TIMEOUT_MS = 60_000;
 const SSE_CLEANUP_INTERVAL_MS = 15_000;
 const SSE_PING_INTERVAL_MS = 30_000;
 
+@ApiTags('monitor')
 @Controller('monitor')
 export class MonitorController implements OnModuleDestroy {
   private readonly logger = new Logger(MonitorController.name);
@@ -104,9 +106,7 @@ export class MonitorController implements OnModuleDestroy {
   private notifyIdleClient(client: SseClient): void {
     try {
       if (!client.reply.raw.writableEnded) {
-        client.reply.raw.write(
-          'event: timeout\ndata: {"reason":"idle"}\n\n',
-        );
+        client.reply.raw.write('event: timeout\ndata: {"reason":"idle"}\n\n');
       }
     } catch {
       // The peer is already gone; terminateConnection below is the cleanup.
@@ -127,7 +127,9 @@ export class MonitorController implements OnModuleDestroy {
           client.reply.raw.end();
         }
       } catch (err) {
-        this.logger.error(`Error terminating client connection: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(
+          `Error terminating client connection: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }
@@ -157,10 +159,7 @@ export class MonitorController implements OnModuleDestroy {
 
   @Get('stream')
   @UseGuards(JwtAuthGuard)
-  async stream(
-    @Res() reply: FastifyReply,
-    @Query('network') network?: string,
-  ): Promise<void> {
+  async stream(@Res() reply: FastifyReply, @Query('network') network?: string): Promise<void> {
     // Resolved once at startup (MonitorRuntimeConfig) so the cap can never
     // silently differ from the configured value.
     const maxConns = this.runtime.maxSseConnections;
@@ -193,7 +192,9 @@ export class MonitorController implements OnModuleDestroy {
     reply.raw.setHeader('Connection', 'keep-alive');
     reply.raw.flushHeaders?.();
 
-    reply.raw.write(`data: ${JSON.stringify({ type: 'connected', network: network ?? 'testnet' })}\n\n`);
+    reply.raw.write(
+      `data: ${JSON.stringify({ type: 'connected', network: network ?? 'testnet' })}\n\n`,
+    );
 
     clientInfo.pingTimer = setInterval(() => {
       try {
@@ -204,7 +205,9 @@ export class MonitorController implements OnModuleDestroy {
           clientInfo.lastHeartbeatAt = Date.now();
         }
       } catch (err) {
-        this.logger.error(`Failed to send heartbeat ping: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(
+          `Failed to send heartbeat ping: ${err instanceof Error ? err.message : String(err)}`,
+        );
         this.terminateConnection(clientInfo);
       }
     }, SSE_PING_INTERVAL_MS);
@@ -222,38 +225,32 @@ export class MonitorController implements OnModuleDestroy {
 
   @Post('watches')
   @UseGuards(JwtAuthGuard)
-  async createWatch(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: CreateWatchDto,
-  ) {
+  @ApiOperation({ summary: 'Create a watch with optional alert rules' })
+  @ApiResponse({ status: 201, description: 'Watch created' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid watch, or the per-user watch limit has been reached',
+  })
+  async createWatch(@CurrentUser() user: AuthUser, @Body() dto: CreateWatchDto) {
     return this.monitorService.createWatch(user.id, dto);
   }
 
   @Get('watches')
   @UseGuards(JwtAuthGuard)
-  async listWatches(
-    @CurrentUser() user: AuthUser,
-    @Query() query: PaginationQueryDto,
-  ) {
+  async listWatches(@CurrentUser() user: AuthUser, @Query() query: PaginationQueryDto) {
     return this.monitorService.listWatches(user.id, query);
   }
 
   @Get('watches/:id')
   @UseGuards(JwtAuthGuard)
-  async getWatch(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-  ) {
+  async getWatch(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.monitorService.getWatch(user.id, id);
   }
 
   @Delete('watches/:id')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteWatch(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-  ) {
+  async deleteWatch(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.monitorService.deleteWatch(user.id, id);
   }
 
@@ -279,10 +276,7 @@ export class MonitorController implements OnModuleDestroy {
 
   @Post('webhook')
   @UseGuards(JwtAuthGuard)
-  async registerWebhook(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: RegisterWebhookDto,
-  ) {
+  async registerWebhook(@CurrentUser() user: AuthUser, @Body() dto: RegisterWebhookDto) {
     return this.monitorService.registerWebhook(user.id, dto);
   }
 
@@ -300,10 +294,7 @@ export class MonitorController implements OnModuleDestroy {
 
   @Put('preferences')
   @UseGuards(JwtAuthGuard)
-  async updatePreferences(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: UpdateDigestPreferencesDto,
-  ) {
+  async updatePreferences(@CurrentUser() user: AuthUser, @Body() dto: UpdateDigestPreferencesDto) {
     return this.digestService.updatePreferences(user.id, dto);
   }
 
@@ -321,10 +312,7 @@ export class MonitorController implements OnModuleDestroy {
    */
   @Get('search')
   @UseGuards(JwtAuthGuard)
-  async searchEvents(
-    @CurrentUser() user: AuthUser,
-    @Query() query: SearchEventsQueryDto,
-  ) {
+  async searchEvents(@CurrentUser() user: AuthUser, @Query() query: SearchEventsQueryDto) {
     this.assertIsoDate(query.from, 'from');
     this.assertIsoDate(query.to, 'to');
     return this.monitorService.searchEvents(user.id, query);
@@ -346,10 +334,7 @@ export class MonitorController implements OnModuleDestroy {
     this.assertIsoDate(query.to, 'to');
 
     reply.raw.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    reply.raw.setHeader(
-      'Content-Disposition',
-      'attachment; filename="monitor-search.csv"',
-    );
+    reply.raw.setHeader('Content-Disposition', 'attachment; filename="monitor-search.csv"');
     // UTF-8 BOM so spreadsheet tools detect the encoding.
     reply.raw.write('\uFEFF');
     reply.raw.write(
@@ -361,18 +346,14 @@ export class MonitorController implements OnModuleDestroy {
         user.id,
         query,
         (values) => {
-          reply.raw.write(
-            `${toCsvRow(values)}\r\n`,
-          );
+          reply.raw.write(`${toCsvRow(values)}\r\n`);
         },
         () => {
           if (!reply.raw.writableEnded) reply.raw.end();
         },
       );
     } catch (err) {
-      this.logger.error(
-        `CSV export failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.error(`CSV export failed: ${err instanceof Error ? err.message : String(err)}`);
       if (!reply.raw.writableEnded) reply.raw.end();
     }
   }
@@ -380,8 +361,7 @@ export class MonitorController implements OnModuleDestroy {
   /** Reject non-ISO date filters with 400 before they reach the service. */
   private assertIsoDate(value: string | undefined, label: string): void {
     if (value === undefined) return;
-    const isoDate =
-      /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+    const isoDate = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
     if (!isoDate.test(value) || Number.isNaN(Date.parse(value))) {
       throw new BadRequestException(`Invalid ISO date for "${label}"`);
     }

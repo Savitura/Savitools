@@ -20,37 +20,37 @@ To avoid surface-area duplication with the official, free [Stellar Lab](https://
 
 ### Fluxa Developer Console & Core Workstations
 
-| Tool | What it does | Status |
-| --- | --- | --- |
-| **API Playground** | Interactive request builder for Fluxa (mock/sandbox) and CrowdPay (Railway) APIs | Active (Core) |
-| **Webhook Tester** | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response | Active (Core) |
-| **SDK Generator** | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints | Active (Core) |
-| **Federation & TOML** | Resolve federation addresses, inspect stellar.toml files, check SEP compliance (SEP-10/24) | Active (Core) |
-| **Wallet Sandbox** | Generate testnet keypairs, fund via Friendbot, send test payments (testnet-locked) | Active |
-| **Payment Simulator** | Find path payment routes between assets; preview hops, rates, and fees | Active |
-| **Ledger Monitor** | Watch a Stellar address or contract for live activity; set threshold alerts | Active |
-| **Network Status** | Live Stellar network health: ledger close time, fee tracker, Horizon latency | Active |
-| **Liquidity Pool Explorer** | Search Stellar AMM pools, calculate LP share values, and track favorite pools | Active |
-| **Asset Control** | Inspect issuer authorization flags, audit trustlines, assemble clawback/flag txs | Active |
-| **Slippage Lab** | Price slippage tolerances against adverse rate moves in path payments | Active |
-| **Multisig Simulator** | Check threshold clearance and identify outstanding signers | Active |
-| **Soroban RPC** | Schema-aware read-only Soroban JSON-RPC method invocation and response viewer | Active |
-| **QR Handoff** | Move unsigned/signed transactions across air gaps via animated checksummed QR frames | Active |
-| **Soroban Storage** | Inspect contract storage entries across Instance, Persistent, and Temporary storage | Active |
-| **Sequence Planner** | Plan fee bumps and sequence numbers for queued Stellar transactions | Active |
+| Tool                        | What it does                                                                               | Status        |
+| --------------------------- | ------------------------------------------------------------------------------------------ | ------------- |
+| **API Playground**          | Interactive request builder for Fluxa (mock/sandbox) and CrowdPay (Railway) APIs           | Active (Core) |
+| **Webhook Tester**          | Fire sample CrowdPay / Fluxa webhook payloads at your endpoint; inspect the response       | Active (Core) |
+| **SDK Generator**           | Generate copy-paste client code (JS, Python, Go, cURL) from Fluxa/CrowdPay endpoints       | Active (Core) |
+| **Federation & TOML**       | Resolve federation addresses, inspect stellar.toml files, check SEP compliance (SEP-10/24) | Active (Core) |
+| **Wallet Sandbox**          | Generate testnet keypairs, fund via Friendbot, send test payments (testnet-locked)         | Active        |
+| **Payment Simulator**       | Find path payment routes between assets; preview hops, rates, and fees                     | Active        |
+| **Ledger Monitor**          | Watch a Stellar address or contract for live activity; set threshold alerts                | Active        |
+| **Network Status**          | Live Stellar network health: ledger close time, fee tracker, Horizon latency               | Active        |
+| **Liquidity Pool Explorer** | Search Stellar AMM pools, calculate LP share values, and track favorite pools              | Active        |
+| **Asset Control**           | Inspect issuer authorization flags, audit trustlines, assemble clawback/flag txs           | Active        |
+| **Slippage Lab**            | Price slippage tolerances against adverse rate moves in path payments                      | Active        |
+| **Multisig Simulator**      | Check threshold clearance and identify outstanding signers                                 | Active        |
+| **Soroban RPC**             | Schema-aware read-only Soroban JSON-RPC method invocation and response viewer              | Active        |
+| **QR Handoff**              | Move unsigned/signed transactions across air gaps via animated checksummed QR frames       | Active        |
+| **Soroban Storage**         | Inspect contract storage entries across Instance, Persistent, and Temporary storage        | Active        |
+| **Sequence Planner**        | Plan fee bumps and sequence numbers for queued Stellar transactions                        | Active        |
 
 ### Frozen Tools (Stellar Lab Overlap)
 
 The following tools duplicate capabilities provided natively by official [Stellar Lab](https://developers.stellar.org/docs/tools/lab). They remain functional in testnet MVP but are frozen to prioritize Fluxa and CrowdPay:
 
-| Tool | What it does | Status | Alternative |
-| --- | --- | --- | --- |
-| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR | Frozen (MVP) | [Stellar Lab View XDR](https://developers.stellar.org/docs/tools/lab) |
-| **Transaction Composer** | Visual builder for multi-operation Stellar transactions | Frozen (MVP, Testnet-only) | [Stellar Lab Build Tx](https://developers.stellar.org/docs/tools/lab) |
-| **Contract Deployer** | Upload and deploy Soroban WASM files to testnet | Frozen (MVP) | Stellar CLI / Lab |
-| **Order Book** | Live DEX order book and spread analytics | Frozen (MVP) | Stellar.expert / Lab |
-| **Account Graph** | Visualize signer networks, offers, and payment relationships | Frozen (MVP) | Stellar.expert |
-| **Contract Events** | Decode, filter, and replay Soroban contract events from ScVal XDR | Frozen (MVP) | Stellar RPC / Lab |
+| Tool                      | What it does                                                      | Status                     | Alternative                                                           |
+| ------------------------- | ----------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------- |
+| **Transaction Inspector** | Decode any tx hash, Stellar address, or raw XDR                   | Frozen (MVP)               | [Stellar Lab View XDR](https://developers.stellar.org/docs/tools/lab) |
+| **Transaction Composer**  | Visual builder for multi-operation Stellar transactions           | Frozen (MVP, Testnet-only) | [Stellar Lab Build Tx](https://developers.stellar.org/docs/tools/lab) |
+| **Contract Deployer**     | Upload and deploy Soroban WASM files to testnet                   | Frozen (MVP)               | Stellar CLI / Lab                                                     |
+| **Order Book**            | Live DEX order book and spread analytics                          | Frozen (MVP)               | Stellar.expert / Lab                                                  |
+| **Account Graph**         | Visualize signer networks, offers, and payment relationships      | Frozen (MVP)               | Stellar.expert                                                        |
+| **Contract Events**       | Decode, filter, and replay Soroban contract events from ScVal XDR | Frozen (MVP)               | Stellar RPC / Lab                                                     |
 
 See the [Contract Events guide](docs/contract-events.md) for filter criteria, limits, and API usage.
 
@@ -122,16 +122,11 @@ savitools/
 │           ├── sandbox/           # Wallet sandbox and Friendbot
 │           ├── workspace/         # Multi-tenant workspace mgmt
 │           ├── stellar/           # Stellar network / RPC helpers
+│           ├── stellar-toml/      # stellar.toml inspection
+│           ├── sep10/             # SEP-10 WebAuth debugging
+│           ├── sep24/             # SEP-24 interactive flow + redacted timeline
 │           └── auth/              # User accounts, JWT, Fluxa SSO
 │
-├── src/                          # Standalone SEP-10 & SEP-24 Debugger library
-│   ├── debugger/
-│   │   ├── SEP10Debugger.ts      # SEP-10 WebAuth challenge/response authentication
-│   │   └── SEP24Debugger.ts      # SEP-24 interactive deposit/withdrawal workflow runner
-│   ├── util/                     # URL validation, TOML resolution, redactor
-│   └── index.ts                  # Library entrypoint exports
-│
-├── tests/                        # Tests for root debugger library (SEP24Debugger.test.ts)
 ├── docker-compose.yml
 ├── turbo.json
 └── .env.example
@@ -139,52 +134,17 @@ savitools/
 
 ---
 
-## SEP-10 & SEP-24 Debugger Library (`src/`)
+## SEP-10 & SEP-24 Debuggers (`apps/api/src/modules`)
 
-Located at the repository root in `src/`, this standalone TypeScript library provides protocol-level debugging and automation for Stellar anchors implementing **SEP-10** (Stellar Web Authentication) and **SEP-24** (Interactive Deposit & Withdrawal):
+The SEP-10 and SEP-24 debuggers are part of the NestJS API so they are built
+and tested with the rest of the backend:
 
-- **`SEP10Debugger` (`src/debugger/SEP10Debugger.ts`)**:
-  - Handles the SEP-10 challenge-response authentication handshake.
-  - Fetches the challenge transaction from the anchor's web auth endpoint.
-  - Cryptographically verifies and signs the transaction with client keypairs.
-  - Submits the signed transaction to exchange for a JWT token, managing token caching and expiration.
-
-- **`SEP24Debugger` (`src/debugger/SEP24Debugger.ts`)**:
-  - Resolves `stellar.toml` to automatically discover `TRANSFER_SERVER_SEP0024` and `WEB_AUTH_ENDPOINT`.
-  - Executes authenticated SEP-10 authentication to obtain authorization.
-  - Initiates interactive deposit or withdrawal flows (`/transactions/deposit/interactive` or `/transactions/withdraw/interactive`).
-  - Polls transaction status and generates a comprehensive, redacted diagnostic timeline of every request and response.
-
-### Usage Example
-
-```typescript
-import { SEP10Debugger, SEP24Debugger } from './src';
-
-// 1. Initialize SEP-10 authenticator
-const sep10 = new SEP10Debugger({
-  anchorDomain: 'testanchor.stellar.org',
-  testnet: true,
-});
-
-// 2. Initialize SEP-24 workflow runner
-const sep24 = new SEP24Debugger(
-  {
-    anchorDomain: 'testanchor.stellar.org',
-    asset: 'USDC',
-    flowType: 'deposit',
-    testnet: true,
-    timeout: 60000,
-  },
-  sep10
-);
-
-// 3. Run interactive flow and retrieve diagnostic timeline
-const result = await sep24.startFlow();
-console.log('Interactive URL:', result.interactiveUrl);
-console.log('Transaction ID:', result.transactionId);
-console.log('Diagnostic Timeline:', result.timeline);
-console.log('Final Status:', result.finalStatus);
-```
+- **`sep10/`** - fetches an anchor's challenge, validates its structure against
+  the SEP-10 rules, signs it, and exchanges it for a JWT.
+- **`sep24/`** - discovers `TRANSFER_SERVER_SEP0024`/`WEB_AUTH_ENDPOINT` from
+  `stellar.toml`, starts an interactive deposit/withdrawal, polls status, and
+  records a redacted diagnostic timeline (`sep24-timeline.ts`) where JWT and
+  secret-key material is stripped before it is stored or exported.
 
 ---
 
@@ -217,25 +177,26 @@ automatically); the per-app files are read by each app at runtime. The full-stac
 compose file treats the per-app files as _optional_ overrides, so the stack still
 boots when they are missing.
 
-| Variable                 | Description                                           | Default / Example                                         |
-| ------------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
-| `DATABASE_URL`           | PostgreSQL connection string                          | `postgresql://postgres:password@localhost:5432/savitools` |
-| `REDIS_URL`              | Redis connection string                               | `redis://localhost:6379`                                  |
-| `STELLAR_NETWORK`        | Stellar network (`testnet` or `futurenet`; the API refuses to start on `mainnet`/`public`) | `testnet`                     |
-| `STELLAR_HORIZON_URL`    | Horizon API URL                                       | `https://horizon-testnet.stellar.org`                     |
-| `STELLAR_RPC_URL`        | Soroban RPC URL                                       | `https://soroban-rpc-testnet.stellar.org`                 |
-| `STELLAR_NETWORK_PASSPHRASE` | Passphrase matching the network (optional — falls back to the well-known passphrase) | `"Test SDF Network ; September 2015"` |
-| `JWT_SECRET`             | JWT signing secret (required; ≥32 chars in production) | Generate with `openssl rand -hex 32`                      |
-| `ENCRYPTION_SECRET`      | Master secret for per-user key derivation (required in production) | Generate with `openssl rand -base64 48`        |
-| `DEPLOYER_SECRET_KEY`    | Stellar secret key required to boot — `ContractsService` reads it with `getOrThrow` and parses it with `Keypair.fromSecret` during construction; a throwaway testnet key is enough | (Required)                        |
-| `RESEND_FROM_EMAIL`      | `From` address for all transactional email            | `SaviTools <noreply@savitools.dev>`                       |
-| `WEB_ORIGIN`             | Allowed origin for API and WebSocket CORS             | `http://localhost:3000`                                   |
-| `THROTTLE_TTL`           | Rate limiting sliding window size in milliseconds     | `60000` (1 minute)                                        |
-| `THROTTLE_LIMIT`         | Max requests allowed in the rate limit window         | `100`                                                     |
-| `CONTRACT_ADMIN_EMAILS`  | Comma-separated emails allowed to deploy/invoke contracts (empty denies everyone) | (empty)                       |
-| `CONTRACT_DAILY_DEPLOY_QUOTA` | Contract deploys each user may make per UTC day  | `10`                                                      |
-| `CONTRACT_DAILY_INVOKE_QUOTA` | Contract invocations each user may make per UTC day | `100`                                                  |
-| `NEXT_PUBLIC_API_URL`    | Frontend → API URL                                    | `http://localhost:3001/api`                               |
+| Variable                       | Description                                                                                                                                                                        | Default / Example                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `DATABASE_URL`                 | PostgreSQL connection string                                                                                                                                                       | `postgresql://postgres:password@localhost:5432/savitools` |
+| `REDIS_URL`                    | Redis connection string                                                                                                                                                            | `redis://localhost:6379`                                  |
+| `STELLAR_NETWORK`              | Stellar network (`testnet` or `futurenet`; the API refuses to start on `mainnet`/`public`)                                                                                         | `testnet`                                                 |
+| `STELLAR_HORIZON_URL`          | Horizon API URL                                                                                                                                                                    | `https://horizon-testnet.stellar.org`                     |
+| `STELLAR_RPC_URL`              | Soroban RPC URL                                                                                                                                                                    | `https://soroban-rpc-testnet.stellar.org`                 |
+| `STELLAR_NETWORK_PASSPHRASE`   | Passphrase matching the network (optional — falls back to the well-known passphrase)                                                                                               | `"Test SDF Network ; September 2015"`                     |
+| `JWT_SECRET`                   | JWT signing secret (required; ≥32 chars in production)                                                                                                                             | Generate with `openssl rand -hex 32`                      |
+| `ENCRYPTION_SECRET`            | Master secret for per-user key derivation (required in production)                                                                                                                 | Generate with `openssl rand -base64 48`                   |
+| `DEPLOYER_SECRET_KEY`          | Stellar secret key required to boot — `ContractsService` reads it with `getOrThrow` and parses it with `Keypair.fromSecret` during construction; a throwaway testnet key is enough | (Required)                                                |
+| `RESEND_FROM_EMAIL`            | `From` address for all transactional email                                                                                                                                         | `SaviTools <noreply@savitools.dev>`                       |
+| `WEB_ORIGIN`                   | Allowed origin for API and WebSocket CORS                                                                                                                                          | `http://localhost:3000`                                   |
+| `THROTTLE_TTL`                 | Rate limiting sliding window size in milliseconds                                                                                                                                  | `60000` (1 minute)                                        |
+| `THROTTLE_LIMIT`               | Max requests allowed in the rate limit window                                                                                                                                      | `100`                                                     |
+| `CONTRACT_ADMIN_EMAILS`        | Comma-separated emails allowed to deploy/invoke contracts (empty denies everyone)                                                                                                  | (empty)                                                   |
+| `CONTRACT_DAILY_DEPLOY_QUOTA`  | Contract deploys each user may make per UTC day                                                                                                                                    | `10`                                                      |
+| `CONTRACT_DAILY_INVOKE_QUOTA`  | Contract invocations each user may make per UTC day                                                                                                                                | `100`                                                     |
+| `MONITOR_MAX_WATCHES_PER_USER` | Maximum Ledger Monitor watches one user may keep; enforced by `createWatch`                                                                                                        | `25`                                                      |
+| `NEXT_PUBLIC_API_URL`          | Frontend → API URL                                                                                                                                                                 | `http://localhost:3001/api`                               |
 
 **`DEPLOYER_SECRET_KEY` is required to boot the API.** `ContractsService`
 reads it with `getOrThrow` and parses it with `Keypair.fromSecret` while the
@@ -410,12 +371,16 @@ SaviTools is a standalone product with its own users and branding, but it's purp
 
 Complete guides and API reference for integrating with SaviTools:
 
-| Resource                                                         | Purpose                                                                     |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **[API Reference](docs/api-reference.md)**                       | Complete endpoint catalog with examples, parameters, and error codes        |
-| **[Quickstart Guide](docs/quickstart.md)**                       | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes |
-| **[Ledger Monitor Load Test](docs/ledger-monitor-load-test.md)** | Recorded result from the one-hour, 50-connection SSE load test              |
-| **[Swagger UI](/api/docs)**                                      | Interactive API explorer (available in dev/staging; disabled in production) |
+| Resource                                                                   | Purpose                                                                     |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **[API Reference](docs/api-reference.md)**                                 | Complete endpoint catalog with examples, parameters, and error codes        |
+| **[Quickstart Guide](docs/quickstart.md)**                                 | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes |
+| **[Ledger Monitor Load Test](docs/ledger-monitor-load-test.md)**           | Recorded result from the one-hour, 50-connection SSE load test              |
+| **[Playground Host Smoke Check](docs/playground-host-smoke.md)**           | Read-only release check for the public production/testnet API bases         |
+| **[OpenAPI Contract Gate](docs/openapi-contract.md)**                      | CI check that keeps the generated OpenAPI document aligned with API routes  |
+| **[Browser & Wallet Compatibility](docs/browser-wallet-compatibility.md)** | Supported browsers, Freighter assumptions, and degraded behavior            |
+| **[Browser Storage & Retention](docs/browser-storage-and-retention.md)**   | Key taxonomy, quota limits, eviction policies, and degradation behavior     |
+| **[Swagger UI](/api/docs)**                                                | Interactive API explorer (available in dev/staging; disabled in production) |
 
 ### Quick Links
 
@@ -438,4 +403,3 @@ MIT
 ## Observability
 
 The API includes a Prometheus-compatible `GET /metrics` endpoint with HTTP, Soroban RPC, contract invocation, Horizon, Redis, and Node.js runtime metrics. See [API metrics](docs/metrics.md) for access control, Prometheus scrape configuration, and the Grafana dashboard import template.
-

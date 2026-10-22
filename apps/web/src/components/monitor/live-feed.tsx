@@ -14,7 +14,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { apiFetch, downloadCsv } from '@/lib/api';
+import { apiErrorMessage, apiFetch, downloadCsv } from '@/lib/api';
 import { Paginated, Watch, WatchEvent } from './monitor-types';
 import {
   MonitorFeedSkeleton,
@@ -23,13 +23,7 @@ import {
   ErrorState,
 } from '../tools/state-display';
 
-export function LiveFeed({
-  watch,
-  liveEvents,
-}: {
-  watch?: Watch;
-  liveEvents: WatchEvent[];
-}) {
+export function LiveFeed({ watch, liveEvents }: { watch?: Watch; liveEvents: WatchEvent[] }) {
   const [history, setHistory] = useState<WatchEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -56,7 +50,7 @@ export function LiveFeed({
         `monitor-${watch.publicKey.slice(0, 8)}.csv`,
       );
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'Export failed');
+      setExportError(apiErrorMessage(err, 'Export failed'));
     } finally {
       setExporting(false);
     }
@@ -73,13 +67,10 @@ export function LiveFeed({
         ? await apiFetch<Paginated<WatchEvent>>(
             `/monitor/search?watchId=${encodeURIComponent(watchId)}&q=${encodeURIComponent(trimmed)}&limit=100`,
           )
-        : await apiFetch<Paginated<WatchEvent>>(
-            `/monitor/watches/${watchId}/events?limit=100`,
-          );
+        : await apiFetch<Paginated<WatchEvent>>(`/monitor/watches/${watchId}/events?limit=100`);
       setHistory(page.items);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load event history';
-      setHistoryError(message);
+      setHistoryError(apiErrorMessage(err, 'Failed to load event history'));
       setHistory([]);
     } finally {
       setHistoryLoading(false);
@@ -99,9 +90,7 @@ export function LiveFeed({
     const byId = new Map<string, WatchEvent>();
     [...liveEvents, ...history].forEach((event) => byId.set(event.id, event));
     return Array.from(byId.values()).sort(
-      (left, right) =>
-        new Date(right.occurredAt).getTime() -
-        new Date(left.occurredAt).getTime(),
+      (left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime(),
     );
   }, [history, liveEvents]);
 
@@ -120,18 +109,12 @@ export function LiveFeed({
       <header className="flex items-center justify-between border-b border-border px-5 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">
-              {watch.label || watch.publicKey}
-            </h3>
+            <h3 className="truncate text-sm font-semibold">{watch.label || watch.publicKey}</h3>
             <ConnectionDot watch={watch} />
           </div>
-          <p className="truncate font-mono text-[11px] text-muted-foreground">
-            {watch.publicKey}
-          </p>
+          <p className="truncate font-mono text-[11px] text-muted-foreground">{watch.publicKey}</p>
           {watch.lastError && watch.status === 'error' && (
-            <p className="mt-1 truncate text-xs text-red-500">
-              {watch.lastError}
-            </p>
+            <p className="mt-1 truncate text-xs text-red-500">{watch.lastError}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -194,20 +177,13 @@ export function LiveFeed({
             onClick={() => setPaused((current) => !current)}
             className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs"
           >
-            {paused ? (
-              <Play className="h-3.5 w-3.5" />
-            ) : (
-              <Pause className="h-3.5 w-3.5" />
-            )}
+            {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
             {paused ? 'Resume scroll' : 'Pause scroll'}
           </button>
         </div>
       </header>
 
-      <div
-        ref={feedRef}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4"
-      >
+      <div ref={feedRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
         {historyLoading ? (
           <MonitorFeedSkeleton />
         ) : historyError ? (
@@ -219,16 +195,16 @@ export function LiveFeed({
             details={historyError}
           />
         ) : events.length > 0 ? (
-          events.map((event) => (
-            <EventCard key={event.id} event={event} watch={watch} />
-          ))
+          events.map((event) => <EventCard key={event.id} event={event} watch={watch} />)
         ) : query.trim() ? (
           <p className="px-4 py-10 text-center text-xs text-muted-foreground">
             No events match “{query.trim()}”. Try a different hash, account, or asset.
           </p>
         ) : (
           <MonitorNoEventsState
-            watchLabel={watch.label || watch.publicKey.slice(0, 8) + '…' + watch.publicKey.slice(-6)}
+            watchLabel={
+              watch.label || watch.publicKey.slice(0, 8) + '…' + watch.publicKey.slice(-6)
+            }
             eventTypes={watch.eventTypes}
           />
         )}
@@ -245,9 +221,7 @@ function EventCard({ event, watch }: { event: WatchEvent; watch: Watch }) {
   const asset = assetType === 'native' ? 'XLM' : assetCode;
   const from = text(payload.from ?? payload.source_account);
   const to = text(payload.to ?? payload.account);
-  const transactionHash = text(
-    payload.transaction_hash ?? payload.hash ?? payload.transactionHash,
-  );
+  const transactionHash = text(payload.transaction_hash ?? payload.hash ?? payload.transactionHash);
   const Icon =
     event.eventType === 'contract'
       ? FileCode2
@@ -265,22 +239,14 @@ function EventCard({ event, watch }: { event: WatchEvent; watch: Watch }) {
             <Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide">
-              {event.eventType}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-wide">{event.eventType}</p>
             {amount && (
               <p className="text-sm font-medium">
                 {amount} {asset || ''}
               </p>
             )}
-            {from && (
-              <p className="truncate text-xs text-muted-foreground">
-                From {from}
-              </p>
-            )}
-            {to && (
-              <p className="truncate text-xs text-muted-foreground">To {to}</p>
-            )}
+            {from && <p className="truncate text-xs text-muted-foreground">From {from}</p>}
+            {to && <p className="truncate text-xs text-muted-foreground">To {to}</p>}
           </div>
         </div>
         <div className="text-right">
@@ -319,7 +285,5 @@ function ConnectionDot({ watch }: { watch: Watch }) {
 }
 
 function text(value: unknown): string | undefined {
-  return typeof value === 'string' || typeof value === 'number'
-    ? String(value)
-    : undefined;
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
 }

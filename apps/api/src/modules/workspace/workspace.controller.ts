@@ -1,6 +1,27 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiCookieAuth,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { buildPaginatedResult } from '../../common/dto/paginated-response';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
@@ -23,26 +44,40 @@ export class WorkspaceController {
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List workspaces for the current user' })
-  @ApiQuery({ name: 'tool', required: false, enum: ['sandbox', 'inspector', 'webhooks', 'composer'] })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: '1-based page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows per page, 1-100 (default 25)' })
+  @ApiQuery({
+    name: 'tool',
+    required: false,
+    enum: ['sandbox', 'inspector', 'webhooks', 'composer'],
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: '1-based page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Rows per page, 1-100 (default 25)',
+  })
   @ApiResponse({ status: 200, description: 'Workspaces listed' })
   async listWorkspaces(
     @CurrentUser() user: { id: string },
     @Query('tool') tool?: string,
     @Query() query: PaginationQueryDto = new PaginationQueryDto(),
   ) {
-    const { items, page, limit, total } = await this.workspaceService.listWorkspaces(
-      user.id,
-      tool,
-      query,
-    );
+    const result = await this.workspaceService.listWorkspaces(user.id, tool, query);
+    const items = result.items.map((workspace) => this.toWorkspaceSummary(workspace));
+    const envelope = buildPaginatedResult(items, result.total, {
+      page: result.page,
+      limit: result.limit,
+    });
 
     return {
-      workspaces: items.map((w) => this.toWorkspaceSummary(w)),
-      page,
-      limit,
-      total,
+      ...envelope,
+      // Backwards-compatible alias for the original workspace list shape.
+      workspaces: items,
     };
   }
 
@@ -62,10 +97,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Get a named composer workspace by ID' })
   @ApiResponse({ status: 200, description: 'Workspace retrieved' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async getComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async getComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     const workspace = await this.workspaceService.getWorkspaceById(user.id, id);
     return this.toWorkspaceResponse(workspace, true);
   }
@@ -103,10 +135,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Delete a composer workspace' })
   @ApiResponse({ status: 200, description: 'Workspace deleted' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async deleteComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async deleteComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     await this.workspaceService.deleteWorkspace(user.id, id);
     return { success: true };
   }
@@ -115,10 +144,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Duplicate a composer workspace' })
   @ApiResponse({ status: 201, description: 'Duplicate created' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async duplicateComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async duplicateComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     const workspace = await this.workspaceService.duplicateWorkspace(user.id, id);
     return this.toWorkspaceResponse(workspace, true);
   }
@@ -127,10 +153,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Export composer workspace as JSON' })
   @ApiResponse({ status: 200, description: 'Exported workspace JSON' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async exportComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async exportComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.workspaceService.exportWorkspace(user.id, id);
   }
 
@@ -151,10 +174,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Generate a read-only share link' })
   @ApiResponse({ status: 200, description: 'Share link generated' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async shareComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async shareComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     return this.workspaceService.shareWorkspace(user.id, id);
   }
 
@@ -163,10 +183,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Remove the share link' })
   @ApiResponse({ status: 200, description: 'Share link removed' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  async unshareComposerWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('id') id: string,
-  ) {
+  async unshareComposerWorkspace(@CurrentUser() user: { id: string }, @Param('id') id: string) {
     await this.workspaceService.unshareWorkspace(user.id, id);
     return { success: true };
   }
@@ -180,10 +197,7 @@ export class WorkspaceController {
   @ApiParam({ name: 'tool', enum: ['sandbox', 'inspector', 'webhooks', 'composer'] })
   @ApiResponse({ status: 200, description: 'Tool workspace retrieved' })
   @ApiResponse({ status: 400, description: 'Invalid tool name' })
-  async getWorkspace(
-    @CurrentUser() user: { id: string },
-    @Param('tool') tool: string,
-  ) {
+  async getWorkspace(@CurrentUser() user: { id: string }, @Param('tool') tool: string) {
     const workspaceTool = await this.workspaceService.assertTool(tool);
     const data = await this.workspaceService.getWorkspace(user.id, workspaceTool);
     return { tool: workspaceTool, data };

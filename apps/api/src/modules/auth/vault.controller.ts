@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -27,10 +18,8 @@ export class VaultController {
     description: 'The raw key is never returned after creation.',
   })
   @ApiResponse({ status: 201, description: 'Key stored, { id, name, provider, createdAt }' })
-  async create(
-    @Body() dto: CreateVaultKeyDto,
-    @CurrentUser() user: { id: string },
-  ) {
+  @ApiResponse({ status: 400, description: 'Invalid key name, provider, or value' })
+  async create(@Body() dto: CreateVaultKeyDto, @CurrentUser() user: { id: string }) {
     return this.authService.createVaultKey(user.id, dto);
   }
 
@@ -44,10 +33,7 @@ export class VaultController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Delete a vault key' })
   @ApiResponse({ status: 404, description: 'Key not found' })
-  async remove(
-    @Param('id') id: string,
-    @CurrentUser() user: { id: string },
-  ) {
+  async remove(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     await this.authService.deleteVaultKey(id, user.id);
     return { success: true };
   }
