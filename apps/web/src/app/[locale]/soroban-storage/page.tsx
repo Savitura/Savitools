@@ -114,12 +114,7 @@ export default function SorobanStoragePage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  React.useEffect(() => {
-    // Load durability info on component mount
-    loadDurabilityInfo();
-  }, []);
-
-  const loadDurabilityInfo = async () => {
+  const loadDurabilityInfo = React.useCallback(async () => {
     setLoading({ ...loading, durability: true });
     try {
       const info = await apiFetch<any>('/soroban-storage/durability-info');
@@ -129,7 +124,12 @@ export default function SorobanStoragePage() {
     } finally {
       setLoading({ ...loading, durability: false });
     }
-  };
+  }, []);
+
+  React.useEffect(() => {
+    // Load durability info on component mount
+    loadDurabilityInfo();
+  }, [loadDurabilityInfo]);
 
   const handleQueryStorage = async () => {
     setLoading({ ...loading, query: true });

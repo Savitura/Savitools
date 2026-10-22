@@ -199,6 +199,21 @@ export const OPENAPI_MODULE_FIXTURES: OpenApiModuleFixture[] = [
     },
   },
   {
+    module: 'shared',
+    success: {
+      method: 'GET',
+      path: '/api/v1/shared/composer/{token}',
+      status: 200,
+      request: { path: { token: 'valid-token' } },
+    },
+    validationError: {
+      method: 'GET',
+      path: '/api/v1/shared/composer/{token}',
+      status: 404,
+      request: { path: { token: 'invalid-token' } },
+    },
+  },
+  {
     module: 'sep10',
     success: {
       method: 'POST',

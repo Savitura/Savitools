@@ -396,17 +396,6 @@ function serverRouteKeys(): Set<string> {
  */
 const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
- * - `GET /api/v1/shared/composer/:token` — `fetchSharedComposerWorkspace` has no
- *   callers and there is no shared-workspace controller.
- * - `POST /api/v1/composer/fee-bump/inspect` — `inspectFeeBump` in
- *   `composer-api.ts` and the Composer fee-bump panel both call it, but
- *   `ComposerService` has no matching method and `ComposerController` exposes no
- *   route, so the panel's "Inspect" action cannot work. Re-registering the route
- *   without the service method behind it is not possible; the wrapper is pinned
- *   here until that method lands.
- */
-const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
-  'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
   'GET /api/v1/shared/composer/:param',
   'POST /api/v1/composer/fee-bump/inspect',
 ];
