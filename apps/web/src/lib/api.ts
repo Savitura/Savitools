@@ -1152,6 +1152,13 @@ export interface WebhookSignatureInfo {
   signature: string;
 }
 
+export interface PayloadDiff {
+  added?: Record<string, unknown>;
+  modified?: Record<string, { from: unknown; to: unknown }>;
+  removed?: Record<string, unknown>;
+  previousAttemptId?: string;
+}
+
 export interface WebhookHistoryEntry {
   id: string;
   eventType: string;
@@ -1169,6 +1176,7 @@ export interface WebhookHistoryEntry {
   repeatIndex?: number;
   signature?: WebhookSignatureInfo;
   legacySignature?: boolean;
+  payloadDiff?: PayloadDiff;
 }
 
 export interface WebhookSigningStatus {
