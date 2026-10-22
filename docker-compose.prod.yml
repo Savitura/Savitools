@@ -1,0 +1,77 @@
+# Production compose deployment configuration (locked to testnet)
+name: savitools-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set strong POSTGRES_PASSWORD in production}
+      POSTGRES_DB: ${POSTGRES_DB:-savitools}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-savitools}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      API_PREFIX: api
+      WEB_ORIGIN: ${WEB_ORIGIN:-https://savitools.savitura.com}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-savitools}
+      REDIS_URL: redis://redis:6379
+      STELLAR_NETWORK: testnet
+      STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
+      STELLAR_RPC_URL: https://soroban-rpc-testnet.stellar.org
+      STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required in production}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?ENCRYPTION_SECRET required in production}
+      DEPLOYER_SECRET_KEY: ${DEPLOYER_SECRET_KEY:?DEPLOYER_SECRET_KEY required}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://savitools-api.savitura.com/api}
+      NEXT_PUBLIC_STELLAR_NETWORK: testnet
+      WEB_ORIGIN: ${WEB_ORIGIN:-https://savitools.savitura.com}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:

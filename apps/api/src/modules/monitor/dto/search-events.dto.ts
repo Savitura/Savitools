@@ -1,21 +1,13 @@
-import { Type } from 'class-transformer';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { WATCH_EVENT_TYPES } from '../monitor.types';
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
 /**
  * Search filters shared by `GET /monitor/search` and
  * `GET /monitor/search/export` (see Savitura/Savitools#147) so exports accept
  * exactly the same query params as the search endpoint.
  */
-export class SearchEventsQueryDto {
+export class SearchEventsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(128)
@@ -40,19 +32,6 @@ export class SearchEventsQueryDto {
   @IsOptional()
   @IsString()
   to?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit = 25;
 }
 
 /** Row limit for CSV exports (see Savitura/Savitools#147). */

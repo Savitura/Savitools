@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags, ApiResponse } from '@nestjs/swagger';
 import { SimulatorService } from './simulator.service';
 import { OrderbookService } from './orderbook.service';
 import { PoolQuoteService } from './pool-quote.service';
+import { PathPaymentLabService } from './path-payment-lab.service';
 import { FindPathsDto } from './dto/find-paths.dto';
 import { EstimateDto } from './dto/estimate.dto';
 import { SimulateStrictSendDto } from './dto/strict-send.dto';
@@ -11,6 +12,7 @@ import { SimulateFeeQueryDto } from './dto/simulate-fee.dto';
 import { OrderbookQueryDto } from './dto/orderbook.dto';
 import { TradesQueryDto, OrderQuoteDto } from './dto/trades.dto';
 import { PoolQuoteDto } from './dto/pool-quote.dto';
+import { PathPaymentLabDto } from './dto/path-payment-lab.dto';
 
 @ApiTags('simulator')
 @Controller('simulator')
@@ -19,6 +21,7 @@ export class SimulatorController {
     private readonly simulatorService: SimulatorService,
     private readonly orderbookService: OrderbookService,
     private readonly poolQuoteService: PoolQuoteService,
+    private readonly pathPaymentLabService: PathPaymentLabService,
   ) {}
 
   @Get('paths')
@@ -138,5 +141,34 @@ export class SimulatorController {
   @ApiResponse({ status: 404, description: 'Pool not found on Horizon' })
   getPoolQuote(@Body() dto: PoolQuoteDto) {
     return this.poolQuoteService.getPoolQuote(dto);
+  }
+
+  // ── Path-payment simulation lab (Savitura/Savitools#351) ────────────────
+
+  @Post('path-payment-lab')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Price several slippage tolerances against one simulated adverse rate move',
+    description:
+      'Reads the live Horizon route table for the pair and amount, then evaluates ' +
+      'up to ten slippage tolerances against a single simulated adverse rate ' +
+      'move. For each tolerance the response carries the value to submit in the ' +
+      'transaction (destinationMin for strict send, sendMax for strict receive), ' +
+      'the variable leg once the move is applied, the remaining headroom, and a ' +
+      'pass/fail/exact verdict, plus the narrowest compared tolerance that still ' +
+      'clears the move. All amount arithmetic is exact integer arithmetic on ' +
+      'stroops, rounded so the lab never reports a guarantee the network would ' +
+      'reject.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Slippage comparison for the selected route, including the recommendation ' +
+      'and whether every compared tolerance was exceeded by the simulated move.',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input, unknown network, no route, or routeIndex out of range' })
+  @ApiResponse({ status: 429, description: 'Global rate limit exceeded' })
+  runPathPaymentLab(@Body() dto: PathPaymentLabDto) {
+    return this.pathPaymentLabService.run(dto);
   }
 }

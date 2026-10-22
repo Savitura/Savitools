@@ -23,7 +23,9 @@ const securityHeaders = [
     key: 'Permissions-Policy',
     value: [
       'accelerometer=()',
-      'camera=()',
+      // `self` so the offline QR handoff can scan frames with the camera
+      // (Savitura/Savitools#344). Everything else stays disabled.
+      'camera=(self)',
       'geolocation=()',
       'gyroscope=()',
       'magnetometer=()',
@@ -41,7 +43,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://friendbot.stellar.org https://api.fluxa.io https://api.crowdpay.io wss://*.stellar.org",
+      "connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://friendbot.stellar.org https://api.fluxa.io https://api.crowdpay.io https://crowdpay.up.railway.app wss://*.stellar.org",
       "frame-ancestors 'self'",
       "form-action 'self'",
       "base-uri 'self'",
@@ -77,9 +79,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  experimental: {
-    turbopack: {},
-  },
+  turbopack: {},
 };
 
 export default nextConfig;

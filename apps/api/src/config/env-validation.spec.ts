@@ -206,6 +206,26 @@ describe('environment configuration validation (Savitura/Savitools#197)', () => 
     expect(fluxaErrors).toContain('FLUXA_AUTH_URL is required when FLUXA_CLIENT_ID is set');
   });
 
+  it('rejects a mainnet network for the shared deployer key (Savitura/Savitools#425)', () => {
+    const message = expect.stringMatching(/must be a test network/);
+    for (const STELLAR_NETWORK of ['mainnet', 'public']) {
+      const { errors } = collectConfigurationErrors({ ...validBaseConfig(), STELLAR_NETWORK });
+      expect(errors).toContainEqual(message);
+    }
+    const { errors } = collectConfigurationErrors({
+      ...validBaseConfig(),
+      STELLAR_NETWORK_PASSPHRASE: 'Public Global Stellar Network ; September 2015',
+    });
+    expect(errors).toContainEqual(message);
+
+    const futurenet = collectConfigurationErrors({
+      ...validBaseConfig(),
+      STELLAR_NETWORK: 'futurenet',
+      STELLAR_NETWORK_PASSPHRASE: 'Test SDF Future Network ; October 2022',
+    });
+    expect(futurenet.errors).toEqual([]);
+  });
+
   it('validateEnvironment aggregates every error and throws', () => {
     const config = validBaseConfig();
     delete config.JWT_SECRET;

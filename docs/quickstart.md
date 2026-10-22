@@ -92,9 +92,10 @@ curl "http://localhost:3001/api/v1/wallet/balances?publicKey=$PUBLIC_KEY"
 {
   "balances": [
     {
-      "asset_type": "native",
+      "assetType": "native",
       "balance": "9.9999800",
-      "asset_code": "XLM"
+      "assetCode": "XLM",
+      "assetIssuer": null
     }
   ]
 }
@@ -123,9 +124,9 @@ curl "http://localhost:3001/api/v1/simulator/paths?direction=strict_send&source_
 {
   "paths": [
     {
-      "source_amount": "5.0000000",
-      "destination_amount": "5.0000000",
-      "path": []
+      "path": [],
+      "destinationAmount": "5.0000000",
+      "sourceAmount": "5.0000000"
     }
   ],
   "direction": "strict_send"
@@ -174,16 +175,14 @@ Build an unsigned transaction to send 5 XLM.
 curl -X POST http://localhost:3001/api/v1/composer/build \
   -H "Content-Type: application/json" \
   -d "{
-    \"sourceAccount\": {
-      \"publicKey\": \"$PUBLIC_KEY\",
-      \"sequence\": \"1\"
-    },
+    \"sourceAccount\": \"$PUBLIC_KEY\",
+    \"sequenceNumber\": \"1\",
     \"fee\": \"100\",
     \"operations\": [
       {
         \"type\": \"payment\",
         \"destination\": \"$RECIPIENT\",
-        \"asset\": \"native\",
+        \"asset\": { \"code\": \"XLM\" },
         \"amount\": \"5.00\"
       }
     ],
@@ -196,7 +195,7 @@ curl -X POST http://localhost:3001/api/v1/composer/build \
 {
   "xdr": "AAAAAgAAAAB+Ht3sW/xvHrHnXJ...",
   "hash": "5fa1f6d8a7c9b2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-  "envelope_type": "ENVELOPE_TYPE_TX"
+  "envelopeType": "ENVELOPE_TYPE_TX"
 }
 ```
 
@@ -249,9 +248,9 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 
 ---
 
-## Step 8: Sign and Submit (Via External Tool)
+## Step 8: Sign and Submit
 
-**Important:** SaviTools does NOT sign transactions with your secret key. You must sign externally for security.
+SaviTools signs transactions client-side. You can submit an already-signed envelope to the authenticated, rate-limited `POST /wallet/payment` endpoint (body: `{ "signedXdr": "..." }`), submit it directly to Horizon, or use the Stellar CLI or SDKs. The source secret is never sent to the API.
 
 Use the [Stellar CLI](https://developers.stellar.org/docs/tools-and-sdks#command-line-client) or a wallet SDK:
 
