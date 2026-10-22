@@ -2,14 +2,19 @@
 
 import {
   buildTransaction,
+  createComposerWorkspace,
   fetchOperations,
+  fetchSharedComposerWorkspace,
   FeeBumpResult,
   OperationManifestEntry,
+  shareComposerWorkspace,
   simulateTransaction,
   SimulateTransactionResult,
+  unshareComposerWorkspace,
 } from '@/lib/composer-api';
 import { useNetwork } from '@/lib/network-context';
 import { addRecentItem } from '@/lib/recent-items';
+import { useAuth } from '@/lib/auth-context';
 import { useCommandPalette } from '@/components/command-palette';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -47,6 +52,7 @@ export interface PreconditionDraft {
 
 export interface Workspace {
   id: string;
+  serverId?: string;
   ownerId: string;
   name: string;
   composerState: {
@@ -61,6 +67,74 @@ export interface Workspace {
 
 function newId(): string {
   return Math.random().toString(36).slice(2, 9);
+}
+
+function SharedComposerView({
+  status,
+  name,
+  sourceAccount,
+  memo,
+  operations,
+  preconditions,
+}: {
+  status: 'loading' | 'error' | 'ready';
+  name: string;
+  sourceAccount: string;
+  memo: string;
+  operations: ComposedOperation[];
+  preconditions: PreconditionDraft | null;
+}) {
+  if (status === 'loading') {
+    return <p role="status" className="text-sm text-muted-foreground">Loading shared workspace…</p>;
+  }
+
+  if (status === 'error') {
+    return <p role="alert" className="text-sm text-destructive">This shared workspace is unavailable or its link has expired.</p>;
+  }
+
+  return (
+    <section className="flex flex-col gap-4" aria-label="Read-only shared composer workspace">
+      <header className="border-b border-border/60 pb-4">
+        <p className="text-xs font-medium text-muted-foreground">Read-only shared workspace</p>
+        <h1 className="mt-1 text-lg font-semibold">{name}</h1>
+      </header>
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-muted-foreground">Source account</dt>
+          <dd className="break-all font-mono text-sm">{sourceAccount || 'Not set'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Memo</dt>
+          <dd className="break-words text-sm">{memo || 'None'}</dd>
+        </div>
+      </dl>
+      {preconditions && (
+        <div>
+          <h2 className="mb-2 text-sm font-semibold">Transaction preconditions</h2>
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md border border-border/60 p-3 text-xs text-muted-foreground">
+            {JSON.stringify(preconditions, null, 2)}
+          </pre>
+        </div>
+      )}
+      <div>
+        <h2 className="mb-2 text-sm font-semibold">Operations ({operations.length})</h2>
+        {operations.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No operations in this workspace.</p>
+        ) : (
+          <ol className="flex flex-col gap-2">
+            {operations.map((operation, index) => (
+              <li key={`${operation.id}-${index}`} className="rounded-md border border-border/60 p-3">
+                <h3 className="text-sm font-medium">{index + 1}. {operation.type}</h3>
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                  {JSON.stringify(operation.fields, null, 2)}
+                </pre>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function SourceAccountInput({
@@ -209,6 +283,7 @@ function SequenceRunner({
 
 export function ComposerTool() {
   const { network, horizonUrl, networkPassphrase } = useNetwork();
+  const { user } = useAuth();
   const { registerContextActions } = useCommandPalette();
 
   // Mode switcher: Builder vs Benchmark
@@ -234,6 +309,7 @@ export function ComposerTool() {
 
   // URL prefill (e.g. "send to Composer" from Order Book quotes)
   const searchParams = useSearchParams();
+  const sharedToken = searchParams.get('share');
   const prefilled = useRef(false);
 
   // Workspace state
@@ -243,6 +319,10 @@ export function ComposerTool() {
   const [workspaceName, setWorkspaceName] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareExpiresAt, setShareExpiresAt] = useState<string | null>(null);
+  const [sharedWorkspaceId, setSharedWorkspaceId] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [sharedStatus, setSharedStatus] = useState<'loading' | 'error' | 'ready'>('loading');
 
   // XDR
   const [xdr, setXdr] = useState<string | null>(null);
@@ -281,8 +361,9 @@ export function ComposerTool() {
   }, []);
 
   useEffect(() => {
+    if (sharedToken) return;
     void loadManifest();
-  }, [loadManifest]);
+  }, [loadManifest, sharedToken]);
 
   // ---------------------------------------------------------------------------
   // Rebuild XDR when operations / source / memo / preconditions change (debounced 300ms)
@@ -295,6 +376,10 @@ export function ComposerTool() {
       kind: PreconditionKind,
       fields: PreconditionFields,
     ) => {
+      if (sharedToken) {
+        setXdr(null);
+        return;
+      }
       if (!src.trim() || ops.length === 0) {
         setXdr(null);
         return;
@@ -323,10 +408,11 @@ export function ComposerTool() {
         setXdrBuilding(false);
       }
     },
-    [network],
+    [network, sharedToken],
   );
 
   useEffect(() => {
+    if (sharedToken) return;
     if (buildDebounce.current) clearTimeout(buildDebounce.current);
     buildDebounce.current = setTimeout(() => {
       void rebuildXdr(operations, sourceAccount, memo, precondKind, precondFields);
@@ -334,7 +420,7 @@ export function ComposerTool() {
     return () => {
       if (buildDebounce.current) clearTimeout(buildDebounce.current);
     };
-  }, [operations, sourceAccount, memo, precondKind, precondFields, rebuildXdr]);
+  }, [operations, sourceAccount, memo, precondKind, precondFields, rebuildXdr, sharedToken]);
 
   // ---------------------------------------------------------------------------
   // URL prefill — receives operations from other tools
@@ -343,6 +429,7 @@ export function ComposerTool() {
   useEffect(() => {
     if (prefilled.current) return;
     prefilled.current = true;
+    if (sharedToken) return;
 
     const prefillOp = searchParams.get('prefillOp');
     const code = searchParams.get('assetCode');
@@ -413,7 +500,7 @@ export function ComposerTool() {
       if (Object.keys(fields).length === 0) return;
       addPrefilled('set_options', fields);
     }
-  }, [searchParams]);
+  }, [searchParams, sharedToken]);
 
   // ---------------------------------------------------------------------------
   // Operation handlers
@@ -444,6 +531,7 @@ export function ComposerTool() {
   // Workspace persistence (localStorage)
   // ---------------------------------------------------------------------------
   useEffect(() => {
+    if (sharedToken) return;
     const stored = localStorage.getItem('composer-workspaces');
     if (stored) {
       try {
@@ -452,11 +540,12 @@ export function ComposerTool() {
         // ignore malformed storage
       }
     }
-  }, []);
+  }, [sharedToken]);
 
   useEffect(() => {
+    if (sharedToken) return;
     localStorage.setItem('composer-workspaces', JSON.stringify(workspaces));
-  }, [workspaces]);
+  }, [workspaces, sharedToken]);
 
   const getCurrentComposerState = () => ({
     sourceAccount,
@@ -468,7 +557,7 @@ export function ComposerTool() {
         : ({ kind: precondKind, fields: precondFields } satisfies PreconditionDraft),
   });
 
-  const applyComposerState = (state: {
+  const applyComposerState = useCallback((state: {
     sourceAccount: string;
     memo: string;
     operations: ComposedOperation[];
@@ -486,7 +575,53 @@ export function ComposerTool() {
       setPrecondKind('none');
       setPrecondFields(DEFAULT_PRECONDITION_FIELDS);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!sharedToken) return;
+
+    let cancelled = false;
+    setSharedStatus('loading');
+    void fetchSharedComposerWorkspace(sharedToken)
+      .then((workspace) => {
+        if (cancelled) return;
+        const state = workspace.data as Partial<Workspace['composerState']>;
+        if (
+          typeof state.sourceAccount !== 'string' ||
+          !Array.isArray(state.operations) ||
+          state.operations.some((operation) =>
+            !operation || typeof operation !== 'object' || Array.isArray(operation),
+          )
+        ) {
+          throw new Error('Invalid shared composer data');
+        }
+        const operations = state.operations.map((item) => {
+          const operation = item as Partial<ComposedOperation>;
+          return {
+            id: typeof operation.id === 'string' ? operation.id : newId(),
+            type: typeof operation.type === 'string' ? operation.type : 'unknown',
+            fields: operation.fields && typeof operation.fields === 'object' && !Array.isArray(operation.fields)
+              ? operation.fields
+              : {},
+          };
+        });
+        applyComposerState({
+          sourceAccount: state.sourceAccount,
+          memo: typeof state.memo === 'string' ? state.memo : '',
+          operations,
+          preconditions: state.preconditions,
+        });
+        setWorkspaceName(typeof workspace.name === 'string' ? workspace.name : 'Shared Composer workspace');
+        setSharedStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setSharedStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedToken, applyComposerState]);
 
   const saveWorkspace = () => {
     const name = workspaceName.trim() || 'Untitled Workspace';
@@ -605,20 +740,50 @@ export function ComposerTool() {
     reader.readAsText(file);
   };
 
-  const generateShareLink = (id: string) => {
+  const generateShareLink = async (id: string) => {
     const workspace = workspaces.find(w => w.id === id);
     if (!workspace) return;
-    const token = Math.random().toString(36).slice(2, 10);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const link = `${window.location.origin}/composer?share=${token}&expires=${encodeURIComponent(expiresAt)}`;
-    setShareLink(link);
-    setWorkspaceMenuOpen(false);
-    alert(`Share link copied to clipboard: ${link}`);
-    navigator.clipboard?.writeText(link);
+    setShareError(null);
+    try {
+      let serverId = workspace.serverId;
+      if (!serverId) {
+        const saved = await createComposerWorkspace({
+          name: workspace.name,
+          data: workspace.composerState as unknown as Record<string, unknown>,
+        });
+        serverId = saved.id;
+        setWorkspaces((previous) => previous.map((entry) =>
+          entry.id === id ? { ...entry, serverId } : entry,
+        ));
+      }
+
+      const shared = await shareComposerWorkspace(serverId);
+      const link = new URL('/composer', window.location.origin);
+      link.searchParams.set('share', shared.token);
+      setShareLink(link.toString());
+      setShareExpiresAt(shared.expiresAt);
+      setSharedWorkspaceId(serverId);
+      void navigator.clipboard?.writeText(link.toString()).catch(() => undefined);
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : 'Unable to create a share link.');
+    }
+  };
+
+  const revokeShareLink = async () => {
+    if (!sharedWorkspaceId) return;
+    setShareError(null);
+    try {
+      await unshareComposerWorkspace(sharedWorkspaceId);
+      setShareLink(null);
+      setShareExpiresAt(null);
+      setSharedWorkspaceId(null);
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : 'Unable to revoke the share link.');
+    }
   };
 
   const handleSimulate = useCallback(async () => {
-    if (!xdr) return;
+    if (!xdr || sharedToken) return;
     setSimLoading(true);
     setSimError(null);
     setSimResult(null);
@@ -639,10 +804,11 @@ export function ComposerTool() {
     } finally {
       setSimLoading(false);
     }
-  }, [xdr, network, operations.length]);
+  }, [xdr, network, operations.length, sharedToken]);
 
   // Register contextual shortcuts for Cmd+Enter and Cmd+C
   useEffect(() => {
+    if (sharedToken) return;
     const unregister = registerContextActions({
       actionLabel: 'Simulate Composed Transaction',
       runAction: () => {
@@ -665,7 +831,7 @@ export function ComposerTool() {
     });
 
     return unregister;
-  }, [xdr, simLoading, submitResult?.hash, registerContextActions, handleSimulate]);
+  }, [xdr, simLoading, submitResult?.hash, registerContextActions, handleSimulate, sharedToken]);
 
   const handleSignSubmitSuccess = (hash: string) => {
     setSubmitting(false);
@@ -684,6 +850,23 @@ export function ComposerTool() {
   };
 
   const selected = operations.find((o) => o.id === selectedId) ?? null;
+
+  if (sharedToken) {
+    return (
+      <SharedComposerView
+        status={sharedStatus}
+        name={workspaceName || 'Shared Composer workspace'}
+        sourceAccount={sourceAccount}
+        memo={memo}
+        operations={operations}
+        preconditions={
+          precondKind === 'none'
+            ? null
+            : { kind: precondKind, fields: precondFields }
+        }
+      />
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Render
@@ -782,11 +965,26 @@ export function ComposerTool() {
                   onClick={() => navigator.clipboard?.writeText(shareLink)}
                   className="text-muted-foreground hover:text-foreground"
                   title="Copy share link"
+                  aria-label="Copy share link"
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </button>
+                {shareExpiresAt && (
+                  <span className="shrink-0 text-muted-foreground">
+                    Expires {new Date(shareExpiresAt).toLocaleDateString()}
+                  </span>
+                )}
+                <button
+                  onClick={() => void revokeShareLink()}
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
+                  title="Revoke share link"
+                  aria-label="Revoke share link"
+                >
+                  Revoke
+                </button>
               </div>
             )}
+            {shareError && <p role="alert" className="text-xs text-destructive">{shareError}</p>}
 
             <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
               {workspaces.length === 0 ? (
@@ -832,8 +1030,10 @@ export function ComposerTool() {
                     </button>
                     <button
                       onClick={() => generateShareLink(w.id)}
-                      className="text-muted-foreground hover:text-foreground"
-                      title="Share"
+                      disabled={!user}
+                      className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                      title={user ? 'Share' : 'Sign in to share'}
+                      aria-label={`Share ${w.name}`}
                     >
                       <Share2 className="h-3.5 w-3.5" />
                     </button>
@@ -848,6 +1048,9 @@ export function ComposerTool() {
                 ))
               )}
             </div>
+            {!user && workspaces.length > 0 && (
+              <p className="text-xs text-muted-foreground">Sign in to create a share link.</p>
+            )}
           </div>
         </div>
       )}

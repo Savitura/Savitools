@@ -329,5 +329,5 @@ export function unshareComposerWorkspace(
 export function fetchSharedComposerWorkspace(
   token: string,
 ): Promise<ComposerWorkspace> {
-  return apiFetch<ComposerWorkspace>(`/shared/composer/${token}`);
+  return apiFetch<ComposerWorkspace>(`/shared/composer/${encodeURIComponent(token)}`);
 }

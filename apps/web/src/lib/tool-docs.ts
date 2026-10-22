@@ -156,6 +156,7 @@ export const toolDocs: ToolDocs[] = [
     overview: [
       'The Composer is a visual builder for Stellar transactions. Add operations (payments, trustlines, offers, path payments, and more), configure the source account and fee, and generate the unsigned XDR.',
       'The result can be signed with a browser wallet (e.g. Freighter) or locally with a secret key, simulated to check for errors, and submitted through the active network profile.',
+      'Authenticated users can create seven-day share links for saved workspaces. Anyone with the link can view its transaction draft until it expires or is revoked. Shared links are read-only and do not expose signing or submission controls.',
     ],
     prerequisites: [
       'A funded Stellar account (public key + sequence number).',

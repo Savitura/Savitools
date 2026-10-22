@@ -468,6 +468,11 @@
       "auth": "public"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/shared/composer/:token",
+      "auth": "public"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/simulator/estimate",
       "auth": "public"

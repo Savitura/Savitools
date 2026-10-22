@@ -9,6 +9,8 @@ interface Row {
   name: string | null;
   data: Record<string, unknown>;
   createdAt: Date;
+  shareToken?: string | null;
+  shareExpiresAt?: Date | null;
 }
 
 const isNullOperator = (value: unknown): boolean =>
@@ -185,6 +187,70 @@ describe('WorkspaceService', () => {
       await expect(
         service.upsertWorkspace('user-1', WorkspaceTool.SANDBOX, { data: {} }),
       ).rejects.toThrow('connection terminated');
+    });
+  });
+
+  describe('getSharedWorkspace', () => {
+    it('returns a composer workspace with a matching share token', async () => {
+      const expiresAt = new Date(Date.now() + 60_000);
+      repo = fakeRepo([
+        defaultRow({
+          tool: WorkspaceTool.COMPOSER,
+          shareToken: 'valid-token',
+          shareExpiresAt: expiresAt,
+        }),
+      ]);
+      service = new WorkspaceService(repo as never);
+
+      await expect(service.getSharedWorkspace('valid-token')).resolves.toMatchObject({
+        id: 'ws-default',
+        shareToken: 'valid-token',
+      });
+    });
+
+    it('rejects expired share tokens', async () => {
+      repo = fakeRepo([
+        defaultRow({
+          tool: WorkspaceTool.COMPOSER,
+          shareToken: 'expired-token',
+          shareExpiresAt: new Date(Date.now() - 60_000),
+        }),
+      ]);
+      service = new WorkspaceService(repo as never);
+
+      await expect(service.getSharedWorkspace('expired-token')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('rejects share tokens without an expiry', async () => {
+      repo = fakeRepo([
+        defaultRow({
+          tool: WorkspaceTool.COMPOSER,
+          shareToken: 'unbounded-token',
+          shareExpiresAt: null,
+        }),
+      ]);
+      service = new WorkspaceService(repo as never);
+
+      await expect(service.getSharedWorkspace('unbounded-token')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('does not return a non-composer workspace through the public route', async () => {
+      repo = fakeRepo([
+        defaultRow({
+          tool: WorkspaceTool.SANDBOX,
+          shareToken: 'sandbox-token',
+          shareExpiresAt: new Date(Date.now() + 60_000),
+        }),
+      ]);
+      service = new WorkspaceService(repo as never);
+
+      await expect(service.getSharedWorkspace('sandbox-token')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

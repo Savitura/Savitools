@@ -226,11 +226,11 @@ export class WorkspaceService {
       where: { shareToken: token },
     });
 
-    if (!workspace) {
+    if (!workspace || workspace.tool !== WorkspaceTool.COMPOSER) {
       throw new NotFoundException('Shared workspace not found');
     }
 
-    if (workspace.shareExpiresAt && workspace.shareExpiresAt < new Date()) {
+    if (!workspace.shareExpiresAt || workspace.shareExpiresAt <= new Date()) {
       throw new NotFoundException('Shared workspace link has expired');
     }
 

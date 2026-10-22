@@ -34,7 +34,11 @@ import {
   refreshSession,
   sendWebhook,
 } from '@/lib/api';
-import { buildTransaction, fetchOperations } from '@/lib/composer-api';
+import {
+  buildTransaction,
+  fetchOperations,
+  fetchSharedComposerWorkspace,
+} from '@/lib/composer-api';
 
 /** Mirrors the single approved origin definition in `src/lib/api.ts`. */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -383,12 +387,9 @@ function serverRouteKeys(): Set<string> {
  *
  * - `POST /api/v1/monitor/watches/:id/alerts/:id/resend` — `MonitorController`
  *   has no alert re-send endpoint, so the "Re-send" button cannot work yet.
- * - `GET /api/v1/shared/composer/:token` — `fetchSharedComposerWorkspace` has no
- *   callers and there is no shared-workspace controller.
  */
 const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
-  'GET /api/v1/shared/composer/:param',
 ];
 
 interface SmokeContract {
@@ -400,6 +401,8 @@ interface SmokeContract {
   method: string;
   /** Path relative to the API origin, including the version segment. */
   path: string;
+  /** Optional parameterized route used for manifest matching. */
+  routePath?: string;
 }
 
 const SMOKE_CONTRACTS: readonly SmokeContract[] = [
@@ -428,6 +431,14 @@ const SMOKE_CONTRACTS: readonly SmokeContract[] = [
       }),
     method: 'POST',
     path: '/v1/composer/build',
+  },
+  {
+    flow: 'Shared Composer workspace',
+    wrapper: 'fetchSharedComposerWorkspace() in lib/composer-api.ts',
+    invoke: () => fetchSharedComposerWorkspace('share-token'),
+    method: 'GET',
+    path: '/v1/shared/composer/share-token',
+    routePath: '/v1/shared/composer/:token',
   },
   {
     flow: 'Monitor watches',
@@ -582,7 +593,7 @@ describe('API-to-frontend route contract', () => {
     const routes = serverRouteKeys();
 
     for (const contract of SMOKE_CONTRACTS) {
-      const key = `${contract.method} /api${normalizeApiPath(contract.path)}`;
+      const key = `${contract.method} /api${normalizeApiPath(contract.routePath ?? contract.path)}`;
       expect(`${contract.flow}: ${routes.has(key) ? 'ok' : `missing ${key}`}`).toBe(
         `${contract.flow}: ok`,
       );
