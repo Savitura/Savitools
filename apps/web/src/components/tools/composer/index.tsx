@@ -37,7 +37,25 @@ import {
 import { FeeBumpPanel } from './fee-bump-panel';
 import { ComposerOperationListSkeleton } from '../state-display';
 import { ErrorState } from '../state-display';
-import { Code2, Zap, Save, Download, Upload, Share2, Trash2, Copy, Clock, FolderOpen, ListOrdered } from 'lucide-react';
+import {
+  parseWorkspaceFile,
+  serializeWorkspaceFile,
+  WorkspaceFormatError,
+} from '@/lib/workspace-format';
+import { apiErrorMessage } from '@/lib/api';
+import {
+  Code2,
+  Zap,
+  Save,
+  Download,
+  Upload,
+  Share2,
+  Trash2,
+  Copy,
+  Clock,
+  FolderOpen,
+  ListOrdered,
+} from 'lucide-react';
 
 export interface ComposedOperation {
   id: string;
@@ -144,6 +162,7 @@ function SourceAccountInput({
   value: string;
   onChange: (v: string) => void;
 }) {
+function SourceAccountInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label
@@ -180,7 +199,9 @@ function SequenceRunner({
 }) {
   const [steps, setSteps] = useState<ComposedOperation[][]>([]);
   const [stopOnFailure, setStopOnFailure] = useState(true);
-  const [results, setResults] = useState<Array<{ step: number; hash?: string; status: string; next?: string }>>([]);
+  const [results, setResults] = useState<
+    Array<{ step: number; hash?: string; status: string; next?: string }>
+  >([]);
   const [running, setRunning] = useState(false);
 
   const addStep = () => {
@@ -194,7 +215,7 @@ function SequenceRunner({
   };
 
   const run = async () => {
-    const allSteps = steps.length > 0 ? steps : (operations.length > 0 ? [operations] : []);
+    const allSteps = steps.length > 0 ? steps : operations.length > 0 ? [operations] : [];
     if (allSteps.length === 0) return;
     setRunning(true);
     setResults([]);
@@ -212,7 +233,10 @@ function SequenceRunner({
         const built = await buildTransaction(payload);
         const sim = (await simulateTransaction({ xdr: built.xdr, network: apiNetwork })) as any;
         const status = sim?.success ? 'success' : 'failed';
-        setResults((prev) => [...prev, { step: i + 1, hash: sim?.hash, status, next: sim?.nextSequence }]);
+        setResults((prev) => [
+          ...prev,
+          { step: i + 1, hash: sim?.hash, status, next: sim?.nextSequence },
+        ]);
         if (stopOnFailure && !sim?.success) break;
         currentSource = sim?.nextSource || currentSource;
       } catch (e) {
@@ -231,18 +255,34 @@ function SequenceRunner({
       </p>
 
       {steps.length === 0 && operations.length === 0 ? (
-        <p className="text-sm text-muted-foreground mb-3">No steps yet. Use the builder to compose an operation set, then click &quot;Add Step&quot;.</p>
+        <p className="text-sm text-muted-foreground mb-3">
+          No steps yet. Use the builder to compose an operation set, then click &quot;Add
+          Step&quot;.
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-2 mb-3">
         {steps.map((step, i) => (
-          <div key={i} className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2">
-            <span className="text-xs font-medium">Step {i + 1}: {step.length} op(s)</span>
-            <button onClick={() => removeStep(i)} className="text-xs text-rose-400 hover:text-rose-300">Remove</button>
+          <div
+            key={i}
+            className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2"
+          >
+            <span className="text-xs font-medium">
+              Step {i + 1}: {step.length} op(s)
+            </span>
+            <button
+              onClick={() => removeStep(i)}
+              className="text-xs text-rose-400 hover:text-rose-300"
+            >
+              Remove
+            </button>
           </div>
         ))}
         {operations.length > 0 && (
-          <button onClick={addStep} className="text-xs bg-secondary rounded-lg px-3 py-2 hover:bg-secondary/80">
+          <button
+            onClick={addStep}
+            className="text-xs bg-secondary rounded-lg px-3 py-2 hover:bg-secondary/80"
+          >
             Add current ops as Step {steps.length + 1}
           </button>
         )}
@@ -269,7 +309,10 @@ function SequenceRunner({
       {results.length > 0 && (
         <div className="mt-4 space-y-2">
           {results.map((r, i) => (
-            <div key={i} className="text-xs bg-background/50 rounded-lg px-3 py-2 flex justify-between">
+            <div
+              key={i}
+              className="text-xs bg-background/50 rounded-lg px-3 py-2 flex justify-between"
+            >
               <span>Step {r.step}</span>
               <span>Status: {r.status}</span>
               <span className="font-mono">{r.hash ?? r.next ?? ''}</span>
@@ -302,7 +345,9 @@ export function ComposerTool() {
 
   // Preconditions draft (Savitura/Savitools#208)
   const [precondKind, setPrecondKind] = useState<PreconditionKind>('none');
-  const [precondFields, setPrecondFields] = useState<PreconditionFields>(DEFAULT_PRECONDITION_FIELDS);
+  const [precondFields, setPrecondFields] = useState<PreconditionFields>(
+    DEFAULT_PRECONDITION_FIELDS,
+  );
 
   // Fee-bump result (Savitura/Savitools#207) — its XDR shares the preview/sign path
   const [feeBumpResult, setFeeBumpResult] = useState<FeeBumpResult | null>(null);
@@ -353,8 +398,7 @@ export function ComposerTool() {
       const data = await fetchOperations();
       setManifest(data);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load operation manifest';
-      setManifestError(message);
+      setManifestError(apiErrorMessage(err, 'Failed to load operation manifest'));
     } finally {
       setManifestLoading(false);
     }
@@ -456,17 +500,14 @@ export function ComposerTool() {
     if (prefillOp === 'set_trustline_flags') {
       const trustor = searchParams.get('trustor');
       const authorize = searchParams.get('authorize');
-      const authorizeToMaintainLiabilities = searchParams.get(
-        'authorizeToMaintainLiabilities',
-      );
+      const authorizeToMaintainLiabilities = searchParams.get('authorizeToMaintainLiabilities');
       if (!code || !issuer || !trustor) return;
       // A boolean field can legitimately be "false", so null checks decide
       // which flags to send rather than truthiness.
       const flags: Record<string, boolean> = {};
       if (authorize !== null) flags.authorized = authorize === 'true';
       if (authorizeToMaintainLiabilities !== null) {
-        flags.authorizedToMaintainLiabilities =
-          authorizeToMaintainLiabilities === 'true';
+        flags.authorizedToMaintainLiabilities = authorizeToMaintainLiabilities === 'true';
       }
       if (Object.keys(flags).length === 0) return;
       addPrefilled('set_trustline_flags', {
@@ -522,9 +563,7 @@ export function ComposerTool() {
   };
 
   const handleFieldChange = (id: string, fields: Record<string, unknown>) => {
-    setOperations((prev) =>
-      prev.map((op) => (op.id === id ? { ...op, fields } : op)),
-    );
+    setOperations((prev) => prev.map((op) => (op.id === id ? { ...op, fields } : op)));
   };
 
   // ---------------------------------------------------------------------------
@@ -628,7 +667,11 @@ export function ComposerTool() {
     const now = new Date().toISOString();
     const state = getCurrentComposerState();
     if (activeWorkspaceId) {
-      setWorkspaces(prev => prev.map(w => w.id === activeWorkspaceId ? { ...w, name, composerState: state, updatedAt: now } : w));
+      setWorkspaces((prev) =>
+        prev.map((w) =>
+          w.id === activeWorkspaceId ? { ...w, name, composerState: state, updatedAt: now } : w,
+        ),
+      );
       setLastSavedAt(now);
     } else {
       const id = newId();
@@ -640,7 +683,7 @@ export function ComposerTool() {
         createdAt: now,
         updatedAt: now,
       };
-      setWorkspaces(prev => [...prev, workspace]);
+      setWorkspaces((prev) => [...prev, workspace]);
       setActiveWorkspaceId(id);
       setLastSavedAt(now);
     }
@@ -648,7 +691,7 @@ export function ComposerTool() {
   };
 
   const loadWorkspace = (id: string) => {
-    const workspace = workspaces.find(w => w.id === id);
+    const workspace = workspaces.find((w) => w.id === id);
     if (workspace) {
       applyComposerState(workspace.composerState);
       setActiveWorkspaceId(id);
@@ -660,11 +703,15 @@ export function ComposerTool() {
   };
 
   const renameWorkspace = (id: string, newName: string) => {
-    setWorkspaces(prev => prev.map(w => w.id === id ? { ...w, name: newName, updatedAt: new Date().toISOString() } : w));
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === id ? { ...w, name: newName, updatedAt: new Date().toISOString() } : w,
+      ),
+    );
   };
 
   const deleteWorkspace = (id: string) => {
-    setWorkspaces(prev => prev.filter(w => w.id !== id));
+    setWorkspaces((prev) => prev.filter((w) => w.id !== id));
     if (activeWorkspaceId === id) {
       setActiveWorkspaceId(null);
       setWorkspaceName('');
@@ -673,7 +720,7 @@ export function ComposerTool() {
   };
 
   const duplicateWorkspace = (id: string) => {
-    const workspace = workspaces.find(w => w.id === id);
+    const workspace = workspaces.find((w) => w.id === id);
     if (workspace) {
       const now = new Date().toISOString();
       const copy: Workspace = {
@@ -683,14 +730,23 @@ export function ComposerTool() {
         createdAt: now,
         updatedAt: now,
       };
-      setWorkspaces(prev => [...prev, copy]);
+      setWorkspaces((prev) => [...prev, copy]);
     }
   };
 
   const exportWorkspace = (id: string) => {
-    const workspace = workspaces.find(w => w.id === id);
+    const workspace = workspaces.find((w) => w.id === id);
     if (!workspace) return;
-    const blob = new Blob([JSON.stringify(workspace, null, 2)], { type: 'application/json' });
+    const blob = new Blob(
+      [
+        serializeWorkspaceFile({
+          ...workspace,
+          composerState: workspace.composerState as unknown as Record<string, unknown>,
+          operations: workspace.composerState.operations,
+        }),
+      ],
+      { type: 'application/json' },
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -703,13 +759,15 @@ export function ComposerTool() {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(e.target?.result as string);
-        if (!parsed || typeof parsed !== 'object' || !parsed.name || !parsed.composerState) {
-          throw new Error('Invalid workspace file: missing name or composerState');
-        }
+        // Parse and migrate the complete file before touching workspace state.
+        // An unknown future format therefore leaves the composer untouched.
+        const parsed = parseWorkspaceFile(e.target?.result as string);
         const state = parsed.composerState;
-        if (!state || typeof state !== 'object' || typeof state.sourceAccount !== 'string' || !Array.isArray(state.operations)) {
-          throw new Error('Invalid composerState: must include sourceAccount (string) and operations (array)');
+        if (typeof state.sourceAccount !== 'string' || !Array.isArray(state.operations)) {
+          throw new WorkspaceFormatError(
+            'INVALID_WORKSPACE',
+            'Composer workspace must include a sourceAccount (string) and operations (array).',
+          );
         }
         const operations = state.operations.map((op: any) => ({
           id: typeof op.id === 'string' ? op.id : newId(),
@@ -720,17 +778,17 @@ export function ComposerTool() {
         const workspace: Workspace = {
           id: newId(),
           ownerId: parsed.ownerId || 'local-user',
-          name: parsed.name,
+          name: parsed.name || 'Imported Workspace',
           composerState: {
             sourceAccount: state.sourceAccount,
             memo: typeof state.memo === 'string' ? state.memo : '',
             operations,
-            preconditions: state.preconditions ?? null,
+            preconditions: (state.preconditions as PreconditionDraft | null | undefined) ?? null,
           },
           createdAt: parsed.createdAt || now,
           updatedAt: now,
         };
-        setWorkspaces(prev => [...prev, workspace]);
+        setWorkspaces((prev) => [...prev, workspace]);
         setWorkspaceMenuOpen(false);
         alert('Workspace imported successfully.');
       } catch (err) {
@@ -742,6 +800,8 @@ export function ComposerTool() {
 
   const generateShareLink = async (id: string) => {
     const workspace = workspaces.find(w => w.id === id);
+  const generateShareLink = (id: string) => {
+    const workspace = workspaces.find((w) => w.id === id);
     if (!workspace) return;
     setShareError(null);
     try {
@@ -800,7 +860,7 @@ export function ComposerTool() {
         href: '/composer',
       });
     } catch (e) {
-      setSimError(e instanceof Error ? e.message : 'Simulation error');
+      setSimError(apiErrorMessage(e, 'Simulation error'));
     } finally {
       setSimLoading(false);
     }
@@ -878,7 +938,9 @@ export function ComposerTool() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-card border border-border/60 rounded-xl p-4">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">Transaction Composer</h1>
-          <p className="text-xs text-muted-foreground">Build, simulate, and benchmark Stellar transactions.</p>
+          <p className="text-xs text-muted-foreground">
+            Build, simulate, and benchmark Stellar transactions.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-secondary p-1 rounded-lg">
@@ -904,7 +966,9 @@ export function ComposerTool() {
             <FolderOpen className="h-3.5 w-3.5" />
             Workspaces
             {workspaces.length > 0 && (
-              <span className="ml-1 text-[10px] bg-background/60 rounded-full px-1.5 py-0.5">{workspaces.length}</span>
+              <span className="ml-1 text-[10px] bg-background/60 rounded-full px-1.5 py-0.5">
+                {workspaces.length}
+              </span>
             )}
           </button>
           <button
@@ -995,10 +1059,7 @@ export function ComposerTool() {
                     key={w.id}
                     className={`flex items-center gap-2 p-2 rounded-lg border ${activeWorkspaceId === w.id ? 'border-violet-500/50 bg-violet-500/5' : 'border-border/60 bg-background/30'}`}
                   >
-                    <button
-                      onClick={() => loadWorkspace(w.id)}
-                      className="flex-1 text-left"
-                    >
+                    <button onClick={() => loadWorkspace(w.id)} className="flex-1 text-left">
                       <span className="block text-xs font-medium">{w.name}</span>
                       <span className="block text-[10px] text-muted-foreground">
                         Updated {new Date(w.updatedAt).toLocaleString()}
@@ -1056,10 +1117,7 @@ export function ComposerTool() {
       )}
 
       {mode === 'benchmark' ? (
-        <BenchmarkPanel
-          xdr={xdr || ''}
-          network={network === 'mainnet' ? 'mainnet' : 'testnet'}
-        />
+        <BenchmarkPanel xdr={xdr || ''} network={network === 'mainnet' ? 'mainnet' : 'testnet'} />
       ) : mode === 'sequence' ? (
         <SequenceRunner
           operations={operations}
@@ -1093,7 +1151,8 @@ export function ComposerTool() {
               htmlFor="memo-input"
               className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
             >
-              Memo <span className="text-muted-foreground/40 font-normal normal-case">(optional)</span>
+              Memo{' '}
+              <span className="text-muted-foreground/40 font-normal normal-case">(optional)</span>
             </label>
             <input
               id="memo-input"

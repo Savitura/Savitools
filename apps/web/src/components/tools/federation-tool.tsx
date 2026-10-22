@@ -1,20 +1,28 @@
 'use client';
 
 import {
+  fetchAssetMetadata,
+  fetchFederationDiagnostics,
   fetchSepSupport,
   fetchStellarToml,
   previewTransferLink,
   resolveFederation,
+  validateHomeDomain,
   type FederationResolveResult,
+  type FederationDiagnosticsReport,
+  type HomeDomainValidationResult,
   type SepResult,
   type TomlResult,
   type TransferLinkResult,
+  type TomlCurrency,
 } from '@/lib/api';
 import {
+  BookmarkPlus,
   AlertTriangle,
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  Clock,
   Copy,
   ExternalLink,
   FileText,
@@ -22,13 +30,39 @@ import {
   Link2,
   Loader2,
   Search,
+  RefreshCw,
   Shield,
+  Stethoscope,
+  Trash2,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorState } from './state-display';
 
 type InputType = 'publicKey' | 'federation' | 'domain';
+
+interface SavedCounterparty {
+  input: string;
+  name: string;
+}
+
+const COUNTERPARTY_STORAGE_KEY = 'savitools:federation:counterparties';
+
+function loadSavedCounterparties(): SavedCounterparty[] {
+  try {
+    const saved = window.localStorage.getItem(COUNTERPARTY_STORAGE_KEY);
+    if (!saved) return [];
+    const parsed: unknown = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is SavedCounterparty =>
+        typeof item?.input === 'string' && typeof item?.name === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
 
 function detectInputType(value: string): InputType | null {
   const v = value.trim();
@@ -55,6 +89,56 @@ function useCopy() {
     setTimeout(() => setCopied(null), 1500);
   }, []);
   return { copied, copy };
+}
+
+function DiagnosticsPanel({
+  domain,
+  copied,
+  copy,
+}: {
+  domain: string;
+  copied: string | null;
+  copy: (text: string, id: string) => void;
+}) {
+  const [report, setReport] = useState<FederationDiagnosticsReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await fetchFederationDiagnostics(domain));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Diagnostics failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const serialized = report ? JSON.stringify(report, null, 2) : '';
+  return (
+    <CollapsiblePanel title="Server Diagnostics" icon={<Stethoscope className="h-4 w-4" />}>
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={loading}
+        className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50"
+      >
+        {loading ? 'Running…' : 'Run diagnostics'}
+      </button>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+      {report && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs">
+            {report.ok ? 'Healthy' : 'Failing'} · {report.totalLatencyMs}ms
+          </p>
+          <pre className="max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{serialized}</pre>
+          <CopyButton text={serialized} id="diagnostics-report" copied={copied} copy={copy} />
+        </div>
+      )}
+    </CollapsiblePanel>
+  );
 }
 
 function CopyButton({
@@ -146,7 +230,7 @@ function CollapsiblePanel({
   );
 }
 
-function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' }) {
+function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' | 'timeout' }) {
   if (status === 'green')
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-400 bg-green-400/10 rounded px-1.5 py-0.5">
@@ -157,6 +241,12 @@ function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' }) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-400 bg-amber-400/10 rounded px-1.5 py-0.5">
         <AlertTriangle className="h-3 w-3" /> Declared
+      </span>
+    );
+  if (status === 'timeout')
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 bg-slate-400/10 rounded px-1.5 py-0.5">
+        <Clock className="h-3 w-3" /> Timed out
       </span>
     );
   return (
@@ -224,9 +314,7 @@ function TomlPanel({
       icon={<FileText className="h-4 w-4 text-orange-400 shrink-0" />}
       defaultOpen
       badge={
-        <span className="text-xs text-muted-foreground font-normal">
-          {data.fetchLatencyMs}ms
-        </span>
+        <span className="text-xs text-muted-foreground font-normal">{data.fetchLatencyMs}ms</span>
       }
     >
       {data.validationWarnings.length > 0 && (
@@ -245,12 +333,48 @@ function TomlPanel({
 
       <div className="space-y-0.5">
         <Field label="Version" value={data.version} />
-        <Field label="Network passphrase" value={data.networkPassphrase} copyId="toml-net" copied={copied} copy={copy} />
-        <Field label="Federation server" value={data.federationServer} copyId="toml-fed" copied={copied} copy={copy} />
-        <Field label="Transfer server" value={data.transferServer} copyId="toml-ts" copied={copied} copy={copy} />
-        <Field label="Transfer server (SEP-24)" value={data.transferServerSep0024} copyId="toml-ts24" copied={copied} copy={copy} />
-        <Field label="Web auth endpoint" value={data.webAuthEndpoint} copyId="toml-wa" copied={copied} copy={copy} />
-        <Field label="Direct payment server" value={data.directPaymentServer} copyId="toml-dp" copied={copied} copy={copy} />
+        <Field
+          label="Network passphrase"
+          value={data.networkPassphrase}
+          copyId="toml-net"
+          copied={copied}
+          copy={copy}
+        />
+        <Field
+          label="Federation server"
+          value={data.federationServer}
+          copyId="toml-fed"
+          copied={copied}
+          copy={copy}
+        />
+        <Field
+          label="Transfer server"
+          value={data.transferServer}
+          copyId="toml-ts"
+          copied={copied}
+          copy={copy}
+        />
+        <Field
+          label="Transfer server (SEP-24)"
+          value={data.transferServerSep0024}
+          copyId="toml-ts24"
+          copied={copied}
+          copy={copy}
+        />
+        <Field
+          label="Web auth endpoint"
+          value={data.webAuthEndpoint}
+          copyId="toml-wa"
+          copied={copied}
+          copy={copy}
+        />
+        <Field
+          label="Direct payment server"
+          value={data.directPaymentServer}
+          copyId="toml-dp"
+          copied={copied}
+          copy={copy}
+        />
       </div>
 
       {data.accounts.length > 0 && (
@@ -262,9 +386,7 @@ function TomlPanel({
             {data.accounts.map((a, i) => (
               <div key={i} className="rounded bg-muted/30 p-2 text-xs font-mono">
                 <div className="break-all">{a.PUBLIC_KEY}</div>
-                {a.NAME && (
-                  <div className="text-muted-foreground mt-0.5">Name: {a.NAME}</div>
-                )}
+                {a.NAME && <div className="text-muted-foreground mt-0.5">Name: {a.NAME}</div>}
                 {a.HOME_DOMAIN && (
                   <div className="text-muted-foreground">Domain: {a.HOME_DOMAIN}</div>
                 )}
@@ -286,9 +408,7 @@ function TomlPanel({
                   {c.code}
                   <span className="text-muted-foreground ml-2">{c.issuer}</span>
                 </div>
-                {c.name && (
-                  <div className="text-muted-foreground mt-0.5">{c.name}</div>
-                )}
+                {c.name && <div className="text-muted-foreground mt-0.5">{c.name}</div>}
               </div>
             ))}
           </div>
@@ -304,12 +424,8 @@ function TomlPanel({
             {data.validators.map((v, i) => (
               <div key={i} className="rounded bg-muted/30 p-2 text-xs font-mono">
                 <div className="break-all">{v.PUBLIC_KEY}</div>
-                {v.NAME && (
-                  <div className="text-muted-foreground mt-0.5">{v.NAME}</div>
-                )}
-                {v.HOST && (
-                  <div className="text-muted-foreground">{v.HOST}</div>
-                )}
+                {v.NAME && <div className="text-muted-foreground mt-0.5">{v.NAME}</div>}
+                {v.HOST && <div className="text-muted-foreground">{v.HOST}</div>}
               </div>
             ))}
           </div>
@@ -374,9 +490,7 @@ function LinkPreviewPanel({
       });
       setResult(preview);
     } catch (err: unknown) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to build request link.',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to build request link.');
     } finally {
       setBuilding(false);
     }
@@ -386,11 +500,7 @@ function LinkPreviewPanel({
     <CollapsiblePanel
       title="Request Link Preview"
       icon={<Link2 className="h-4 w-4 text-sky-400 shrink-0" />}
-      badge={
-        <span className="text-xs text-muted-foreground font-normal">
-          SEP-6 / 24 / 31
-        </span>
-      }
+      badge={<span className="text-xs text-muted-foreground font-normal">SEP-6 / 24 / 31</span>}
     >
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
         <label className="flex flex-col gap-1">
@@ -463,11 +573,7 @@ function LinkPreviewPanel({
         disabled={building || !asset.trim() || !amount.trim()}
         className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground disabled:opacity-40 flex items-center gap-2"
       >
-        {building ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          'Preview link'
-        )}
+        {building ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Preview link'}
       </button>
 
       {error && (
@@ -492,12 +598,7 @@ function LinkPreviewPanel({
               <span className="text-muted-foreground">Request URL</span>
               <span className="font-mono text-xs break-all">
                 {result.url}
-                <CopyButton
-                  text={result.url}
-                  id="link-preview-url"
-                  copied={copied}
-                  copy={copy}
-                />
+                <CopyButton text={result.url} id="link-preview-url" copied={copied} copy={copy} />
               </span>
             </div>
           </div>
@@ -511,7 +612,8 @@ function LinkPreviewPanel({
   );
 }
 
-function SepPanel({ data }: { data: SepResult }) {  return (
+function SepPanel({ data }: { data: SepResult }) {
+  return (
     <CollapsiblePanel
       title="SEP Support"
       icon={<Shield className="h-4 w-4 text-violet-400 shrink-0" />}
@@ -564,9 +666,148 @@ function SepPanel({ data }: { data: SepResult }) {  return (
   );
 }
 
+function AssetMetadataLookup() {
+  const [domain, setDomain] = useState('');
+  const [code, setCode] = useState('');
+  const [issuer, setIssuer] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<HomeDomainValidationResult | null>(null);
+  const [metadata, setMetadata] = useState<TomlCurrency | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setValidation(null);
+    setMetadata(null);
+    try {
+      const result = await validateHomeDomain(domain.trim(), issuer.trim());
+      setValidation(result);
+      if (result.valid) {
+        setMetadata(await fetchAssetMetadata(domain.trim(), code.trim(), issuer.trim()));
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Asset metadata lookup failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="mb-6 rounded-lg border border-border p-4">
+      <h2 className="text-sm font-semibold">Asset metadata and home-domain check</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Reads public asset details from stellar.toml and checks the issuer is declared by that
+        domain.
+      </p>
+      <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-2">
+        <input
+          aria-label="Asset home domain"
+          required
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          placeholder="Home domain (example.com)"
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          aria-label="Asset code"
+          required
+          maxLength={12}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="Asset code (USDC)"
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          aria-label="Asset issuer"
+          required
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value)}
+          placeholder="Issuer public key (G…)"
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm font-mono sm:col-span-2"
+        />
+        <button
+          type="submit"
+          disabled={loading || !domain.trim() || !code.trim() || !issuer.trim()}
+          className="justify-self-start rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40 sm:col-span-2"
+        >
+          {loading ? 'Checking…' : 'Check asset'}
+        </button>
+      </form>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-red-400">
+          {error}
+        </p>
+      )}
+      {validation && (
+        <p
+          role="status"
+          className={`mt-3 text-sm ${validation.valid ? 'text-green-400' : 'text-amber-400'}`}
+        >
+          {validation.valid
+            ? `Issuer is declared for ${validation.domain}.`
+            : `Home-domain check failed: ${validation.reason === 'issuer_not_declared' ? 'issuer is not listed in ACCOUNTS.' : 'issuer HOME_DOMAIN does not match.'}`}
+        </p>
+      )}
+      {metadata && (
+        <dl className="mt-3 grid gap-x-3 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
+          <dt className="text-muted-foreground">Asset</dt>
+          <dd>
+            {metadata.code} · {metadata.issuer}
+          </dd>
+          {metadata.name && (
+            <>
+              <dt className="text-muted-foreground">Name</dt>
+              <dd>{metadata.name}</dd>
+            </>
+          )}
+          {metadata.desc && (
+            <>
+              <dt className="text-muted-foreground">Description</dt>
+              <dd>{metadata.desc}</dd>
+            </>
+          )}
+          {metadata.display_decimals !== undefined && (
+            <>
+              <dt className="text-muted-foreground">Display decimals</dt>
+              <dd>{metadata.display_decimals}</dd>
+            </>
+          )}
+          {metadata.conditions && (
+            <>
+              <dt className="text-muted-foreground">Conditions</dt>
+              <dd>{metadata.conditions}</dd>
+            </>
+          )}
+          {metadata.anchor_asset && (
+            <>
+              <dt className="text-muted-foreground">Anchor asset</dt>
+              <dd>{metadata.anchor_asset}</dd>
+            </>
+          )}
+          {metadata.image && (
+            <>
+              <dt className="text-muted-foreground">Image URL</dt>
+              <dd className="break-all">{metadata.image}</dd>
+            </>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
 export function FederationTool() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get('query') ?? '';
+  const initialLookupStarted = useRef(false);
   const { copied, copy } = useCopy();
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialQuery);
+  const [counterpartyName, setCounterpartyName] = useState('');
+  const [savedCounterparties, setSavedCounterparties] =
+    useState<SavedCounterparty[]>(loadSavedCounterparties);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fedData, setFedData] = useState<FederationResolveResult | null>(null);
@@ -575,7 +816,7 @@ export function FederationTool() {
 
   const detectedType = input.trim() ? detectInputType(input.trim()) : null;
 
-  const runLookup = async (value: string) => {
+  const runLookup = useCallback(async (value: string) => {
     const v = value.trim();
     if (!v) return;
 
@@ -595,21 +836,13 @@ export function FederationTool() {
 
     try {
       const cleanDomain =
-        type === 'domain'
-          ? stripProtocol(v)
-          : type === 'federation'
-            ? v.split('*')[1]
-            : null;
+        type === 'domain' ? stripProtocol(v) : type === 'federation' ? v.split('*')[1] : null;
 
       const fedPromise = resolveFederation(v);
       const tomlPromise = cleanDomain ? fetchStellarToml(cleanDomain) : null;
       const sepPromise = cleanDomain ? fetchSepSupport(cleanDomain) : null;
 
-      const results = await Promise.allSettled([
-        fedPromise,
-        tomlPromise,
-        sepPromise,
-      ]);
+      const results = await Promise.allSettled([fedPromise, tomlPromise, sepPromise]);
 
       const fedResult = results[0];
       if (fedResult.status === 'fulfilled') {
@@ -621,10 +854,8 @@ export function FederationTool() {
             fetchStellarToml(domain),
             fetchSepSupport(domain),
           ]);
-          if (extraResults[0].status === 'fulfilled')
-            setTomlData(extraResults[0].value);
-          if (extraResults[1].status === 'fulfilled')
-            setSepData(extraResults[1].value);
+          if (extraResults[0].status === 'fulfilled') setTomlData(extraResults[0].value);
+          if (extraResults[1].status === 'fulfilled') setSepData(extraResults[1].value);
         }
       } else {
         setError(
@@ -645,10 +876,50 @@ export function FederationTool() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      // Bound counterparties to 50 entries to prevent quota exhaustion
+      const bounded = savedCounterparties.slice(0, 50);
+      window.localStorage.setItem(COUNTERPARTY_STORAGE_KEY, JSON.stringify(bounded));
+    } catch {
+      // Gracefully ignore storage quota or restriction errors
+    }
+  }, [savedCounterparties]);
+
+  useEffect(() => {
+    if (initialLookupStarted.current) return;
+    initialLookupStarted.current = true;
+    if (initialQuery) void runLookup(initialQuery);
+  }, [initialQuery, runLookup]);
+
+  const saveCounterparty = () => {
+    const value = input.trim();
+    if (!value) return;
+    const name = counterpartyName.trim() || value;
+    setSavedCounterparties((current) =>
+      [{ input: value, name }, ...current.filter((contact) => contact.input !== value)].slice(
+        0,
+        50,
+      ),
+    );
+    setCounterpartyName('');
+  };
+
+  const inspectCounterparty = (contact: SavedCounterparty) => {
+    setInput(contact.input);
+    router.replace(`/inspector/federation?query=${encodeURIComponent(contact.input)}`, {
+      scroll: false,
+    });
+    void runLookup(contact.input);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    router.replace(`/inspector/federation?query=${encodeURIComponent(input.trim())}`, {
+      scroll: false,
+    });
     void runLookup(input);
   };
 
@@ -664,6 +935,7 @@ export function FederationTool() {
 
   return (
     <div>
+      <AssetMetadataLookup />
       <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -688,6 +960,51 @@ export function FederationTool() {
         </button>
       </form>
 
+      {savedCounterparties.length > 0 && (
+        <section aria-label="Saved counterparties" className="mb-6 space-y-2">
+          <h2 className="text-xs font-medium text-muted-foreground">Address book</h2>
+          <div className="divide-y divide-border rounded-md border border-border">
+            {savedCounterparties.map((contact) => (
+              <div key={contact.input} className="flex items-center gap-3 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => inspectCounterparty(contact)}
+                  className="min-w-0 flex-1 text-left"
+                  title={`Resolve ${contact.input}`}
+                >
+                  <span className="block truncate text-xs font-medium">{contact.name}</span>
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                    {contact.input}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => inspectCounterparty(contact)}
+                  aria-label={`Refresh ${contact.name}`}
+                  title="Refresh resolution"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSavedCounterparties((current) =>
+                      current.filter((saved) => saved.input !== contact.input),
+                    )
+                  }
+                  aria-label={`Remove ${contact.name}`}
+                  title="Remove from address book"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {input.trim() && inputTypeLabel && !loading && (
         <p className="text-xs text-muted-foreground mb-4 -mt-3">
           Detected: <span className="text-foreground">{inputTypeLabel}</span>
@@ -711,12 +1028,10 @@ export function FederationTool() {
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted/60 mb-4 text-muted-foreground">
             <Globe className="h-5 w-5" />
           </div>
-          <h3 className="text-sm font-semibold text-foreground mb-1">
-            Nothing to inspect yet
-          </h3>
+          <h3 className="text-sm font-semibold text-foreground mb-1">Nothing to inspect yet</h3>
           <p className="text-xs text-muted-foreground max-w-sm mb-5">
-            Enter a Stellar public key, federation address, or domain to resolve and
-            inspect its stellar.toml and SEP compliance.
+            Enter a Stellar public key, federation address, or domain to resolve and inspect its
+            stellar.toml and SEP compliance.
           </p>
           <ul className="text-[11px] text-muted-foreground/80 max-w-md space-y-1 list-disc list-inside text-left">
             <li>Public key: 56-character key starting with G</li>
@@ -735,9 +1050,39 @@ export function FederationTool() {
 
       {!loading && !error && hasResults && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex-1 text-xs text-muted-foreground">
+              Save this counterparty
+              <input
+                value={counterpartyName}
+                onChange={(event) => setCounterpartyName(event.target.value)}
+                placeholder="Name (optional)"
+                className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-xs"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={saveCounterparty}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium hover:border-foreground/30"
+            >
+              <BookmarkPlus className="h-3.5 w-3.5" />
+              Save counterparty
+            </button>
+          </div>
           {fedData && <FederationPanel data={fedData} copied={copied} copy={copy} />}
           {tomlData && <TomlPanel data={tomlData} copied={copied} copy={copy} />}
           {sepData && <SepPanel data={sepData} />}
+          {tomlData && (
+            <DiagnosticsPanel
+              domain={
+                tomlData.federationServer
+                  ? new URL(tomlData.federationServer).hostname
+                  : (input.trim().split('*')[1] ?? stripProtocol(input.trim()))
+              }
+              copied={copied}
+              copy={copy}
+            />
+          )}
           {tomlData && (
             <LinkPreviewPanel
               domain={

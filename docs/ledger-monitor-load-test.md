@@ -43,3 +43,29 @@ resumed from the stored cursor without producing duplicate events.
 
 The PostgreSQL and Redis containers used for the run were temporary and were
 removed after verification.
+
+## Per-user watch limit
+
+Every watch adds streaming or polling work to the monitor leader. An account watch
+opens two Horizon SSE streams (transactions and payments); a contract watch opens
+one. Unbounded per-user creation would let one account consume the whole
+connection budget and add Horizon load for the entire deployment
+(Savitura/Savitools#432).
+
+`POST /api/v1/monitor/watches` therefore enforces a configurable cap:
+
+| Variable                       | Default | Meaning                                                     |
+| ------------------------------ | ------- | ----------------------------------------------------------- |
+| `MONITOR_MAX_WATCHES_PER_USER` | `25`    | Maximum watches one user may keep across all networks/types |
+
+Non-positive or unparseable values fall back to the default. When the user
+already owns the maximum number of watches, `createWatch` rejects the request
+with `400 Bad Request` and a message naming the limit; the caller has to delete
+an existing watch first. The default is sized against this load test: 25 account
+watches is the 50-SSE-connection envelope measured above, after which the
+stream manager falls back to polling.
+
+Changing the cap only affects new watch creation; existing watches above the new
+limit stay active until the user deletes them. Keep the value in sync with the
+deployment's `MAX_SSE_CONNECTIONS` and Horizon capacity when resizing the monitor
+tier.

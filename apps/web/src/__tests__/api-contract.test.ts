@@ -31,8 +31,11 @@ import { join, relative } from 'path';
 import {
   apiFetch,
   fetchWebhookHistory,
+  getMultisigLimits,
   refreshSession,
+  runPathPaymentLab,
   sendWebhook,
+  simulateMultisig,
 } from '@/lib/api';
 import {
   buildTransaction,
@@ -238,7 +241,10 @@ function listSourceFiles(): SourceFile[] {
       }
       if (!/\.tsx?$/.test(entry.name)) continue;
       const absolute = join(directory, entry.name);
-      files.push({ path: relative(SRC_ROOT, absolute), source: readFileSync(absolute, 'utf8') });
+      files.push({
+        path: relative(SRC_ROOT, absolute).replace(/\\/g, '/'),
+        source: readFileSync(absolute, 'utf8'),
+      });
     }
   };
   walk(SRC_ROOT);
@@ -390,6 +396,19 @@ function serverRouteKeys(): Set<string> {
  */
 const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
   'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
+ * - `GET /api/v1/shared/composer/:token` — `fetchSharedComposerWorkspace` has no
+ *   callers and there is no shared-workspace controller.
+ * - `POST /api/v1/composer/fee-bump/inspect` — `inspectFeeBump` in
+ *   `composer-api.ts` and the Composer fee-bump panel both call it, but
+ *   `ComposerService` has no matching method and `ComposerController` exposes no
+ *   route, so the panel's "Inspect" action cannot work. Re-registering the route
+ *   without the service method behind it is not possible; the wrapper is pinned
+ *   here until that method lands.
+ */
+const KNOWN_UNBACKED_WRAPPER_CALLS: readonly string[] = [
+  'POST /api/v1/monitor/watches/:param/alerts/:param/resend',
+  'GET /api/v1/shared/composer/:param',
+  'POST /api/v1/composer/fee-bump/inspect',
 ];
 
 interface SmokeContract {
@@ -467,6 +486,45 @@ const SMOKE_CONTRACTS: readonly SmokeContract[] = [
     invoke: () => apiFetch<unknown>('/playground/history'),
     method: 'GET',
     path: '/v1/playground/history',
+  },
+  {
+    flow: 'Path-payment slippage lab',
+    wrapper: 'runPathPaymentLab() in lib/api.ts',
+    invoke: () =>
+      runPathPaymentLab({
+        direction: 'strict_send',
+        sourceAsset: 'XLM',
+        destinationAsset: 'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+        amount: '100',
+        slippageScenarios: [0.5, 2],
+        adverseMovePercent: 1,
+      }),
+    method: 'POST',
+    path: '/v1/simulator/path-payment-lab',
+  },
+  {
+    flow: 'Multisig limits',
+    wrapper: 'getMultisigLimits() in lib/api.ts',
+    invoke: () => getMultisigLimits(),
+    method: 'GET',
+    path: '/v1/multisig/limits',
+  },
+  {
+    flow: 'Multisig simulation',
+    wrapper: 'simulateMultisig() in lib/api.ts',
+    invoke: () =>
+      simulateMultisig({
+        threshold: 2,
+        signers: [
+          {
+            key: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ',
+            weight: 1,
+            signed: true,
+          },
+        ],
+      }),
+    method: 'POST',
+    path: '/v1/multisig/simulate',
   },
 ];
 
@@ -630,5 +688,163 @@ describe('API-to-frontend route contract', () => {
 
     const [, init] = fetchMock.mock.calls[0] as FetchArgs;
     expect(init.method ?? 'GET').not.toBe('PUT');
+  });
+});
+
+/**
+ * Field-level spot-check (Savitura/Savitools#294).
+ *
+ * The route contract above pins method and path for every wrapper, which says
+ * nothing about the *body*: a hand-written response interface could silently
+ * drift from what the controller returns and only surface at the first
+ * consumer, as a type error or as wrong rendering. Each entry below names the
+ * fields `apps/api` returns for a spot-checked response and the server source it
+ * mirrors.
+ *
+ * The check is deliberately one-directional: the web declaration must contain
+ * every server field (extra optional web-only fields are allowed), and a union
+ * field must include every member the server can produce.
+ */
+interface ResponseFieldContract {
+  /** Interface declared in `lib/api.ts`. */
+  type: string;
+  /** Fields the API returns for that response. */
+  fields: readonly string[];
+  /** Fields whose declared union must contain every member the server produces. */
+  unions?: Readonly<Record<string, readonly string[]>>;
+  /** Server source this mirrors, quoted in the failure message. */
+  server: string;
+}
+
+const RESPONSE_FIELD_CONTRACTS: readonly ResponseFieldContract[] = [
+  {
+    type: 'SandboxPaymentResult',
+    server: 'apps/api/src/modules/sandbox/sandbox.service.ts:119-131',
+    fields: [
+      'success',
+      'txHash',
+      'feeCharged',
+      'resultCode',
+      'destination',
+      'destinationAccount',
+      'muxedId',
+      'asset',
+      'amount',
+    ],
+    // `result.fee_charged` is declared `fee_charged?: string` by the Stellar
+    // client, so this is a string of stroops — not a number.
+    unions: { feeCharged: ['string'] },
+  },
+  {
+    type: 'SepInfo',
+    server: 'apps/api/src/modules/federation/federation.service.ts:124-130',
+    fields: ['number', 'name', 'supported', 'endpoint', 'probeStatus'],
+    // The probe reports 'timeout' for a SEP whose endpoint never answered.
+    unions: { probeStatus: ['green', 'yellow', 'red', 'none', 'timeout'] },
+  },
+  {
+    type: 'SepResult',
+    server: 'apps/api/src/modules/federation/federation.service.ts:132-136',
+    fields: ['seps', 'tomlStatus'],
+  },
+  {
+    type: 'WebhookHistoryEntry',
+    server: 'apps/api/src/modules/webhook/webhook.service.ts:27-47',
+    fields: [
+      'id',
+      'timestamp',
+      'endpointUrl',
+      'eventType',
+      'method',
+      'requestHeaders',
+      'payload',
+      'responseStatus',
+      'responseHeaders',
+      'responseBody',
+      'latencyMs',
+    ],
+    // The stored body is the raw response text, never a parsed object.
+    unions: { responseBody: ['string'] },
+  },
+];
+
+/** The block of `export interface <name> { ... }`, or null when it is absent. */
+function interfaceBody(source: string, name: string): string | null {
+  const start = source.indexOf(`export interface ${name} {`);
+  if (start === -1) return null;
+  const end = source.indexOf('\n}', start);
+  return end === -1 ? null : source.slice(start, end);
+}
+
+/** Top-level field names declared by an interface body. */
+function declaredFields(body: string): Set<string> {
+  return new Set(
+    [...body.matchAll(/^\s{2}([A-Za-z0-9_]+)\??\s*:/gm)].map((match) => match[1]),
+  );
+}
+
+function responseFieldProblems(source: string): string[] {
+  const problems: string[] = [];
+
+  for (const contract of RESPONSE_FIELD_CONTRACTS) {
+    const body = interfaceBody(source, contract.type);
+    if (!body) {
+      problems.push(`${contract.type} is not declared in lib/api.ts`);
+      continue;
+    }
+
+    const fields = declaredFields(body);
+    for (const field of contract.fields) {
+      if (!fields.has(field)) {
+        problems.push(
+          `${contract.type}.${field} is missing — the server returns it (${contract.server})`,
+        );
+      }
+    }
+
+    for (const [field, members] of Object.entries(contract.unions ?? {})) {
+      const declaration =
+        body.match(new RegExp(`^\\s{2}${field}\\??\\s*:([^;\\n]*)`, 'm'))?.[1] ?? '';
+      for (const member of members) {
+        if (!declaration.includes(member)) {
+          problems.push(
+            `${contract.type}.${field} does not allow "${member}" — the server produces it (${contract.server})`,
+          );
+        }
+      }
+    }
+  }
+
+  return problems;
+}
+
+describe('API response field contract', () => {
+  const apiSource = readFileSync(join(SRC_ROOT, 'lib/api.ts'), 'utf8');
+
+  it('declares every field the spot-checked responses return', () => {
+    expect(responseFieldProblems(apiSource).join('\n')).toBe('');
+  });
+
+  it('bites: a declaration that drops a server field is reported', () => {
+    const truncated = apiSource.replace(
+      /export interface SepInfo \{[\s\S]*?\n\}/,
+      'export interface SepInfo {\n  number: number;\n}',
+    );
+
+    expect(truncated).not.toBe(apiSource);
+    expect(responseFieldProblems(truncated).join('\n')).toContain(
+      'SepInfo.probeStatus is missing',
+    );
+  });
+
+  it('bites: an `any` declaration cannot stand in for a typed field', () => {
+    const untyped = apiSource.replace(
+      /responseBody: string;/,
+      'responseBody: any;',
+    );
+
+    expect(responseFieldProblems(untyped).join('\n')).toContain(
+      'WebhookHistoryEntry.responseBody does not allow "string"',
+    );
   });
 });

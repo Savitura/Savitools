@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import { DecodeXdrDto } from './dto/decode-xdr.dto';
+import { DecodeXDrDto } from './dto/decode-xdr.dto';
+import { InspectAuthEntryDto } from './dto/inspect-auth-entry.dto';
 import { InspectorService } from './inspector.service';
 
 @ApiTags('inspector')
@@ -32,10 +33,7 @@ export class InspectorController {
     @Res({ passthrough: true }) reply: FastifyReply,
     @Query('network') network?: 'testnet' | 'mainnet',
   ) {
-    const breakdown = await this.inspectorService.inspectTransaction(
-      hash,
-      network ?? 'testnet',
-    );
+    const breakdown = await this.inspectorService.inspectTransaction(hash, network ?? 'testnet');
     reply.header(
       'Content-Disposition',
       `attachment; filename="transaction-${hash.slice(0, 12)}.csv"`,
@@ -49,7 +47,11 @@ export class InspectorController {
   })
   @ApiParam({ name: 'hash', description: 'Transaction hash (64 hex chars)' })
   @ApiQuery({ name: 'network', required: false, enum: ['testnet', 'mainnet'] })
-  @ApiQuery({ name: 'contractId', required: false, description: 'Filter by contract ID (substring)' })
+  @ApiQuery({
+    name: 'contractId',
+    required: false,
+    description: 'Filter by contract ID (substring)',
+  })
   @ApiQuery({ name: 'eventName', required: false, description: 'Filter by event name (substring)' })
   getTransactionEvents(
     @Param('hash') hash: string,
@@ -95,7 +97,35 @@ export class InspectorController {
 
   @Post('decode-xdr')
   @ApiOperation({ summary: 'Decode raw XDR (offline, no Horizon call)' })
-  decodeXdr(@Body() dto: DecodeXdrDto) {
+  @ApiResponse({
+    status: 201,
+    description: 'Decoded transaction, result, or Soroban authorization entry',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid XDR or network' })
+  decodeXdr(@Body() dto: DecodeXDrDto) {
     return this.inspectorService.decodeXdr(dto.xdr, dto.network ?? 'testnet');
+  }
+
+  @Post('auth-entry')
+  @ApiOperation({
+    summary: 'Inspect Soroban authorization entries (credential + invocation tree)',
+  })
+  inspectAuthEntry(@Body() dto: InspectAuthEntryDto) {
+    return this.inspectorService.inspectAuthEntries(dto);
+  }
+
+  /** Alias matching issue path shape: POST /api/v1/inspector/auth-entry/inspect */
+  @Post('auth-entry/inspect')
+  @ApiOperation({ summary: 'Alias for auth-entry' })
+  inspectAuthEntryAlias(@Body() dto: InspectAuthEntryDto) {
+    return this.inspectorService.inspectAuthEntries(dto);
+  }
+
+  @Post('auth-entry/export')
+  @ApiOperation({
+    summary: 'Sanitized export of authorization entries (signature material removed)',
+  })
+  inspectAuthEntryExport(@Body() dto: InspectAuthEntryDto) {
+    return this.inspectorService.exportAuthEntries(dto);
   }
 }

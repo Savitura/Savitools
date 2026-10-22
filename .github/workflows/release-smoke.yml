@@ -1,0 +1,42 @@
+name: Release Playground Host Smoke
+
+# Deployment-safe check: GET /v1/health on the configured public API bases.
+# It never authenticates, never mutates data, and never prints secrets.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Public API base(s) to check
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - production
+          - testnet
+
+permissions:
+  contents: read
+
+jobs:
+  playground-hosts:
+    name: Playground host health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check configured public API hosts
+        env:
+          PLAYGROUND_SMOKE_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'all' }}
+          # Optional repository variables override the defaults documented in
+          # docs/playground-host-smoke.md.
+          PLAYGROUND_SMOKE_PRODUCTION_URL: ${{ vars.PLAYGROUND_SMOKE_PRODUCTION_URL }}
+          PLAYGROUND_SMOKE_TESTNET_URL: ${{ vars.PLAYGROUND_SMOKE_TESTNET_URL }}
+          PLAYGROUND_SMOKE_TIMEOUT_MS: ${{ vars.PLAYGROUND_SMOKE_TIMEOUT_MS }}
+        run: node scripts/check-playground-hosts.mjs --environment "$PLAYGROUND_SMOKE_ENVIRONMENT"

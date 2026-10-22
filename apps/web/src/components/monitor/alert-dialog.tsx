@@ -2,16 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Webhook } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiErrorMessage, apiFetch } from '@/lib/api';
 import { AlertEvent, Paginated, Watch } from './monitor-types';
 
-export function AlertPanel({
-  watch,
-  liveAlerts,
-}: {
-  watch?: Watch;
-  liveAlerts: AlertEvent[];
-}) {
+export function AlertPanel({ watch, liveAlerts }: { watch?: Watch; liveAlerts: AlertEvent[] }) {
   const [history, setHistory] = useState<AlertEvent[]>([]);
   const [webhookOpen, setWebhookOpen] = useState(false);
 
@@ -20,18 +14,16 @@ export function AlertPanel({
       setHistory([]);
       return;
     }
-    void apiFetch<Paginated<AlertEvent>>(
-      `/monitor/watches/${watch.id}/alerts?limit=50`,
-    ).then((page) => setHistory(page.items));
+    void apiFetch<Paginated<AlertEvent>>(`/monitor/watches/${watch.id}/alerts?limit=50`).then(
+      (page) => setHistory(page.items),
+    );
   }, [watch]);
 
   const alerts = useMemo(() => {
     const byId = new Map<string, AlertEvent>();
     [...liveAlerts, ...history].forEach((alert) => byId.set(alert.id, alert));
     return Array.from(byId.values()).sort(
-      (left, right) =>
-        new Date(right.createdAt).getTime() -
-        new Date(left.createdAt).getTime(),
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
   }, [history, liveAlerts]);
 
@@ -42,10 +34,7 @@ export function AlertPanel({
       `/monitor/watches/${watch.id}/alerts/${alert.id}/resend`,
       { method: 'POST' },
     );
-    setHistory((current) => [
-      updated,
-      ...current.filter((item) => item.id !== updated.id),
-    ]);
+    setHistory((current) => [updated, ...current.filter((item) => item.id !== updated.id)]);
   };
 
   return (
@@ -53,9 +42,7 @@ export function AlertPanel({
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold">Fired alerts</h3>
-          <p className="text-xs text-muted-foreground">
-            Payload and delivery status
-          </p>
+          <p className="text-xs text-muted-foreground">Payload and delivery status</p>
         </div>
         <button
           type="button"
@@ -119,9 +106,7 @@ function WebhookForm({ onSaved }: { onSaved: () => void }) {
       });
       onSaved();
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : 'Failed to save webhook',
-      );
+      setError(apiErrorMessage(reason, 'Failed to save webhook'));
     }
   };
 
@@ -153,9 +138,7 @@ function WebhookForm({ onSaved }: { onSaved: () => void }) {
       >
         Save
       </button>
-      {error && (
-        <p className="text-xs text-destructive md:col-span-3">{error}</p>
-      )}
+      {error && <p className="text-xs text-destructive md:col-span-3">{error}</p>}
     </form>
   );
 }
@@ -168,10 +151,6 @@ function Status({ status }: { status: AlertEvent['deliveryStatus'] }) {
         ? 'bg-red-500/15 text-red-600'
         : 'bg-amber-500/15 text-amber-600';
   return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${color}`}
-    >
-      {status}
-    </span>
+    <span className={`rounded-full px-2 py-0.5 text-[10px] capitalize ${color}`}>{status}</span>
   );
 }

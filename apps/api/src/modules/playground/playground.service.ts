@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BoundedTtlMap } from '../../common/bounded-ttl-map';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createDecipheriv, pbkdf2Sync } from 'crypto';
 import { Repository } from 'typeorm';
@@ -24,6 +25,13 @@ interface CachedSpec {
   spec: Record<string, unknown>;
   fetchedAt: number;
 }
+
+/**
+ * One entry per provider, plus headroom for the custom-provider origin split.
+ * A stale copy outlives its freshness window (see `specCache`).
+ */
+const MAX_CACHED_SPECS = 32;
+const CACHED_SPEC_STALE_WINDOWS = 10;
 
 export interface ProxyResult {
   status: number;
@@ -123,8 +131,25 @@ export async function prunePlaygroundHistory(
 @Injectable()
 export class PlaygroundService {
   private readonly logger = new Logger(PlaygroundService.name);
-  private readonly specCache = new Map<string, CachedSpec>();
+  /**
+   * Provider OpenAPI documents, keyed by provider. The freshness window is
+   * `specTtlMs` and is checked per read; the map itself is bounded and keeps a
+   * stale copy for a few windows, which is what the refresh-failure fallback
+   * below serves (Savitura/Savitools#291).
+   */
+  private readonly specCache: BoundedTtlMap<string, CachedSpec>;
   private readonly specTtlMs: number;
+
+  /**
+   * Compute a display mask for an API key: first 8 chars + '...' + last 4 chars.
+   * Extracted to a single helper to avoid duplication and ensure consistency.
+   */
+  private static maskApiKey(plaintext: string): string {
+    if (plaintext.length <= 12) {
+      return plaintext; // Too short to mask meaningfully
+    }
+    return plaintext.slice(0, 8) + '...' + plaintext.slice(-4);
+  }
 
   constructor(
     @InjectRepository(ApiKey)
@@ -136,6 +161,10 @@ export class PlaygroundService {
     private readonly encryptionService: EncryptionService,
   ) {
     this.specTtlMs = parseSpecTtlMs(this.configService.get('PLAYGROUND_SPEC_TTL_MS'));
+    this.specCache = new BoundedTtlMap({
+      maxEntries: MAX_CACHED_SPECS,
+      ttlMs: this.specTtlMs * CACHED_SPEC_STALE_WINDOWS,
+    });
   }
 
   async getSpec(provider: ApiKeyProvider): Promise<Record<string, unknown>> {
@@ -193,6 +222,21 @@ export class PlaygroundService {
     } else {
       baseUrl = this.getProviderBaseUrl(dto.provider);
       if (!baseUrl) {
+        if (dto.provider === ApiKeyProvider.FLUXA) {
+          return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: {
+              mock: true,
+              provider: 'fluxa',
+              message: 'Fluxa API is not hosted publicly yet. This is a local sandbox response.',
+              path: dto.path,
+              method: dto.method,
+              timestamp: new Date().toISOString(),
+            },
+            latencyMs: 12,
+          };
+        }
         throw new BadRequestException(`${dto.provider} API URL is not configured`);
       }
 
@@ -424,6 +468,10 @@ export class PlaygroundService {
       iv,
       authTag,
       keyVersion: 2,
+      // Persist the mask up front so the list endpoints never decrypt a key
+      // that was created after this change.
+      maskedKey: PlaygroundService.maskApiKey(dto.apiKey),
+      keyPreview: PlaygroundService.maskApiKey(dto.apiKey),
     });
 
     const saved = await this.apiKeysRepository.save(key);
@@ -436,19 +484,26 @@ export class PlaygroundService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(
+    // Use Promise.allSettled so one undecryptable key doesn't break the entire listing
+    const results = await Promise.allSettled(
       keys.map(async (key) => {
-        const decrypted = await this.decryptAndUpgrade(userId, key);
-        const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+        // The mask is resolved by `maskFor`, which is the single reader of the
+        // `maskedKey` column: it serves the stored mask when there is one and
+        // otherwise pays exactly one decrypt and persists the mask.
         return {
           id: key.id,
           label: key.label,
           provider: key.provider,
-          maskedKey: masked,
+          maskedKey: await this.maskFor(userId, key),
           createdAt: key.createdAt,
         };
       }),
     );
+
+    // Return only fulfilled results, filtering out rejected ones
+    return results
+      .filter((result): result is PromiseFulfilledResult<{ id: string; label: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
+      .map(result => result.value);
   }
 
   async deleteKey(id: string, userId: string): Promise<void> {
@@ -490,18 +545,18 @@ export class PlaygroundService {
       iv,
       authTag,
       keyVersion: 2,
+      keyPreview: PlaygroundService.maskApiKey(dto.apiKey),
       providerOrigin: dto.origin,
       openApiSpec: spec,
+      maskedKey: maskApiKey(dto.apiKey),
     });
 
     const saved = await this.apiKeysRepository.save(key);
-    const decrypted = await this.decryptAndUpgrade(userId, saved);
-    const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
     return {
       id: saved.id,
       name: saved.label,
       provider: saved.provider,
-      maskedKey: masked,
+      maskedKey: saved.keyPreview!,
       createdAt: saved.createdAt,
     };
   }
@@ -520,21 +575,26 @@ export class PlaygroundService {
       order: { createdAt: 'DESC' },
     });
 
-    return Promise.all(
+    // Use Promise.allSettled to prevent one bad key from breaking the entire listing
+    const results = await Promise.allSettled(
       keys.map(async (key) => {
-        const decrypted = await this.decryptAndUpgrade(userId, key);
-        const masked = decrypted.slice(0, 8) + '...' + decrypted.slice(-4);
+        // Same single reader as `listKeys`; see the note there.
         return {
           id: key.id,
           name: key.label,
           provider: key.provider,
           origin: key.providerOrigin,
           hasSpec: !!key.openApiSpec,
-          maskedKey: masked,
+          maskedKey: await this.maskFor(userId, key),
           createdAt: key.createdAt,
         };
       }),
     );
+
+    // Return only fulfilled results
+    return results
+      .filter((result): result is PromiseFulfilledResult<{ id: string; name: string; provider: ApiKeyProvider; origin: string | null; hasSpec: boolean; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
+      .map(result => result.value);
   }
 
   async renameProvider(
@@ -592,6 +652,10 @@ export class PlaygroundService {
       key.iv = iv;
       key.authTag = authTag;
       key.keyVersion = 2;
+      // Refresh both mask columns: `maskedKey` is what `maskFor` reads, and
+      // leaving a stale one behind would show a previous key's mask.
+      key.maskedKey = PlaygroundService.maskApiKey(dto.apiKey);
+      key.keyPreview = key.maskedKey;
     }
 
     const saved = await this.apiKeysRepository.save(key);
@@ -613,7 +677,7 @@ export class PlaygroundService {
       case ApiKeyProvider.FLUXA:
         return this.configService.get<string>('FLUXA_API_URL') ?? null;
       case ApiKeyProvider.CROWDPAY:
-        return this.configService.get<string>('CROWDPAY_API_URL') ?? null;
+        return this.configService.get<string>('CROWDPAY_API_URL') ?? 'https://crowdpay.up.railway.app';
     }
   }
 
@@ -638,6 +702,31 @@ export class PlaygroundService {
   }
 
   /**
+   * The display mask for a stored key.
+   *
+   * Rows written before the `maskedKey` column existed have no mask; they pay
+   * for exactly one decrypt (which also re-encrypts legacy material and, on that
+   * path, persists the mask in the same update) and every later read is
+   * decrypt-free. This is what keeps the list endpoints O(1) decrypts instead of
+   * O(keys per request).
+   */
+  private async maskFor(userId: string, key: ApiKey): Promise<string> {
+    if (key.maskedKey) {
+      return key.maskedKey;
+    }
+
+    const plaintext = await this.decryptAndUpgrade(userId, key);
+    if (key.maskedKey) {
+      return key.maskedKey;
+    }
+
+    const masked = maskApiKey(plaintext);
+    await this.apiKeysRepository.update(key.id, { maskedKey: masked });
+    key.maskedKey = masked;
+    return masked;
+  }
+
+  /**
    * Decrypt an API key, transparently re-encrypting it under the new
    * per-user, purpose-bound scheme if it is still on the legacy global key.
    * Idempotent and safe to retry: once a row is `keyVersion: 2` this is a
@@ -659,15 +748,25 @@ export class PlaygroundService {
       plaintext,
       ENCRYPTION_PURPOSES.PLAYGROUND_API_KEY,
     );
+    const masked = maskApiKey(plaintext);
     await this.apiKeysRepository.update(key.id, {
       encryptedKey: upgraded.encrypted,
       iv: upgraded.iv,
       authTag: upgraded.authTag,
       keyVersion: 2,
+      // The plaintext is in hand here, so the mask rides along with the
+      // re-encryption instead of costing a decrypt on the next list call.
+      maskedKey: masked,
     });
+    key.maskedKey = masked;
 
     return plaintext;
   }
+}
+
+/** `first8...last4` of the plaintext — the only part of a stored key we display. */
+export function maskApiKey(plaintext: string): string {
+  return plaintext.slice(0, 8) + '...' + plaintext.slice(-4);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
