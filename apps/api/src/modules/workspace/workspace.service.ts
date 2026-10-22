@@ -12,6 +12,7 @@ import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
 import { RenameWorkspaceDTO } from './dto/rename-workspace.dto';
 import { UpdateWorkspaceDTO } from './dto/update-workspace.dto';
 import { ComposerStateSchema } from './composer-state.schema';
+import { sanitizeWorkspaceData } from './workspace-sanitizer';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspaceTool } from './workspace-tool.enum';
 
