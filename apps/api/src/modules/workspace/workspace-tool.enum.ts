@@ -3,4 +3,5 @@ export enum WorkspaceTool {
   INSPECTOR = 'inspector',
   WEBHOOKS = 'webhooks',
   COMPOSER = 'composer',
+  TOOL_PRESETS = 'tool-presets',
 }

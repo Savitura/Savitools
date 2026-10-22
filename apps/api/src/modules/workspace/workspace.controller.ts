@@ -177,7 +177,7 @@ export class WorkspaceController {
 
   @Get(':tool')
   @ApiOperation({ summary: 'Get persisted tool state for the current user' })
-  @ApiParam({ name: 'tool', enum: ['sandbox', 'inspector', 'webhooks', 'composer'] })
+  @ApiParam({ name: 'tool', enum: ['sandbox', 'inspector', 'webhooks', 'composer', 'tool-presets'] })
   @ApiResponse({ status: 200, description: 'Tool workspace retrieved' })
   @ApiResponse({ status: 400, description: 'Invalid tool name' })
   async getWorkspace(
@@ -192,7 +192,7 @@ export class WorkspaceController {
   @Put(':tool')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Save tool state for the current user' })
-  @ApiParam({ name: 'tool', enum: ['sandbox', 'inspector', 'webhooks', 'composer'] })
+  @ApiParam({ name: 'tool', enum: ['sandbox', 'inspector', 'webhooks', 'composer', 'tool-presets'] })
   @ApiResponse({ status: 200, description: 'Tool workspace saved' })
   @ApiResponse({ status: 400, description: 'Invalid tool name or data' })
   async upsertWorkspace(

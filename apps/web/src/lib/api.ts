@@ -322,7 +322,7 @@ export async function revokePasskey(id: string, reauthToken: string) {
   );
 }
 
-export type WorkspaceTool = "sandbox" | "inspector" | "webhooks" | "composer";
+export type WorkspaceTool = "sandbox" | "inspector" | "webhooks" | "composer" | "tool-presets";
 
 export async function getWorkspace(tool: WorkspaceTool) {
   return apiFetch<{ tool: WorkspaceTool; data: Record<string, unknown> }>(

@@ -31,7 +31,9 @@ import { join, relative } from 'path';
 import {
   apiFetch,
   fetchWebhookHistory,
+  getWorkspace,
   refreshSession,
+  saveWorkspace,
   sendWebhook,
 } from '@/lib/api';
 import { buildTransaction, fetchOperations } from '@/lib/composer-api';
@@ -400,6 +402,8 @@ interface SmokeContract {
   method: string;
   /** Path relative to the API origin, including the version segment. */
   path: string;
+  /** Parameterized path used when the request target is a concrete route value. */
+  routePath?: string;
 }
 
 const SMOKE_CONTRACTS: readonly SmokeContract[] = [
@@ -428,6 +432,22 @@ const SMOKE_CONTRACTS: readonly SmokeContract[] = [
       }),
     method: 'POST',
     path: '/v1/composer/build',
+  },
+  {
+    flow: 'Account tool preset load',
+    wrapper: 'getWorkspace("tool-presets") in lib/api.ts',
+    invoke: () => getWorkspace('tool-presets'),
+    method: 'GET',
+    path: '/v1/workspaces/tool-presets',
+    routePath: '/v1/workspaces/:tool',
+  },
+  {
+    flow: 'Account tool preset save',
+    wrapper: 'saveWorkspace("tool-presets", data) in lib/api.ts',
+    invoke: () => saveWorkspace('tool-presets', { presets: [] }),
+    method: 'PUT',
+    path: '/v1/workspaces/tool-presets',
+    routePath: '/v1/workspaces/:tool',
   },
   {
     flow: 'Monitor watches',
@@ -582,7 +602,7 @@ describe('API-to-frontend route contract', () => {
     const routes = serverRouteKeys();
 
     for (const contract of SMOKE_CONTRACTS) {
-      const key = `${contract.method} /api${normalizeApiPath(contract.path)}`;
+      const key = `${contract.method} /api${normalizeApiPath(contract.routePath ?? contract.path)}`;
       expect(`${contract.flow}: ${routes.has(key) ? 'ok' : `missing ${key}`}`).toBe(
         `${contract.flow}: ok`,
       );

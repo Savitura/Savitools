@@ -10,6 +10,8 @@ This guide walks you through the entire workflow using the SaviTools API on test
 5. Build a transaction
 6. Submit it
 
+On the SaviTools home page, create named tool presets to choose which tools appear in each collection. Presets sync to your account when signed in; guests keep them in the current browser.
+
 All commands use `curl`. For Windows PowerShell users, some escaping may differ.
 
 ---

@@ -1,6 +1,6 @@
 import { EcosystemStrip } from '@/components/onboarding/ecosystem-strip';
 import { QuickstartChecklist } from '@/components/onboarding/quickstart-checklist';
-import { tools } from '@/lib/tools';
+import { ToolPresetManager } from '@/components/tools/tool-preset-manager';
 import { EXAMPLE_TX_HASH } from '@/lib/examples';
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -37,32 +37,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div>
-          <h2 className="text-sm font-semibold mb-4">Tools</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tools.map((tool) => (
-              <Link
-                key={tool.href}
-                href={tool.href}
-                className="group border border-border rounded-lg p-5 hover:border-foreground/30 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-sm font-medium">{tool.label}</span>
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded font-mono ${
-                      tool.status === 'MVP'
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {tool.status}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">{tool.description}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <ToolPresetManager />
       </div>
 
       <EcosystemStrip />

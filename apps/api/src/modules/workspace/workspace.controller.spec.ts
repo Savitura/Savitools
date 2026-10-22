@@ -102,7 +102,7 @@ describe('WorkspaceController', () => {
   });
 
   it('returns the tool state for the generic workspace endpoints', async () => {
-    service.assertTool.mockResolvedValue(WorkspaceTool.SANDBOX);
+    service.assertTool.mockImplementation(async (tool) => tool as WorkspaceTool);
     service.getWorkspace.mockResolvedValue({ saved: true });
     service.upsertWorkspace.mockResolvedValue({ saved: true });
 
@@ -114,6 +114,12 @@ describe('WorkspaceController', () => {
     await expect(
       controller.upsertWorkspace({ id: 'user-1' }, 'sandbox', { data: { saved: true } }),
     ).resolves.toEqual({ tool: WorkspaceTool.SANDBOX, data: { saved: true } });
+
+    await expect(controller.getWorkspace({ id: 'user-1' }, 'tool-presets')).resolves.toEqual({
+      tool: WorkspaceTool.TOOL_PRESETS,
+      data: { saved: true },
+    });
+    expect(service.getWorkspace).toHaveBeenLastCalledWith('user-1', WorkspaceTool.TOOL_PRESETS);
   });
 
   it('exports a workspace through the service', async () => {

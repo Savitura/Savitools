@@ -245,6 +245,7 @@ describe('WorkspaceService', () => {
       expect(await service.assertTool('inspector')).toBe(WorkspaceTool.INSPECTOR);
       expect(await service.assertTool('webhooks')).toBe(WorkspaceTool.WEBHOOKS);
       expect(await service.assertTool('composer')).toBe(WorkspaceTool.COMPOSER);
+      expect(await service.assertTool('tool-presets')).toBe(WorkspaceTool.TOOL_PRESETS);
     });
 
     it('throws NotFoundException for invalid tool names', async () => {
