@@ -15,6 +15,7 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import { AppModule } from "./app.module";
+import { API_DEFAULT_VERSION } from "./contracts/api-contract";
 import { enableGracefulShutdown } from "./config/graceful-shutdown";
 import { parseTrustProxy } from "./config/trust-proxy";
 import { parseWebOrigins } from "./config/web-origins";
@@ -133,7 +134,7 @@ async function bootstrap() {
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup(`${prefix}/docs`, app, document);
+    SwaggerModule.setup(`${prefix}/v${API_DEFAULT_VERSION}/docs`, app, document);
   }
 
   // Nest only registers its SIGTERM/SIGINT listeners when this is called, and

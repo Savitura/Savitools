@@ -31,6 +31,7 @@ export const SENSITIVE_KEY_PATTERNS = [
   /key/i,
   /jwt/i,
   /token/i,
+  /set[-_]cookie/i,
   /secret/i,
   /signature/i,
   /signing_key/i,

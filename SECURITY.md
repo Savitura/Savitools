@@ -26,7 +26,7 @@ SaviTools implements the following security measures:
 - **CORS**: Restricted origins via `WEB_ORIGIN` environment variable
 - **Rate Limiting**: Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL`; auth routes (login/register/password reset) use a tighter 5 req/min per-IP override, with an additional per-email cap on forgot-password
 - **Proxy trust**: Set `TRUST_PROXY` (hop count or CIDR list) so rate limiting keys on the real client IP behind a reverse proxy
-- **Security headers**: `@fastify/helmet` on API responses (`X-Content-Type-Options`, `X-Frame-Options`, CSP, HSTS in production). CSP is relaxed only for `/api/docs` in non-production
+- **Security headers**: `@fastify/helmet` on API responses (`X-Content-Type-Options`, `X-Frame-Options`, CSP, HSTS in production). CSP is relaxed only for `/api/v1/docs` in non-production
 - **Schema safety**: TypeORM `synchronize` is limited to `development`/`test`; deployments apply migrations (`RUN_MIGRATIONS` or `migration:run`)
 - **Input Validation**: All API inputs are validated using class-validator
 - **Authenticated Signing**: Testnet wallet and sandbox payment endpoints enforce JWT authentication and rate limiting for server-side secret key signing

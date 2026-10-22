@@ -65,7 +65,7 @@ Browser ────────────────────────
                            │ HTTP
                            ▼
 API ──────────────────────────────────────────────────────────────────────
-  NestJS (Fastify adapter) │ TypeORM │ BullMQ │ Swagger at /api/docs
+  NestJS (Fastify adapter) │ TypeORM │ BullMQ │ Swagger at /api/v1/docs
   ┌─────────────────────────────────────────────────────────────────┐
   │ modules: transaction · wallet · simulator · webhook · monitor   │
   │          playground · contracts · sdkgen · network · federation │
@@ -327,7 +327,7 @@ npm run dev
 | ------------ | ------------------------------ |
 | Frontend     | http://localhost:3000          |
 | API          | http://localhost:3001/api      |
-| Swagger docs | http://localhost:3001/api/docs |
+| Swagger docs | http://localhost:3001/api/v1/docs |
 
 ### 5. Run individual apps
 

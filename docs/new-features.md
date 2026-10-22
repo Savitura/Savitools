@@ -14,7 +14,7 @@ This document provides comprehensive documentation for the newly implemented fea
 ## SEP-10 Web Authentication Debugger
 
 **Issue**: #342  
-**API Endpoint**: `/api/sep10`  
+**API Endpoint**: `/api/v1/sep10`  
 **Frontend Route**: `/sep10`
 
 ### Overview
@@ -30,7 +30,7 @@ The SEP-10 debugger helps developers test and debug SEP-10 Web Authentication fl
 
 ### API Endpoints
 
-#### POST /api/sep10/fetch-challenge
+#### POST /api/v1/sep10/fetch-challenge
 
 Fetches an authentication challenge from a SEP-10 server.
 
@@ -60,7 +60,7 @@ Fetches an authentication challenge from a SEP-10 server.
 }
 ```
 
-#### POST /api/sep10/validate-challenge
+#### POST /api/v1/sep10/validate-challenge
 
 Validates a SEP-10 challenge transaction.
 
@@ -89,7 +89,7 @@ Validates a SEP-10 challenge transaction.
 }
 ```
 
-#### POST /api/sep10/sign-challenge
+#### POST /api/v1/sep10/sign-challenge
 
 Signs a challenge transaction with a keypair.
 
@@ -109,7 +109,7 @@ Signs a challenge transaction with a keypair.
 }
 ```
 
-#### POST /api/sep10/token-exchange
+#### POST /api/v1/sep10/token-exchange
 
 Exchanges a signed challenge for a JWT token.
 
@@ -174,7 +174,7 @@ const token = await fetch('/api/sep10/token-exchange', {
 ## Soroban Contract Storage Explorer
 
 **Issue**: #343  
-**API Endpoint**: `/api/soroban-storage`  
+**API Endpoint**: `/api/v1/soroban-storage`  
 **Frontend Route**: `/soroban-storage`
 
 ### Overview
@@ -189,7 +189,7 @@ The Soroban Storage Explorer allows developers to query, compare, and inspect co
 
 ### API Endpoints
 
-#### POST /api/soroban-storage/query
+#### POST /api/v1/soroban-storage/query
 
 Queries contract storage for a specific key.
 
@@ -216,7 +216,7 @@ Queries contract storage for a specific key.
 }
 ```
 
-#### POST /api/soroban-storage/compare
+#### POST /api/v1/soroban-storage/compare
 
 Compares storage between two contracts.
 
@@ -252,7 +252,7 @@ Compares storage between two contracts.
 }
 ```
 
-#### POST /api/soroban-storage/typed-key
+#### POST /api/v1/soroban-storage/typed-key
 
 Generates a properly typed storage key.
 
@@ -318,7 +318,7 @@ const comparison = await fetch('/api/soroban-storage/compare', {
 ## Stellar.toml Editor, Linter, and Preview
 
 **Issue**: #348  
-**API Endpoint**: `/api/stellar-toml`  
+**API Endpoint**: `/api/v1/stellar-toml`  
 **Frontend Route**: `/stellar-toml`
 
 ### Overview
@@ -334,7 +334,7 @@ The stellar.toml editor helps developers create, validate, and format stellar.to
 
 ### API Endpoints
 
-#### POST /api/stellar-toml/parse
+#### POST /api/v1/stellar-toml/parse
 
 Parses and validates stellar.toml content.
 
@@ -358,7 +358,7 @@ Parses and validates stellar.toml content.
 }
 ```
 
-#### POST /api/stellar-toml/format
+#### POST /api/v1/stellar-toml/format
 
 Formats stellar.toml content.
 
@@ -378,7 +378,7 @@ Formats stellar.toml content.
 }
 ```
 
-#### POST /api/stellar-toml/validate
+#### POST /api/v1/stellar-toml/validate
 
 Validates stellar.toml against SEP-1.
 
@@ -410,7 +410,7 @@ Validates stellar.toml against SEP-1.
 }
 ```
 
-#### GET /api/stellar-toml/template
+#### GET /api/v1/stellar-toml/template
 
 Gets a pre-configured template.
 
@@ -468,7 +468,7 @@ const formatted = await fetch('/api/stellar-toml/format', {
 ## Stellar Sequence Number Planner
 
 **Issue**: #345  
-**API Endpoint**: `/api/sequence-planner`  
+**API Endpoint**: `/api/v1/sequence-planner`  
 **Frontend Route**: `/sequence-planner`
 
 ### Overview
@@ -485,7 +485,7 @@ The Sequence Number Planner helps developers plan and validate transaction seque
 
 ### API Endpoints
 
-#### GET /api/sequence-planner/account-sequence
+#### GET /api/v1/sequence-planner/account-sequence
 
 Gets the current sequence number for an account.
 
@@ -502,7 +502,7 @@ Gets the current sequence number for an account.
 }
 ```
 
-#### POST /api/sequence-planner/validate-sequence
+#### POST /api/v1/sequence-planner/validate-sequence
 
 Validates a proposed sequence number.
 
@@ -526,7 +526,7 @@ Validates a proposed sequence number.
 }
 ```
 
-#### POST /api/sequence-planner/plan
+#### POST /api/v1/sequence-planner/plan
 
 Plans sequences for multiple transactions.
 

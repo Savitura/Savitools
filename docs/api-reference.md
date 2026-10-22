@@ -6,9 +6,9 @@ Developer infrastructure for the Stellar ecosystem.
 
 | Environment | URL | Notes |
 |-------------|-----|-------|
-| **Mainnet** | `https://api.savitools.com/api` | Production Stellar network |
-| **Testnet** | `https://testnet-api.savitools.com/api` | Stellar testnet environment |
-| **Local Development** | `http://localhost:3001/api` | Development server (default) |
+| **Mainnet** | `https://api.savitools.com/api/v1` | Production Stellar network |
+| **Testnet** | `https://testnet-api.savitools.com/api/v1` | Stellar testnet environment |
+| **Local Development** | `http://localhost:3001/api/v1` | Development server (default) |
 
 ## API Versioning
 
