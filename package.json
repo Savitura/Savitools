@@ -7,8 +7,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "node api.js && turbo dev",
-    "build": "node api.js && turbo build",
+    "dev": "turbo dev",
+    "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
