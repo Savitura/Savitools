@@ -16,13 +16,28 @@ import { Buffer } from 'buffer';
 
 /**
  * Stellar StrKey version bytes. Values match the Stellar core
- * `StrKeyType` definitions.
+ * `StrKeyType` definitions according to SEP-23.
+ *
+ * Each version byte is derived by shifting the 5-bit type ID left by 3 bits
+ * (type << 3), producing an 8-bit byte whose leading 5 bits yield the expected
+ * base32 prefix character:
+ * - Ed25519 Public Key:  6  << 3 = 48  ('G')
+ * - Muxed Account:       12 << 3 = 96  ('M')
+ * - Signed Payload:      15 << 3 = 120 ('P')
+ * - Contract ID:         2  << 3 = 16  ('C')
+ * - Secret Seed:         18 << 3 = 144 ('S')
+ * - Pre-auth Tx Hash:    19 << 3 = 152 ('T')
+ * - SHA-256 Hash-X:      23 << 3 = 184 ('X')
  */
 export const STRKEY_VERSIONS = {
-  EDNARD_KEYS: 48,
+  ED25519_PUBLIC_KEY: 48,
+  EDNARD_KEYS: 48, // Alias for backward compatibility
+  ED25519_SECRET_SEED: 144,
   PRIVATE_KEY: 144,
   PRE_AUTH_TX: 152,
+  SHA256_HASH: 184,
   HASH_X: 184,
+  MED25519_PUBLIC_KEY: 96,
   MUXED_ACCOUNT: 96,
   SIGNED_PAYLOAD: 120,
   CONTRACT: 16,
@@ -32,10 +47,14 @@ export type StrKeyType = keyof typeof STRKEY_VERSIONS;
 
 /** Human-readable labels for each StrKey type. */
 export const STRKEY_LABELS: Record<StrKeyType, string> = {
+  ED25519_PUBLIC_KEY: 'Account public key (G…)',
   EDNARD_KEYS: 'Account public key (G…)',
+  ED25519_SECRET_SEED: 'Secret seed (S…)',
   PRIVATE_KEY: 'Secret seed (S…)',
   PRE_AUTH_TX: 'Pre-authorized transaction hash (T…)',
+  SHA256_HASH: 'SHA-256 hash (X…)',
   HASH_X: 'SHA-256 hash (X…)',
+  MED25519_PUBLIC_KEY: 'Muxed account (M…)',
   MUXED_ACCOUNT: 'Muxed account (M…)',
   SIGNED_PAYLOAD: 'Signed payload (P…)',
   CONTRACT: 'Contract ID (C…)',
@@ -43,19 +62,29 @@ export const STRKEY_LABELS: Record<StrKeyType, string> = {
 
 /** Expected payload length in bytes for each StrKey type. */
 export const STRKEY_PAYLOAD_LENGTH: Record<StrKeyType, number> = {
+  ED25519_PUBLIC_KEY: 32,
   EDNARD_KEYS: 32,
+  ED25519_SECRET_SEED: 32,
   PRIVATE_KEY: 32,
   PRE_AUTH_TX: 32,
+  SHA256_HASH: 32,
   HASH_X: 32,
+  MED25519_PUBLIC_KEY: 40,
   MUXED_ACCOUNT: 40,
   SIGNED_PAYLOAD: 40,
   CONTRACT: 32,
 };
 
-/** Reverse lookup from version byte to StrKey type. */
-const VERSION_TO_TYPE: ReadonlyMap<number, StrKeyType> = new Map(
-  Object.entries(STRKEY_VERSIONS).map(([type, version]) => [version, type as StrKeyType]),
-);
+/** Reverse lookup from version byte to canonical StrKey type. */
+const VERSION_TO_TYPE: ReadonlyMap<number, StrKeyType> = new Map([
+  [STRKEY_VERSIONS.ED25519_PUBLIC_KEY, 'ED25519_PUBLIC_KEY'],
+  [STRKEY_VERSIONS.PRIVATE_KEY, 'PRIVATE_KEY'],
+  [STRKEY_VERSIONS.PRE_AUTH_TX, 'PRE_AUTH_TX'],
+  [STRKEY_VERSIONS.HASH_X, 'HASH_X'],
+  [STRKEY_VERSIONS.MUXED_ACCOUNT, 'MUXED_ACCOUNT'],
+  [STRKEY_VERSIONS.SIGNED_PAYLOAD, 'SIGNED_PAYLOAD'],
+  [STRKEY_VERSIONS.CONTRACT, 'CONTRACT'],
+]);
 
 // ------------------------------------------------------------------------
 // Base32 (Stellar variant, no padding)
@@ -275,7 +304,10 @@ export function decodeStrKey(input: string): StrKeyDecoded {
   return {
     input: trimmed,
     type,
-    label: type !== null ? STRKEY_LABELS[type] : `Unsupported version byte 0x${versionByte.toString(16).padStart(2, '0')}`,
+    label:
+      type !== null
+        ? STRKEY_LABELS[type]
+        : `Unsupported version byte 0x${versionByte.toString(16).padStart(2, '0')}`,
     versionByte,
     payload,
     payloadLength: payload.length,
@@ -321,7 +353,7 @@ export function encodeStrKey(type: StrKeyType, payload: Uint8Array): string {
 
 /** List of supported StrKey types in a deterministic order for the UI. */
 export const STRKEY_TYPES_IN_ORDER: StrKeyType[] = [
-  'EDNARD_KEYS',
+  'ED25519_PUBLIC_KEY',
   'PRIVATE_KEY',
   'MUXED_ACCOUNT',
   'CONTRACT',
@@ -331,7 +363,10 @@ export const STRKEY_TYPES_IN_ORDER: StrKeyType[] = [
 ];
 
 /** Types whose payload is secret and must be masked by default. */
-export const STRKEY_SECRET_TYPES: ReadonlySet<StrKeyType> = new Set(['PRIVATE_KEY']);
+export const STRKEY_SECRET_TYPES: ReadonlySet<StrKeyType> = new Set([
+  'PRIVATE_KEY',
+  'ED25519_SECRET_SEED',
+]);
 
 /**
  * Mask a StrKey for display without revealing its payload.
