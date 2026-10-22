@@ -19,7 +19,10 @@ export function redactString(value: string): string {
   }
   let out = value.replace(JWT_REGEX, REDACTED);
   out = out.replace(SEED_REGEX, REDACTED);
-  out = out.replace(new RegExp(`^${BEARER_PREFIX}[A-Za-z0-9_.-]+`, 'gi'), `${BEARER_PREFIX}${REDACTED}`);
+  out = out.replace(
+    new RegExp(`^${BEARER_PREFIX}[A-Za-z0-9_.-]+`, 'gi'),
+    `${BEARER_PREFIX}${REDACTED}`,
+  );
   return out;
 }
 
@@ -38,6 +41,7 @@ export const SENSITIVE_KEY_PATTERNS = [
   /password/i,
   /authorization/i,
   /credential/i,
+  /cookie/i,
 ];
 
 /** Known sensitive field names (exact match, case-insensitive). */
