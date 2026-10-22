@@ -209,6 +209,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/federation/asset-metadata",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/federation/diagnostics",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/federation/link-preview",
       "auth": "public"
     },
@@ -229,6 +239,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/federation/validate-home-domain",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/health",
       "auth": "public"
     },
@@ -240,6 +255,21 @@
     {
       "method": "GET",
       "path": "/api/v1/inspector/account/:publicKey/txs",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/auth-entry",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/auth-entry/export",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/auth-entry/inspect",
       "auth": "public"
     },
     {
@@ -264,8 +294,58 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/monitor/metrics",
+      "path": "/api/v1/ledger-close/stats",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/details",
       "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/search",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/share-value",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/unwatch",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/liquidity-pools/watch",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/liquidity-pools/watched",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitor/digest/flush",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/metrics",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitor/preferences",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/monitor/preferences",
+      "auth": "jwt"
     },
     {
       "method": "GET",
@@ -280,7 +360,7 @@
     {
       "method": "GET",
       "path": "/api/v1/monitor/stream",
-      "auth": "public"
+      "auth": "jwt"
     },
     {
       "method": "GET",
@@ -324,48 +404,53 @@
     },
     {
       "method": "GET",
-      "path": "/api/v1/network/profiles",
+      "path": "/api/v1/multisig/limits",
       "auth": "public"
     },
     {
       "method": "POST",
-      "path": "/api/v1/network/profiles",
-      "auth": "public"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/v1/network/profiles/:id",
-      "auth": "public"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/network/profiles/:id",
-      "auth": "public"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/v1/network/profiles/:id/default",
+      "path": "/api/v1/multisig/simulate",
       "auth": "public"
     },
     {
       "method": "GET",
-      "path": "/api/v1/network/profiles/:id/export",
-      "auth": "public"
+      "path": "/api/v1/network/profiles",
+      "auth": "jwt"
     },
     {
       "method": "POST",
-      "path": "/api/v1/network/profiles/:id/select",
-      "auth": "public"
+      "path": "/api/v1/network/profiles",
+      "auth": "jwt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/network/profiles/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/network/profiles/:id",
+      "auth": "jwt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/network/profiles/:id/default",
+      "auth": "jwt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/network/profiles/:id/export",
+      "auth": "jwt"
     },
     {
       "method": "POST",
       "path": "/api/v1/network/profiles/import",
-      "auth": "public"
+      "auth": "jwt"
     },
     {
       "method": "POST",
       "path": "/api/v1/network/profiles/verify",
-      "auth": "public"
+      "auth": "jwt"
     },
     {
       "method": "GET",
@@ -460,11 +545,76 @@
     {
       "method": "POST",
       "path": "/api/v1/sandbox/payment",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sandbox/reset",
       "auth": "public"
     },
     {
       "method": "POST",
       "path": "/api/v1/sdkgen/generate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/exchange-token",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/fetch-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/sign-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep10/validate-challenge",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep24/debugger/sessions",
+      "auth": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/sep24/debugger/sessions/:id",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sep24/debugger/sessions/:id/export",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sep24/debugger/sessions/:id/poll",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sep24/debugger/sessions/:id/timeline",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sequence-planner/account-sequence",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sequence-planner/plan",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sequence-planner/validate-sequence",
       "auth": "public"
     },
     {
@@ -494,6 +644,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/simulator/path-payment-lab",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/simulator/path-receive",
       "auth": "public"
     },
@@ -515,6 +670,61 @@
     {
       "method": "GET",
       "path": "/api/v1/simulator/trades",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-rpc/execute",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/soroban-rpc/methods",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/soroban-rpc/methods/:method",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/compare",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/create-typed-key",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/soroban-storage/durability-info",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/soroban-storage/query",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/format",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/parse",
+      "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/stellar-toml/template",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/stellar-toml/validate",
       "auth": "public"
     },
     {
@@ -581,6 +791,26 @@
       "method": "GET",
       "path": "/api/v1/wallet/asset/:code/:issuer/trustlines",
       "auth": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/wallet/balances",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/fund",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/generate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/wallet/payment",
+      "auth": "jwt"
     },
     {
       "method": "GET",

@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the format check can diff against the base commit.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -19,9 +22,26 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Check for unresolved merge conflicts
+        run: |
+          if git grep -n -E '^<<<<<<<|^>>>>>>>'; then
+            echo "::error::Unresolved merge conflict markers detected in tracked files"
+            exit 1
+          fi
       - run: npx turbo lint
-      - run: npx tsc --noEmit --project apps/api/tsconfig.json
-      - run: npx tsc --noEmit --project apps/web/tsconfig.json
+      - run: npx turbo typecheck
+      # Most of the repo predates the Prettier config, so checking every file
+      # fails on code nobody touched. Check only the files this push or PR
+      # changes; run `npm run format:check` locally for the full report.
+      - name: Check formatting of changed files
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            BASE_SHA="$(git rev-parse HEAD~1)"
+          fi
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" HEAD -- '*.ts' '*.tsx' '*.json' '*.md' \
+            | xargs -0 -r npx prettier --check --ignore-unknown
 
   build:
     name: Build
@@ -37,6 +57,10 @@ jobs:
 
       - run: npm ci
       - run: npx turbo build
+
+      - run: npm run sbom
+        env:
+          CYCLONEDX_COMPONENTS: 'projects,@savitools/api,@savitools/web'
 
   test:
     name: Test
@@ -118,6 +142,29 @@ jobs:
       - name: Web route contract (wrappers, hygiene and smoke flows)
         run: npm test --workspace @savitools/web -- api-contract
 
+  openapi-contract:
+    name: OpenAPI Contract (routes + fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Boots every controller with mocked dependencies, generates the Swagger
+      # document in memory, and fails when a route or its documented
+      # success/validation response is missing. No Postgres, Redis or Stellar.
+      - name: Generate and validate the OpenAPI contract
+        run: npm run test:openapi
+
+      # Verifies bundled external SDK generator specs (Fluxa, CrowdPay) match upstream (#428)
+      - name: Verify bundled external SDK generator specs are current
+        run: npm run specs:check
+
   docker-build:
     name: Docker Build & Smoke (API)
     runs-on: ubuntu-latest
@@ -156,6 +203,21 @@ jobs:
             if curl --fail --silent --max-time 3 http://127.0.0.1:3001/api/v1/health > /dev/null \
               && [ "$(docker inspect --format '{{.State.Health.Status}}' savitools-api-smoke)" = healthy ]; then
               echo 'API returned HTTP 200 and the image health check is healthy'
+
+              # The bundled OpenAPI specs are build assets (see
+              # apps/api/nest-cli.json). If they are not copied into dist this
+              # endpoint 404s, so assert it actually generates code from the
+              # fluxa spec instead of only checking that the port answers.
+              sdk_response="$(curl --fail --silent --show-error --max-time 20 \
+                --header 'content-type: application/json' \
+                --data '{"spec":"fluxa","language":"typescript"}' \
+                http://127.0.0.1:3001/api/v1/sdkgen/generate)"
+              if ! printf '%s' "$sdk_response" | grep -q '/v1/transfers'; then
+                echo "sdkgen/generate did not return generated code: $sdk_response"
+                docker logs savitools-api-smoke
+                exit 1
+              fi
+              echo 'POST /api/v1/sdkgen/generate returned code generated from the bundled fluxa spec'
               exit 0
             fi
             if [ "$(docker inspect --format '{{.State.Status}}' savitools-api-smoke)" != running ]; then

@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: savitools-web
+    runtime: docker
+    dockerfilePath: apps/web/Dockerfile
+    dockerContext: .
+    plan: standard
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_STELLAR_NETWORK
+        value: testnet
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: savitools-api
+          property: url
+          append: /api
+
+  - type: web
+    name: savitools-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: standard
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: STELLAR_HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: STELLAR_RPC_URL
+        value: https://soroban-rpc-testnet.stellar.org
+      - key: STELLAR_NETWORK_PASSPHRASE
+        value: "Test SDF Network ; September 2015"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: savitools-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: savitools-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_SECRET
+        generateValue: true
+      - key: DEPLOYER_SECRET_KEY
+        sync: false
+
+  - type: redis
+    name: savitools-redis
+    plan: standard
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: savitools-postgres
+    plan: standard
+    databaseName: savitools
+    user: savitools

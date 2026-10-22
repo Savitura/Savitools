@@ -10,6 +10,8 @@ import { MONITOR_ROLES } from '../modules/monitor/monitor-runtime.config';
  * optional modules must be accompanied by the variables those modules read.
  */
 
+const PUBLIC_NETWORK_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+
 const PLACEHOLDER_PATTERNS = [
   /^change-me/i,
   /^changeme/i,
@@ -156,6 +158,18 @@ export function collectConfigurationErrors(
       'DEPLOYER_SECRET_KEY must be a valid Stellar secret key (56 characters starting with S)';
     if (isProduction) errors.push(message);
     else warnings.push(message);
+  }
+
+  // DEPLOYER_SECRET_KEY is shared by every allowlisted user, so the contracts
+  // module is testnet/futurenet only (Savitura/Savitools#425).
+  const stellarNetwork = (get('STELLAR_NETWORK') ?? '').trim().toLowerCase();
+  if (
+    ['mainnet', 'public', 'pubnet'].includes(stellarNetwork) ||
+    get('STELLAR_NETWORK_PASSPHRASE') === PUBLIC_NETWORK_PASSPHRASE
+  ) {
+    errors.push(
+      'STELLAR_NETWORK / STELLAR_NETWORK_PASSPHRASE must be a test network (testnet, futurenet or local): the shared DEPLOYER_SECRET_KEY must never spend mainnet funds',
+    );
   }
 
   // ─── Feature-specific settings ────────────────────────────────────────────

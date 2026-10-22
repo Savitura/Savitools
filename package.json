@@ -1,6 +1,7 @@
 {
   "name": "savitools",
   "version": "0.1.0",
+  "homepage": "https://savitools.savitura.com",
   "private": true,
   "workspaces": [
     "apps/*"
@@ -9,14 +10,23 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "test:openapi": "npm run test:openapi --workspace @savitools/api",
+    "specs:generate": "node scripts/generate-sdk-specs.mjs",
+    "specs:check": "node scripts/generate-sdk-specs.mjs --check",
+    "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
-    "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "smoke:playground": "node scripts/check-playground-hosts.mjs",
+    "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\"",
+    "sbom": "cyclonedx-bom -o dist/sbom/cyclonedx.json"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
     "turbo": "^2.3.3",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "cyclonedx-bom": "^0.0.9"
   },
   "engines": {
     "node": ">=20.0.0",

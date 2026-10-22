@@ -6,14 +6,19 @@ import {
   Logger,
   NotFoundException,
   Optional,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { InjectRepository } from "@nestjs/typeorm";
-import * as StellarSdk from "@stellar/stellar-sdk";
-import { Between, LessThan, Repository } from "typeorm";
-import { MetricsService } from "../metrics/metrics.service";
-import { NetworkSample } from "./entities/network-sample.entity";
-import { NetworkProfile } from "./entities/network-profile.entity";
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as StellarSdk from '@stellar/stellar-sdk';
+import { Between, LessThan, Repository } from 'typeorm';
+import { MetricsService } from '../metrics/metrics.service';
+import { assertPublicHostname } from '../../common/ssrf-guard';
+import { NetworkSample } from './entities/network-sample.entity';
+import { NetworkProfile } from './entities/network-profile.entity';
+import {
+  NETWORK_PROFILE_SCHEMA_VERSION,
+  migrateNetworkProfilePayload,
+} from './network-profile-format';
 
 export interface NetworkStatus {
   timestamp: number;
@@ -59,7 +64,7 @@ export interface NetworkHistorySummary {
 }
 
 export interface NetworkHistoryResponse {
-  network: "mainnet" | "testnet";
+  network: 'mainnet' | 'testnet';
   from: string;
   to: string;
   bucketSeconds: number;
@@ -94,8 +99,8 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     private readonly networkProfileRepository: Repository<NetworkProfile>,
     @Optional() private readonly metricsService?: MetricsService,
   ) {
-    this.metricsService?.setHorizonConnections("mainnet", 1);
-    this.metricsService?.setHorizonConnections("testnet", 1);
+    this.metricsService?.setHorizonConnections('mainnet', 1);
+    this.metricsService?.setHorizonConnections('testnet', 1);
   }
 
   async createNetworkProfile(
@@ -108,7 +113,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
       isDefault?: boolean;
     },
   ): Promise<NetworkProfile> {
-    const horizonUrl = input.horizonUrl.trim().replace(/\/+$/, "");
+    const horizonUrl = input.horizonUrl.trim().replace(/\/+$/, '');
     await this.assertHorizonPassphrase(horizonUrl, input.networkPassphrase);
     if (input.isDefault) {
       await this.networkProfileRepository.update({ ownerId }, { isDefault: false });
@@ -128,7 +133,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   async listNetworkProfiles(ownerId: string): Promise<NetworkProfile[]> {
     return this.networkProfileRepository.find({
       where: { ownerId },
-      order: { isDefault: "DESC" },
+      order: { isDefault: 'DESC' },
     });
   }
 
@@ -137,7 +142,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
       where: { id, ownerId },
     });
     if (!profile) {
-      throw new NotFoundException("Network profile not found");
+      throw new NotFoundException('Network profile not found');
     }
     return profile;
   }
@@ -155,7 +160,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   ): Promise<NetworkProfile> {
     const profile = await this.getNetworkProfile(ownerId, id);
     const nextHorizonUrl = input.horizonUrl
-      ? input.horizonUrl.trim().replace(/\/+$/, "")
+      ? input.horizonUrl.trim().replace(/\/+$/, '')
       : profile.horizonUrl;
     const nextPassphrase = input.networkPassphrase ?? profile.networkPassphrase;
 
@@ -172,34 +177,26 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
       name: input.name ?? profile.name,
       horizonUrl: nextHorizonUrl,
       networkPassphrase: nextPassphrase,
-      friendbotUrl:
-        input.friendbotUrl !== undefined ? input.friendbotUrl : profile.friendbotUrl,
+      friendbotUrl: input.friendbotUrl !== undefined ? input.friendbotUrl : profile.friendbotUrl,
       isDefault: input.isDefault ?? profile.isDefault,
     });
   }
 
   async deleteNetworkProfile(ownerId: string, id: string): Promise<void> {
-    await this.networkProfileRepository.remove(
-      await this.getNetworkProfile(ownerId, id),
-    );
+    await this.networkProfileRepository.remove(await this.getNetworkProfile(ownerId, id));
   }
 
-  async setDefaultNetworkProfile(
-    ownerId: string,
-    id: string,
-  ): Promise<NetworkProfile> {
+  async setDefaultNetworkProfile(ownerId: string, id: string): Promise<NetworkProfile> {
     const profile = await this.getNetworkProfile(ownerId, id);
     await this.networkProfileRepository.update({ ownerId }, { isDefault: false });
     profile.isDefault = true;
     return this.networkProfileRepository.save(profile);
   }
 
-  async exportNetworkProfile(
-    ownerId: string,
-    id: string,
-  ): Promise<Record<string, unknown>> {
+  async exportNetworkProfile(ownerId: string, id: string): Promise<Record<string, unknown>> {
     const profile = await this.getNetworkProfile(ownerId, id);
     return {
+      schemaVersion: NETWORK_PROFILE_SCHEMA_VERSION,
       name: profile.name,
       horizonUrl: profile.horizonUrl,
       networkPassphrase: profile.networkPassphrase,
@@ -211,14 +208,17 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   async importNetworkProfile(
     ownerId: string,
     input: {
-      name: string;
+      schemaVersion?: number;
+      name?: string;
       horizonUrl: string;
       networkPassphrase: string;
       friendbotUrl?: string;
       isDefault?: boolean;
     },
   ): Promise<NetworkProfile> {
-    return this.createNetworkProfile(ownerId, input);
+    // Legacy exports have no version and may omit the display name; migrate
+    // before the create path validates against Horizon.
+    return this.createNetworkProfile(ownerId, migrateNetworkProfilePayload(input));
   }
 
   async verifyNetworkPassphrase(
@@ -226,21 +226,12 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     expectedPassphrase: string,
   ): Promise<{ match: boolean; actualPassphrase: string }> {
     const actualPassphrase = await this.fetchNetworkPassphrase(
-      horizonUrl.trim().replace(/\/+$/, ""),
+      horizonUrl.trim().replace(/\/+$/, ''),
     );
     return {
       match: actualPassphrase === expectedPassphrase,
       actualPassphrase,
     };
-  }
-
-  async fetchCurrentStatusForProfile(
-    ownerId: string,
-    profileId: string,
-  ): Promise<NetworkStatus> {
-    return this.fetchCurrentStatus(
-      await this.getNetworkProfile(ownerId, profileId),
-    );
   }
 
   private async assertHorizonPassphrase(horizonUrl: string, expectedPassphrase: string) {
@@ -260,42 +251,64 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     try {
       parsedUrl = new URL(horizonUrl);
     } catch {
-      throw new BadRequestException("Invalid Horizon URL");
+      throw new BadRequestException('Invalid Horizon URL');
     }
-    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-      throw new BadRequestException("Invalid protocol for Horizon URL");
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new BadRequestException('Invalid protocol for Horizon URL');
     }
     const hostname = parsedUrl.hostname.toLowerCase();
     if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1" ||
-      hostname === "0.0.0.0" ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("172.16.") ||
-      hostname.startsWith("172.17.") ||
-      hostname.startsWith("172.18.") ||
-      hostname.startsWith("172.19.") ||
-      hostname.startsWith("172.2") ||
-      hostname.startsWith("172.30.") ||
-      hostname.startsWith("172.31.") ||
-      hostname.endsWith(".local") ||
-      hostname === "metadata.google.internal"
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('172.16.') ||
+      hostname.startsWith('172.17.') ||
+      hostname.startsWith('172.18.') ||
+      hostname.startsWith('172.19.') ||
+      hostname.startsWith('172.2') ||
+      hostname.startsWith('172.30.') ||
+      hostname.startsWith('172.31.') ||
+      hostname.endsWith('.local') ||
+      hostname === 'metadata.google.internal'
     ) {
-      throw new BadRequestException("Forbidden local or private network address");
+      throw new BadRequestException('Forbidden local or private network address');
     }
+    await assertPublicHostname(hostname);
 
+    let currentUrl = horizonUrl;
+    let redirects = 0;
+    const maxRedirects = 5;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(horizonUrl, { signal: controller.signal });
+      let response = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual' });
+      while (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          break;
+        }
+        redirects++;
+        if (redirects > maxRedirects) {
+          throw new Error('Too many redirects');
+        }
+        const nextUrl = new URL(location, currentUrl);
+        if (nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') {
+          throw new BadRequestException('Only HTTP and HTTPS protocols are allowed in redirects');
+        }
+        await assertPublicHostname(nextUrl.hostname);
+        currentUrl = nextUrl.toString();
+        response = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual' });
+      }
+
       if (!response.ok) {
         throw new Error(`Horizon request failed with status ${response.status}`);
       }
       const data = (await response.json()) as { network_passphrase?: string };
       if (!data.network_passphrase) {
-        throw new Error("Horizon response did not include network_passphrase");
+        throw new Error('Horizon response did not include network_passphrase');
       }
       return data.network_passphrase;
     } finally {
@@ -316,21 +329,19 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
   }
 
   async fetchCurrentStatus(
-    network: "mainnet" | "testnet" | NetworkProfile,
+    network: 'mainnet' | 'testnet' | NetworkProfile,
   ): Promise<NetworkStatus> {
-    const networkLabel = typeof network === "string" ? network : network.name;
+    const networkLabel = typeof network === 'string' ? network : network.name;
     const horizonBaseUrl =
-      typeof network === "string" ? this.horizonUrl(network) : network.horizonUrl;
+      typeof network === 'string' ? this.horizonUrl(network) : network.horizonUrl;
     const passphrase =
-      typeof network === "string"
-        ? this.passphrases[network]
-        : network.networkPassphrase;
+      typeof network === 'string' ? this.passphrases[network] : network.networkPassphrase;
     const server = new StellarSdk.Horizon.Server(horizonBaseUrl);
     const start = Date.now();
 
     try {
       const [latestLedgersPage, feeStats] = await Promise.all([
-        server.ledgers().order("desc").limit(10).call(),
+        server.ledgers().order('desc').limit(10).call(),
         server.feeStats(),
       ]);
 
@@ -381,29 +392,25 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
 
   async pollAndStore() {
     if (this.pollInProgress) {
-      this.logger.warn(
-        "Skipping network status poll because one is still running",
-      );
+      this.logger.warn('Skipping network status poll because one is still running');
       return;
     }
 
     this.pollInProgress = true;
     try {
       await Promise.allSettled(
-        (["mainnet", "testnet"] as const).map((network) =>
-          this.sampleNetwork(network),
-        ),
+        (['mainnet', 'testnet'] as const).map((network) => this.sampleNetwork(network)),
       );
       await this.pruneRetention();
     } catch (error) {
-      this.logger.error("Error during network status polling", error);
+      this.logger.error('Error during network status polling', error);
     } finally {
       this.pollInProgress = false;
     }
   }
 
   async getHistory(
-    network: "mainnet" | "testnet",
+    network: 'mainnet' | 'testnet',
     from?: string,
     to?: string,
   ): Promise<NetworkHistoryResponse> {
@@ -425,7 +432,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
         network,
         sampledAt: Between(range.from, range.to),
       },
-      order: { sampledAt: "ASC" },
+      order: { sampledAt: 'ASC' },
       take: MAX_HISTORY_SAMPLES + 1,
     });
     if (samples.length > MAX_HISTORY_SAMPLES) {
@@ -462,7 +469,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     await this.sampleRepository.delete({ sampledAt: LessThan(cutoff) });
   }
 
-  private async sampleNetwork(network: "mainnet" | "testnet") {
+  private async sampleNetwork(network: 'mainnet' | 'testnet') {
     const horizonBaseUrl = this.horizonUrl(network);
     const startedAt = Date.now();
 
@@ -495,38 +502,30 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private horizonUrl(network: "mainnet" | "testnet") {
-    return network === "mainnet"
-      ? this.configService.get<string>(
-          "STELLAR_HORIZON_MAINNET_URL",
-          "https://horizon.stellar.org",
-        )
+  private horizonUrl(network: 'mainnet' | 'testnet') {
+    return network === 'mainnet'
+      ? this.configService.get<string>('STELLAR_HORIZON_MAINNET_URL', 'https://horizon.stellar.org')
       : this.configService.get<string>(
-          "STELLAR_HORIZON_URL",
-          "https://horizon-testnet.stellar.org",
+          'STELLAR_HORIZON_URL',
+          'https://horizon-testnet.stellar.org',
         );
   }
 
   private parseHistoryRange(from?: string, to?: string) {
     const now = new Date();
     const parsedTo = to ? new Date(to) : now;
-    const parsedFrom = from
-      ? new Date(from)
-      : new Date(parsedTo.getTime() - 60 * 60 * 1000);
+    const parsedFrom = from ? new Date(from) : new Date(parsedTo.getTime() - 60 * 60 * 1000);
 
-    if (
-      Number.isNaN(parsedFrom.getTime()) ||
-      Number.isNaN(parsedTo.getTime())
-    ) {
-      throw new BadRequestException("from and to must be valid ISO dates");
+    if (Number.isNaN(parsedFrom.getTime()) || Number.isNaN(parsedTo.getTime())) {
+      throw new BadRequestException('from and to must be valid ISO dates');
     }
 
     if (parsedFrom > parsedTo) {
-      throw new BadRequestException("from must be before to");
+      throw new BadRequestException('from must be before to');
     }
 
     if (parsedTo.getTime() - parsedFrom.getTime() > 90 * 24 * 60 * 60 * 1000) {
-      throw new BadRequestException("history range cannot exceed 90 days");
+      throw new BadRequestException('history range cannot exceed 90 days');
     }
 
     return { from: parsedFrom, to: parsedTo };
@@ -553,8 +552,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
       const avgLatency =
         latencySamples.length > 0
           ? Math.round(
-              latencySamples.reduce((sum, latency) => sum + latency, 0) /
-                latencySamples.length,
+              latencySamples.reduce((sum, latency) => sum + latency, 0) / latencySamples.length,
             )
           : null;
 
@@ -569,9 +567,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private summarizeBuckets(
-    buckets: NetworkHistoryBucket[],
-  ): NetworkHistorySummary {
+  private summarizeBuckets(buckets: NetworkHistoryBucket[]): NetworkHistorySummary {
     if (buckets.length === 0) {
       return {
         uptimePercent: 0,

@@ -12,6 +12,11 @@ export const PASSWORD_RESET_MAX_PER_EMAIL = 5;                 // per window
 export const PASSWORD_RESET_MAX_PER_IP = 20;                   // per window
 export const PASSWORD_RESET_WINDOW_MS = 15 * 60 * 1000;        // 15 minutes
 
+// Per-route Nest throttler overrides for auth endpoints (Savitura/Savitools#418).
+// Applied on top of the global THROTTLE_* defaults via @Throttle on the controller.
+export const AUTH_ROUTE_THROTTLE_LIMIT = 5;                    // requests
+export const AUTH_ROUTE_THROTTLE_TTL_MS = 60_000;              // 1 minute
+
 // WebAuthn passkeys (Savitura/Savitools#218)
 export const PASSKEY_CHALLENGE_TTL_SECONDS = 120;              // 2 minutes, single-use
 export const PASSKEY_REAUTH_TTL_SECONDS = 5 * 60;              // 5 minutes

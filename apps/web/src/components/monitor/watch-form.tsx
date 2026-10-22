@@ -3,14 +3,9 @@
 import { useState } from 'react';
 import { Federation, StrKey } from '@stellar/stellar-sdk';
 import { Plus, Trash2, X } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { apiErrorMessage, apiFetch } from '@/lib/api';
 import { addRecentItem } from '@/lib/recent-items';
-import {
-  AlertRuleType,
-  NotificationChannel,
-  Watch,
-  WatchEventType,
-} from './monitor-types';
+import { AlertRuleType, NotificationChannel, Watch, WatchEventType } from './monitor-types';
 
 interface DraftRule {
   id: string;
@@ -34,10 +29,7 @@ export function WatchForm({
   const [publicKey, setPublicKey] = useState('');
   const [label, setLabel] = useState('');
   const [network, setNetwork] = useState<'testnet' | 'public'>('testnet');
-  const [eventTypes, setEventTypes] = useState<WatchEventType[]>([
-    'transaction',
-    'payment',
-  ]);
+  const [eventTypes, setEventTypes] = useState<WatchEventType[]>(['transaction', 'payment']);
   const [rules, setRules] = useState<DraftRule[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,9 +45,7 @@ export function WatchForm({
       setPublicKey(record.account_id);
       setEventTypes(['transaction', 'payment']);
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : 'Federation lookup failed',
-      );
+      setError(reason instanceof Error ? reason.message : 'Federation lookup failed');
     } finally {
       setLoading(false);
     }
@@ -68,9 +58,7 @@ export function WatchForm({
     try {
       const isContract = StrKey.isValidContract(publicKey);
       if (!isContract && !StrKey.isValidEd25519PublicKey(publicKey)) {
-        throw new Error(
-          'Enter a valid Stellar account, contract ID, or federation address',
-        );
+        throw new Error('Enter a valid Stellar account, contract ID, or federation address');
       }
 
       const watch = await apiFetch<Watch>('/monitor/watches', {
@@ -79,17 +67,13 @@ export function WatchForm({
           publicKey,
           label,
           network,
-          eventTypes: isContract
-            ? ['contract']
-            : eventTypes.filter((type) => type !== 'contract'),
+          eventTypes: isContract ? ['contract'] : eventTypes.filter((type) => type !== 'contract'),
           alertRules: rules.map(({ id: _id, windowMinutes, ...rule }) => ({
             ...rule,
             ...(rule.type === 'transaction_count' && windowMinutes
               ? { windowMinutes: Number(windowMinutes) }
               : {}),
-            ...(rule.type === 'event_topic_equals' && rule.topic
-              ? { topic: rule.topic }
-              : {}),
+            ...(rule.type === 'event_topic_equals' && rule.topic ? { topic: rule.topic } : {}),
           })),
         }),
       });
@@ -104,14 +88,11 @@ export function WatchForm({
       setLabel('');
       setRules([]);
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : 'Failed to add watch',
-      );
+      setError(apiErrorMessage(reason, 'Failed to add watch'));
     } finally {
       setLoading(false);
     }
   };
-
 
   const isContract = StrKey.isValidContract(publicKey);
 
@@ -125,9 +106,7 @@ export function WatchForm({
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Add watch</h2>
-            <p className="text-sm text-muted-foreground">
-              Stream account or contract activity.
-            </p>
+            <p className="text-sm text-muted-foreground">Stream account or contract activity.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close">
             <X className="h-5 w-5" />
@@ -182,9 +161,7 @@ export function WatchForm({
           <Field label="Network">
             <select
               value={network}
-              onChange={(event) =>
-                setNetwork(event.target.value as 'testnet' | 'public')
-              }
+              onChange={(event) => setNetwork(event.target.value as 'testnet' | 'public')}
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             >
               <option value="testnet">Testnet</option>
@@ -194,31 +171,23 @@ export function WatchForm({
 
           <Field label="Event types">
             <div className="flex flex-wrap gap-3">
-              {(isContract ? ['contract'] : ['transaction', 'payment']).map(
-                (type) => (
-                  <label
-                    key={type}
-                    className="flex items-center gap-2 text-sm capitalize"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={
-                        isContract ||
-                        eventTypes.includes(type as WatchEventType)
-                      }
-                      disabled={isContract}
-                      onChange={() =>
-                        setEventTypes((current) =>
-                          current.includes(type as WatchEventType)
-                            ? current.filter((item) => item !== type)
-                            : [...current, type as WatchEventType],
-                        )
-                      }
-                    />
-                    {type}
-                  </label>
-                ),
-              )}
+              {(isContract ? ['contract'] : ['transaction', 'payment']).map((type) => (
+                <label key={type} className="flex items-center gap-2 text-sm capitalize">
+                  <input
+                    type="checkbox"
+                    checked={isContract || eventTypes.includes(type as WatchEventType)}
+                    disabled={isContract}
+                    onChange={() =>
+                      setEventTypes((current) =>
+                        current.includes(type as WatchEventType)
+                          ? current.filter((item) => item !== type)
+                          : [...current, type as WatchEventType],
+                      )
+                    }
+                  />
+                  {type}
+                </label>
+              ))}
             </div>
           </Field>
 
@@ -253,15 +222,11 @@ export function WatchForm({
                   contract={isContract}
                   onChange={(next) =>
                     setRules((current) =>
-                      current.map((item) =>
-                        item.id === next.id ? next : item,
-                      ),
+                      current.map((item) => (item.id === next.id ? next : item)),
                     )
                   }
                   onDelete={() =>
-                    setRules((current) =>
-                      current.filter((item) => item.id !== rule.id),
-                    )
+                    setRules((current) => current.filter((item) => item.id !== rule.id))
                   }
                 />
               ))}
@@ -274,9 +239,7 @@ export function WatchForm({
           </div>
 
           {error && (
-            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </p>
+            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
           )}
           <button
             type="submit"
@@ -303,47 +266,29 @@ function RuleEditor({
   onDelete: () => void;
 }) {
   const isCount = rule.type === 'transaction_count';
-  const isBalance =
-    rule.type === 'balance_above' || rule.type === 'balance_below';
+  const isBalance = rule.type === 'balance_above' || rule.type === 'balance_below';
   const needsThreshold =
-    isCount ||
-    isBalance ||
-    rule.type === 'amount_received_gte' ||
-    rule.type === 'amount_sent_gte';
+    isCount || isBalance || rule.type === 'amount_received_gte' || rule.type === 'amount_sent_gte';
   const needsAsset = rule.type === 'asset_received';
   const needsTopic = rule.type === 'event_topic_equals';
   return (
     <div className="space-y-3 rounded-md border border-border bg-background p-3">
       <div className="flex gap-2">
-<select
+        <select
           value={rule.type}
-          onChange={(event) =>
-            onChange({ ...rule, type: event.target.value as AlertRuleType })
-          }
+          onChange={(event) => onChange({ ...rule, type: event.target.value as AlertRuleType })}
           className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
         >
           <option value="any_activity">Any activity</option>
-          {!contract && (
-            <option value="amount_received_gte">
-              Amount received at least
-            </option>
-          )}
-          {!contract && (
-            <option value="amount_sent_gte">Amount sent at least</option>
-          )}
+          {!contract && <option value="amount_received_gte">Amount received at least</option>}
+          {!contract && <option value="amount_sent_gte">Amount sent at least</option>}
           {!contract && <option value="asset_received">Asset received</option>}
           {!contract && <option value="tx_failed">Transaction failed</option>}
           {!contract && <option value="balance_above">Balance above</option>}
           {!contract && <option value="balance_below">Balance below</option>}
-          {!contract && (
-            <option value="transaction_count">Transaction count reaches</option>
-          )}
-          {contract && (
-            <option value="event_topic_equals">Event topic equals</option>
-          )}
-          {contract && (
-            <option value="failed_contract_call">Failed contract call</option>
-          )}
+          {!contract && <option value="transaction_count">Transaction count reaches</option>}
+          {contract && <option value="event_topic_equals">Event topic equals</option>}
+          {contract && <option value="failed_contract_call">Failed contract call</option>}
         </select>
         <button type="button" onClick={onDelete} aria-label="Remove rule">
           <Trash2 className="h-4 w-4 text-muted-foreground" />
@@ -352,9 +297,7 @@ function RuleEditor({
       {needsThreshold && (
         <input
           value={rule.threshold}
-          onChange={(event) =>
-            onChange({ ...rule, threshold: event.target.value })
-          }
+          onChange={(event) => onChange({ ...rule, threshold: event.target.value })}
           placeholder={isCount ? 'Transaction count' : 'Threshold amount'}
           inputMode={isCount ? 'numeric' : 'decimal'}
           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
@@ -364,9 +307,7 @@ function RuleEditor({
       {isCount && (
         <input
           value={rule.windowMinutes}
-          onChange={(event) =>
-            onChange({ ...rule, windowMinutes: event.target.value })
-          }
+          onChange={(event) => onChange({ ...rule, windowMinutes: event.target.value })}
           placeholder="Window in minutes (default 60)"
           inputMode="numeric"
           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
@@ -392,50 +333,37 @@ function RuleEditor({
       {needsTopic && (
         <input
           value={rule.topic || ''}
-          onChange={(event) =>
-            onChange({ ...rule, topic: event.target.value })
-          }
+          onChange={(event) => onChange({ ...rule, topic: event.target.value })}
           placeholder="Topic (e.g. transfer)"
           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
         />
       )}
       <div className="flex flex-wrap gap-3">
-        {(['in_app', 'email', 'webhook'] as NotificationChannel[]).map(
-          (channel) => (
-            <label
-              key={channel}
-              className="flex items-center gap-1.5 text-xs capitalize"
-            >
-              <input
-                type="checkbox"
-                checked={rule.channels.includes(channel)}
-                onChange={() =>
-                  onChange({
-                    ...rule,
-                    channels: rule.channels.includes(channel)
-                      ? rule.channels.length === 1
-                        ? rule.channels
-                        : rule.channels.filter((item) => item !== channel)
-                      : [...rule.channels, channel],
-                  })
-                }
-              />
-              {channel.replace('_', ' ')}
-            </label>
-          ),
-        )}
+        {(['in_app', 'email', 'webhook'] as NotificationChannel[]).map((channel) => (
+          <label key={channel} className="flex items-center gap-1.5 text-xs capitalize">
+            <input
+              type="checkbox"
+              checked={rule.channels.includes(channel)}
+              onChange={() =>
+                onChange({
+                  ...rule,
+                  channels: rule.channels.includes(channel)
+                    ? rule.channels.length === 1
+                      ? rule.channels
+                      : rule.channels.filter((item) => item !== channel)
+                    : [...rule.channels, channel],
+                })
+              }
+            />
+            {channel.replace('_', ' ')}
+          </label>
+        ))}
       </div>
     </div>
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-medium">{label}</label>

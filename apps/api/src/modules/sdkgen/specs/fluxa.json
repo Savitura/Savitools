@@ -1,65 +1,5856 @@
 {
-  "openapi": "3.0.0",
-  "info": {
-    "title": "Fluxa API",
-    "version": "1.0.0"
-  },
-  "servers": [
-    {
-      "url": "https://api.fluxa.io"
-    }
-  ],
   "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
+    "parameters": {
+      "BeneficiaryID": {
+        "description": "Beneficiary ID",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "ClaimableBalanceID": {
+        "description": "Stellar claimable balance ID: the hex-encoded XDR of the balance ID\n(a 4-byte V0 type discriminant followed by a 32-byte hash).\n",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "KeyID": {
+        "description": "API key ID",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ScheduleID": {
+        "description": "Schedule ID",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "WalletID": {
+        "description": "Wallet ID",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "WebhookID": {
+        "description": "Webhook endpoint ID",
+        "in": "path",
+        "name": "id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
       }
-    }
-  },
-  "paths": {
-    "/v1/transfers": {
-      "post": {
-        "summary": "Create a new transfer",
-        "security": [
-          {
-            "bearerAuth": []
+    },
+    "responses": {
+      "BadRequest": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "BAD_REQUEST",
+                "message": "invalid request body",
+                "request_id": "req-example",
+                "status": 400
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
           }
+        },
+        "description": "Bad request"
+      },
+      "Conflict": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "REQUEST_IN_PROGRESS",
+                "message": "a request with this Idempotency-Key is still in progress",
+                "request_id": "req-example",
+                "status": 409
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Conflict — a request with this Idempotency-Key is still in flight"
+      },
+      "Forbidden": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "FORBIDDEN",
+                "message": "admin access required",
+                "request_id": "req-example",
+                "status": 403
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Forbidden — admin access required"
+      },
+      "InternalServerError": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "an unexpected error occurred",
+                "request_id": "req-example",
+                "status": 500
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Internal server error"
+      },
+      "NotFound": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "NOT_FOUND",
+                "message": "resource not found",
+                "request_id": "req-example",
+                "status": 404
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Resource not found"
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "UNAUTHORIZED",
+                "message": "missing or invalid authorization header",
+                "request_id": "req-example",
+                "status": 401
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Unauthorized — missing or invalid API key"
+      },
+      "UnprocessableEntity": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_BODY",
+                "message": "this Idempotency-Key was already used with a different request body",
+                "request_id": "req-example",
+                "status": 409
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description": "Unprocessable — the Idempotency-Key was reused with a different body"
+      }
+    },
+    "schemas": {
+      "APIKeyCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "description": "Raw API key — returned once only",
+            "type": "string"
+          },
+          "label": {
+            "nullable": true,
+            "type": "string"
+          },
+          "prefix": {
+            "description": "First 8 characters of the key for identification",
+            "type": "string"
+          },
+          "rotation_reminder_days": {
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "APIKeyScope": {
+        "description": "A permission an API key can hold, as `<resource>:<action>`, `<resource>:*`, or `*`.",
+        "enum": [
+          "*",
+          "admin",
+          "wallets:read",
+          "wallets:write",
+          "wallets:*",
+          "transfers:read",
+          "transfers:write",
+          "transfers:*",
+          "batches:read",
+          "batches:write",
+          "batches:*",
+          "webhooks:read",
+          "webhooks:write",
+          "webhooks:*",
+          "reports:read",
+          "reports:write",
+          "reports:*",
+          "keys:read",
+          "keys:write",
+          "keys:*",
+          "audit:read",
+          "audit:*",
+          "fiat:read",
+          "fiat:write",
+          "fiat:*",
+          "fx:read",
+          "fx:write",
+          "fx:*",
+          "fees:read",
+          "fees:*",
+          "beneficiaries:read",
+          "beneficiaries:write",
+          "beneficiaries:*",
+          "compliance:read",
+          "compliance:write",
+          "compliance:*"
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
+        "type": "string"
+      },
+      "APIKeySummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_expired": {
+            "type": "boolean"
+          },
+          "label": {
+            "nullable": true,
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "rotation_reminder_days": {
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AuditEvent": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "actor_type": {
+            "enum": ["api_key", "user", "system"],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ip_address": {
+            "nullable": true,
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "mode": {
+            "enum": ["test", "live"],
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "user_agent": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditListResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AuthResponse": {
+        "properties": {
+          "api_key": {
+            "description": "Raw API key — returned once only",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Balance": {
+        "properties": {
+          "asset_code": {
+            "description": "Asset code (e.g. USDC, XLM)",
+            "type": "string"
+          },
+          "balance": {
+            "description": "Available balance as decimal string",
+            "type": "string"
+          },
+          "issuer": {
+            "description": "Issuer public key (empty for native XLM)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BatchItemRequest": {
+        "properties": {
+          "amount": {
+            "description": "Positive decimal amount",
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "reference": {
+            "description": "Optional reference for this transfer",
+            "type": "string"
+          },
+          "to_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": ["to_wallet_id", "asset", "amount"],
+        "type": "object"
+      },
+      "BatchResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failed_count": {
+            "type": "integer"
+          },
+          "held_count": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "processing", "partial", "completed", "failed", "compliance_hold"],
+            "type": "string"
+          },
+          "success_count": {
+            "type": "integer"
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/BatchTransferItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BatchTransferItem": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "failure_message": {
+            "description": "Underlying initiation error for support diagnostics",
+            "type": "string"
+          },
+          "failure_reason": {
+            "description": "Machine-readable reason code when the transfer failed during initiation",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reference": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "submitted", "confirmed", "failed"],
+            "type": "string"
+          },
+          "to_wallet_id": {
+            "type": "string"
+          },
+          "tx_hash": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Beneficiary": {
+        "properties": {
+          "account": {
+            "description": "Stellar account public key",
+            "type": "string"
+          },
+          "cooldown_until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "active", "revoked"],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": ["id", "account", "status", "cooldown_until", "created_at", "updated_at"],
+        "type": "object"
+      },
+      "ClaimClaimableBalanceRequest": {
+        "properties": {
+          "claimant_account": {
+            "description": "Claimant to claim for. Required unless the balance has exactly one\nFluxa-custodied claimant.\n",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ClaimClaimableBalanceResponse": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "balance_id": {
+            "type": "string"
+          },
+          "claimed_by": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["claimed"],
+            "type": "string"
+          },
+          "tx_hash": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ClaimPredicate": {
+        "description": "A claim predicate, in Fluxa's declarative form. `unconditional` needs no\nother field; `before_absolute_time` / `after_absolute_time` use\n`timestamp` (Unix seconds) and `before_relative_time` uses `seconds`\n(measured from creation). `not` takes exactly one nested predicate and\n`and` / `or` take exactly two.\n",
+        "properties": {
+          "predicates": {
+            "description": "Operands: one for `not`, two for `and`/`or`",
+            "items": {
+              "$ref": "#/components/schemas/ClaimPredicate"
+            },
+            "type": "array"
+          },
+          "seconds": {
+            "description": "Offset in seconds (before_relative_time)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "timestamp": {
+            "description": "Unix timestamp in seconds (absolute-time predicates)",
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "unconditional",
+              "before_absolute_time",
+              "after_absolute_time",
+              "before_relative_time",
+              "not",
+              "and",
+              "or"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["type"],
+        "type": "object"
+      },
+      "ClaimableBalanceResponse": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "claimants": {
+            "items": {
+              "$ref": "#/components/schemas/Claimant"
+            },
+            "type": "array"
+          },
+          "claimed_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "claimed_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Stellar claimable balance ID",
+            "type": "string"
+          },
+          "revoke_on_expiry": {
+            "type": "boolean"
+          },
+          "sponsor": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "claimed", "revoked", "expired"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Claimant": {
+        "properties": {
+          "account": {
+            "description": "Stellar account allowed to claim",
+            "type": "string"
+          },
+          "predicate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClaimPredicate"
+              }
+            ],
+            "description": "Omitted means unconditional"
+          }
+        },
+        "required": ["account"],
+        "type": "object"
+      },
+      "ComplianceReview": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "review_notes": {
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewed_by": {
+            "description": "Empty for approvals made with API-key authentication, which carries no user identity.",
+            "type": "string"
+          },
+          "risk_score": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rules_fired": {
+            "items": {
+              "enum": [
+                "sanctions_address_match",
+                "sanctions_name_match",
+                "sanctions_name_fuzzy_match",
+                "velocity_burst",
+                "structuring",
+                "round_trip",
+                "screener_error"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": ["pending", "approved", "rejected"],
+            "type": "string"
+          },
+          "transaction_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConversionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dest_amount": {
+            "type": "string"
+          },
+          "dest_asset": {
+            "type": "string"
+          },
+          "fee_amount": {
+            "type": "string"
+          },
+          "fee_bps": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "source_amount": {
+            "type": "string"
+          },
+          "source_asset": {
+            "type": "string"
+          },
+          "tx_hash": {
+            "type": "string"
+          },
+          "wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConvertRequest": {
+        "properties": {
+          "max_slippage_bps": {
+            "description": "Optional maximum acceptable slippage in basis points",
+            "type": "integer"
+          },
+          "min_amount_out": {
+            "description": "Optional minimum acceptable output amount",
+            "type": "string"
+          },
+          "quote_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": ["wallet_id", "quote_id"],
+        "type": "object"
+      },
+      "CreateBatchRequest": {
+        "properties": {
+          "from_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItemRequest"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": ["from_wallet_id", "transfers"],
+        "type": "object"
+      },
+      "CreateBeneficiaryRequest": {
+        "properties": {
+          "account": {
+            "description": "Stellar account public key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": ["account"],
+        "type": "object"
+      },
+      "CreateClaimableBalanceRequest": {
+        "properties": {
+          "amount": {
+            "description": "Decimal string, up to 7 decimal places",
+            "type": "string"
+          },
+          "asset": {
+            "description": "Asset code (XLM, USDC, EURC)",
+            "type": "string"
+          },
+          "claimants": {
+            "items": {
+              "$ref": "#/components/schemas/Claimant"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "expires_at": {
+            "description": "Explicit expiry. When omitted it is derived from the earliest\nabsolute deadline in the claimants' predicates.\n",
+            "format": "date-time",
+            "type": "string"
+          },
+          "revoke_on_expiry": {
+            "default": false,
+            "description": "Claim an unclaimed balance back to the org once it expires",
+            "type": "boolean"
+          },
+          "source_wallet_id": {
+            "description": "Wallet that funds the balance; defaults to the configured source wallet",
+            "type": "string"
+          },
+          "sponsor_account": {
+            "description": "Optional sponsor account that pays the entry reserve. Must be a\nwallet Fluxa custodies, because sponsoring requires its signature.\n",
+            "type": "string"
+          }
+        },
+        "required": ["asset", "amount", "claimants"],
+        "type": "object"
+      },
+      "CreateClaimableBalanceResponse": {
+        "properties": {
+          "balance_id": {
+            "description": "Stellar claimable balance ID",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "reserve_required": {
+            "description": "XLM the entry locks up (0.5, paid by the sponsor when sponsored)",
+            "type": "string"
+          },
+          "sponsored": {
+            "type": "boolean"
+          },
+          "tx_hash": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateKeyRequest": {
+        "properties": {
+          "label": {
+            "description": "Optional human-readable label for the key",
+            "nullable": true,
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Scopes to grant. Omit or send an empty list for a full-access key\n(not allowed when the caller is itself a scoped key). See \"API key scopes\" above.\n",
+            "items": {
+              "$ref": "#/components/schemas/APIKeyScope"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CreateScheduleRequest": {
+        "properties": {
+          "amount": {
+            "description": "Positive decimal amount",
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "end_date": {
+            "description": "Optional RFC3339 timestamp; must not precede start_date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "frequency": {
+            "enum": ["daily", "weekly", "monthly"],
+            "type": "string"
+          },
+          "from_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "missed_run_policy": {
+            "description": "Defaults to run_once. skip advances past elapsed occurrences; run_once makes one catch-up payout.",
+            "enum": ["skip", "run_once"],
+            "type": "string"
+          },
+          "start_date": {
+            "description": "RFC3339 timestamp",
+            "format": "date-time",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA time zone; defaults to UTC",
+            "type": "string"
+          },
+          "to_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_wallet_id",
+          "to_wallet_id",
+          "asset",
+          "amount",
+          "frequency",
+          "start_date"
+        ],
+        "type": "object"
+      },
+      "CreateTransferRequest": {
+        "properties": {
+          "amount": {
+            "description": "Positive decimal amount",
+            "type": "string"
+          },
+          "asset": {
+            "description": "Asset code to transfer (e.g. USDC, XLM)",
+            "type": "string"
+          },
+          "external_reference": {
+            "description": "Optional client-specified reference for reconciliation",
+            "nullable": true,
+            "type": "string"
+          },
+          "from_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "tags": {
+            "description": "Optional tags for categorization and querying",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "to_wallet_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": ["from_wallet_id", "to_wallet_id", "asset", "amount"],
+        "type": "object"
+      },
+      "CreateTrustlineRequest": {
+        "properties": {
+          "asset_code": {
+            "type": "string"
+          },
+          "asset_issuer": {
+            "description": "Issuer public key",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Trust line limit (optional)",
+            "type": "string"
+          }
+        },
+        "required": ["asset_code", "asset_issuer"],
+        "type": "object"
+      },
+      "DailySummaryRow": {
+        "properties": {
+          "date": {
+            "description": "Date in YYYY-MM-DD format",
+            "type": "string"
+          },
+          "mismatch": {
+            "description": "Transactions with amount/asset discrepancies",
+            "type": "integer"
+          },
+          "not_found": {
+            "description": "Transactions not found on Stellar",
+            "type": "integer"
+          },
+          "ok": {
+            "description": "Transactions reconciled successfully",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "DepositResponse": {
+        "properties": {
+          "payment_link": {
+            "description": "URL the customer should visit to complete payment",
+            "format": "uri",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Unique deposit reference (DEP-XXXXXXXX)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "description": "Machine-readable error code",
+                "enum": [
+                  "BAD_REQUEST",
+                  "ANCHOR_DEPOSIT_FAILED",
+                  "ANCHOR_REGISTRATION_FAILED",
+                  "ANCHOR_TRANSACTION_NOT_FOUND",
+                  "ANCHOR_WITHDRAWAL_FAILED",
+                  "API_KEY_NOT_FOUND",
+                  "API_KEY_REVOKED",
+                  "API_KEY_EXPIRED",
+                  "BENEFICIARY_EXISTS",
+                  "BENEFICIARY_NOT_ACTIVE",
+                  "BENEFICIARY_NOT_ALLOWED",
+                  "CONFIG_NOT_FOUND",
+                  "CONFLICT",
+                  "COOLING_OFF",
+                  "CROSS_MODE_KEY_OPERATION",
+                  "ENVIRONMENT_REQUIRED",
+                  "IDEMPOTENCY_KEY_REQUIRED",
+                  "IDEMPOTENCY_RECORD_PERSISTENCE_FAILED",
+                  "IDEMPOTENCY_RESPONSE_TOO_LARGE",
+                  "INSUFFICIENT_SCOPE",
+                  "INVALID_ENVIRONMENT_MODE",
+                  "INVALID_PREDICATE",
+                  "INVALID_REQUEST",
+                  "LAST_ORG_OWNER",
+                  "METHOD_NOT_ALLOWED",
+                  "MISSING_TRUSTLINE",
+                  "NOT_IMPLEMENTED",
+                  "PAYMENT_LINK_UNAVAILABLE",
+                  "PREDICATE_NOT_SATISFIABLE",
+                  "RATE_LIMITED",
+                  "REFUND_CONFLICT",
+                  "TEST_MODE_REQUIRED",
+                  "TRANSFER_ID_INVALID",
+                  "TRANSFER_ID_REQUIRED",
+                  "TRANSFER_NOT_CANCELLABLE",
+                  "UNSUPPORTED_FIAT_CURRENCY",
+                  "WALLET_ID_REQUIRED",
+                  "NOT_FOUND",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "INSUFFICIENT_SCOPE",
+                  "INTERNAL_ERROR",
+                  "INSUFFICIENT_SWEEPABLE_BALANCE",
+                  "QUOTE_EXPIRED",
+                  "QUOTE_ALREADY_USED",
+                  "REVIEW_ALREADY_DECIDED",
+                  "CLAIMABLE_BALANCE_NOT_PENDING",
+                  "REQUEST_IN_PROGRESS"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "description": "Human-readable error message",
+                "type": "string"
+              },
+              "request_id": {
+                "description": "Effective X-Request-ID response header value",
+                "type": "string"
+              },
+              "status": {
+                "description": "HTTP status code; matches the response status",
+                "maximum": 599,
+                "minimum": 400,
+                "type": "integer"
+              }
+            },
+            "required": ["code", "message", "status", "request_id"],
+            "type": "object"
+          }
+        },
+        "required": ["error"],
+        "type": "object"
+      },
+      "FeeCollectionSummary": {
+        "properties": {
+          "asset": {
+            "type": "string"
+          },
+          "tenant_fees": {
+            "items": {
+              "$ref": "#/components/schemas/TenantFeeTotal"
+            },
+            "type": "array"
+          },
+          "total_fees": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FeeScheduleResponse": {
+        "properties": {
+          "asset": {
+            "description": "Asset in which fees are denominated",
+            "type": "string"
+          },
+          "conversion_fee_bps": {
+            "description": "FX conversion fee in basis points",
+            "type": "integer"
+          },
+          "max_fee_amount": {
+            "description": "Maximum fee cap as decimal string (null = uncapped)",
+            "nullable": true,
+            "type": "string"
+          },
+          "min_fee_amount": {
+            "description": "Minimum fee as decimal string",
+            "type": "string"
+          },
+          "transfer_fee_bps": {
+            "description": "Transfer fee in basis points",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "FiatDeposit": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fiat_amount": {
+            "type": "string"
+          },
+          "fiat_currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_reference": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "completed", "failed"],
+            "type": "string"
+          },
+          "usdc_amount": {
+            "type": "string"
+          },
+          "wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FiatDepositRequest": {
+        "properties": {
+          "amount": {
+            "description": "Fiat amount as decimal string",
+            "type": "string"
+          },
+          "currency": {
+            "description": "Fiat currency code (e.g. NGN, USD, KES)",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["amount", "currency", "email", "name"],
+        "type": "object"
+      },
+      "FiatQuotePreviewResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "fiat_amount": {
+            "type": "string"
+          },
+          "fiat_currency": {
+            "type": "string"
+          },
+          "max_limit": {
+            "type": "string"
+          },
+          "min_limit": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "usdc_amount": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FiatWithdrawal": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fiat_amount": {
+            "type": "string"
+          },
+          "fiat_currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "provider_reference": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "completed", "failed"],
+            "type": "string"
+          },
+          "usdc_amount": {
+            "type": "string"
+          },
+          "wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FiatWithdrawalRequest": {
+        "properties": {
+          "account_bank": {
+            "type": "string"
+          },
+          "account_number": {
+            "type": "string"
+          },
+          "amount": {
+            "description": "Fiat amount as decimal string",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": ["amount", "currency", "account_bank", "account_number"],
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "services": {
+            "additionalProperties": {
+              "enum": ["up", "down"],
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "status": {
+            "enum": ["ok", "degraded"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdempotencyInspectionResponse": {
+        "properties": {
+          "created_at": {
+            "description": "When the key was first registered",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When the key retention window elapses",
+            "format": "date-time",
+            "type": "string"
+          },
+          "key": {
+            "description": "Normalized idempotency key",
+            "example": "b477c770-4f51-40be-a006-03daef194d30",
+            "type": "string"
+          },
+          "request_hash": {
+            "description": "SHA-256 digest of method, path, and request body",
+            "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/IdempotencyStoredResponse"
+          },
+          "retry_after_seconds": {
+            "description": "Suggested wait duration in seconds before retrying (when status is processing)",
+            "example": 2,
+            "type": "integer"
+          },
+          "retry_hint": {
+            "description": "Human-readable retry instructions (when status is processing)",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current lifecycle state of the key",
+            "enum": ["processing", "completed", "failed", "unknown"],
+            "example": "completed",
+            "type": "string"
+          }
+        },
+        "required": ["key", "status"],
+        "type": "object"
+      },
+      "IdempotencyStoredResponse": {
+        "properties": {
+          "body": {
+            "description": "Original HTTP response body"
+          },
+          "body_size_bytes": {
+            "description": "Total size in bytes of the original response body",
+            "example": 48,
+            "type": "integer"
+          },
+          "body_text": {
+            "description": "Raw or truncated response body text",
+            "type": "string"
+          },
+          "body_truncated": {
+            "description": "True if the original response body exceeded the 64 KB inspection size bound",
+            "example": false,
+            "type": "boolean"
+          },
+          "headers": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Replayable HTTP response headers",
+            "type": "object"
+          },
+          "status": {
+            "description": "Original HTTP status code",
+            "example": 200,
+            "type": "integer"
+          }
+        },
+        "required": ["status", "body_truncated", "body_size_bytes"],
+        "type": "object"
+      },
+      "LiveClaimableBalanceResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClaimableBalanceResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "claimable": {
+                "type": "boolean",
+                "description": "Whether a claimant could claim right now"
+              },
+              "on_chain": {
                 "type": "object",
+                "nullable": true,
+                "description": "Horizon's view of the balance; absent once it is consumed",
                 "properties": {
-                  "from_wallet": {
-                    "type": "string",
-                    "example": "WALLET_ID"
-                  },
-                  "to_wallet": {
-                    "type": "string",
-                    "example": "WALLET_ID"
+                  "id": {
+                    "type": "string"
                   },
                   "asset": {
-                    "type": "string",
-                    "example": "USDC"
+                    "type": "string"
                   },
                   "amount": {
-                    "type": "string",
-                    "example": "10.00"
+                    "type": "string"
+                  },
+                  "sponsor": {
+                    "type": "string"
+                  },
+                  "last_modified_ledger": {
+                    "type": "integer"
                   }
                 }
               }
             }
           }
+        ]
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "type": "string"
+          }
+        },
+        "required": ["email", "password"],
+        "type": "object"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "active_requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requests_by_code": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "total_errors": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uptime_seconds": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "Quote": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "from_amount": {
+            "type": "string"
+          },
+          "from_asset": {
+            "type": "string"
+          },
+          "id": {
+            "description": "Quote ID — use with POST /v1/fx/convert",
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "to_amount": {
+            "type": "string"
+          },
+          "to_asset": {
+            "type": "string"
+          },
+          "used": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "QuoteRequest": {
+        "properties": {
+          "amount": {
+            "description": "Source amount as decimal string",
+            "type": "string"
+          },
+          "from_asset": {
+            "type": "string"
+          },
+          "to_asset": {
+            "type": "string"
+          }
+        },
+        "required": ["from_asset", "to_asset", "amount"],
+        "type": "object"
+      },
+      "RateResponse": {
+        "properties": {
+          "cached_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dest_amount": {
+            "type": "string"
+          },
+          "fee_amount": {
+            "type": "string"
+          },
+          "fee_bps": {
+            "type": "integer"
+          },
+          "mid_market_rate": {
+            "type": "string"
+          },
+          "net_amount": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rate": {
+            "description": "Effective rate after spread",
+            "type": "string"
+          },
+          "source_amount": {
+            "type": "string"
+          },
+          "spread_bps": {
+            "type": "integer"
+          },
+          "stale": {
+            "description": "True if cached data is older than refresh interval",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ReconciliationSummary": {
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/DailySummaryRow"
+            },
+            "type": "array"
+          },
+          "pending_stuck": {
+            "description": "Transactions stuck in pending beyond threshold",
+            "type": "integer"
+          },
+          "total_mismatch": {
+            "type": "integer"
+          },
+          "total_not_found": {
+            "type": "integer"
+          },
+          "total_ok": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "name": {
+            "description": "Tenant / organization name",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "minLength": 8,
+            "type": "string"
+          }
+        },
+        "required": ["name", "email", "password"],
+        "type": "object"
+      },
+      "RegisterWebhookRequest": {
+        "properties": {
+          "events": {
+            "description": "Event types to subscribe to. Omit or pass an empty array to\nreceive all events.\n",
+            "items": {
+              "enum": [
+                "transfer.initiated",
+                "transfer.settled",
+                "transfer.failed",
+                "wallet.funded",
+                "conversion.completed"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": ["url"],
+        "type": "object"
+      },
+      "RotateWebhookSigningSecretRequest": {
+        "properties": {
+          "overlap_window_seconds": {
+            "default": 300,
+            "maximum": 86400,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RotateWebhookSigningSecretResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookSigningSecretMetadata"
+          },
+          {
+            "type": "object",
+            "required": ["secret"],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "Plaintext signing secret; disclosed only by this rotation response."
+              },
+              "overlap_window_seconds": {
+                "type": "integer"
+              }
+            }
+          }
+        ]
+      },
+      "SanctionsStatus": {
+        "properties": {
+          "address_count": {
+            "type": "integer"
+          },
+          "entity_count": {
+            "type": "integer"
+          },
+          "last_refresh": {
+            "properties": {
+              "duration_ms": {
+                "type": "integer"
+              },
+              "entity_count": {
+                "type": "integer"
+              },
+              "error": {
+                "type": "string"
+              },
+              "finished_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "status": {
+                "enum": ["success", "failed"],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "loaded": {
+            "description": "False means screening is failing closed and holding every transfer.",
+            "type": "boolean"
+          },
+          "name_count": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScheduleResponse": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "end_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "frequency": {
+            "enum": ["daily", "weekly", "monthly"],
+            "type": "string"
+          },
+          "from_wallet_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "missed_run_policy": {
+            "enum": ["skip", "run_once"],
+            "type": "string"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "processing", "failed", "paused", "cancelled", "completed"],
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "to_wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScheduleRunResponse": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "description": "Safe explanation shown only when the run failed",
+            "type": "string"
+          },
+          "expected_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "schedule_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "running", "succeeded", "failed", "skipped", "cancelled"],
+            "type": "string"
+          },
+          "transaction_id": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantFeeTotal": {
+        "properties": {
+          "tenant_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_fees": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TransferResponse": {
+        "properties": {
+          "amount": {
+            "description": "Gross amount as decimal string",
+            "type": "string"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "external_reference": {
+            "nullable": true,
+            "type": "string"
+          },
+          "failure_message": {
+            "description": "Underlying initiation error for support diagnostics",
+            "type": "string"
+          },
+          "failure_reason": {
+            "description": "Machine-readable reason code when the transfer failed during initiation",
+            "type": "string"
+          },
+          "fee_amount": {
+            "description": "Fee deducted as decimal string",
+            "type": "string"
+          },
+          "fee_bps": {
+            "description": "Fee in basis points",
+            "type": "integer"
+          },
+          "from_wallet_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "net_amount": {
+            "description": "Amount after fee as decimal string",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "submitted", "confirmed", "failed", "reconciliation_failed"],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "to_wallet_id": {
+            "type": "string"
+          },
+          "tx_hash": {
+            "description": "Stellar transaction hash (empty until submitted)",
+            "type": "string"
+          },
+          "type": {
+            "enum": ["transfer", "conversion", "funding"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TrustlineResponse": {
+        "properties": {
+          "asset_code": {
+            "type": "string"
+          },
+          "asset_issuer": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["submitted"],
+            "type": "string"
+          },
+          "wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateScheduleRequest": {
+        "properties": {
+          "amount": {
+            "description": "New amount as decimal string",
+            "type": "string"
+          },
+          "end_date": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "frequency": {
+            "enum": ["daily", "weekly", "monthly"],
+            "type": "string"
+          },
+          "missed_run_policy": {
+            "enum": ["skip", "run_once"],
+            "type": "string"
+          },
+          "status": {
+            "description": "Pause or resume the schedule",
+            "enum": ["active", "paused"],
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UsageResponse": {
+        "properties": {
+          "batches_count": {
+            "type": "integer"
+          },
+          "conversions_count": {
+            "type": "integer"
+          },
+          "requests_today": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total_requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "transfers_count": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Wallet": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "public_key": {
+            "description": "Stellar public key",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WalletBalances": {
+        "properties": {
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/Balance"
+            },
+            "type": "array"
+          },
+          "wallet_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WalletCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WebhookDelivery": {
+        "properties": {
+          "attempt_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "enum": [
+              "transfer.initiated",
+              "transfer.settled",
+              "transfer.failed",
+              "wallet.funded",
+              "conversion.completed"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_attempt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "response_code": {
+            "description": "HTTP status code from the endpoint",
+            "nullable": true,
+            "type": "integer"
+          },
+          "status": {
+            "enum": ["pending", "success", "failed"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WebhookEndpointResponse": {
+        "description": "Returned on create — includes the signing secret",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "secret": {
+            "description": "HMAC-SHA256 signing secret (shown once)",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WebhookEndpointSummary": {
+        "description": "Returned on list — secret is never included",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WebhookSigningSecretMetadata": {
+        "properties": {
+          "activated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "retired_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "overlapping", "retired"],
+            "type": "string"
+          }
+        },
+        "required": ["key_id", "created_at", "activated_at", "status"],
+        "type": "object"
+      },
+      "WebhookSigningSecretsResponse": {
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookSigningSecretMetadata"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["secrets"],
+        "type": "object"
+      },
+      "WithdrawalResponse": {
+        "properties": {
+          "reference": {
+            "description": "Unique withdrawal reference (WIT-XXXXXXXX)",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pending", "completed", "failed"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "AdminAuth": {
+        "bearerFormat": "admin token",
+        "description": "Administrative bearer token.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "ApiKeyAuth": {
+        "description": "Pass an API key as `Bearer <key>` in the `Authorization` header.\n",
+        "in": "header",
+        "name": "Authorization",
+        "type": "apiKey"
+      },
+      "BearerAuth": {
+        "bearerFormat": "token",
+        "description": "Pass a tenant API key (`sk_live_...` or `sk_test_...`) or JWT bearer token.\nIn Swagger UI, enter your token in the Authorize dialog (the 'Bearer ' prefix is added automatically).\n",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "email": "engineering@fluxa.io",
+      "name": "Fluxa Engineering",
+      "url": "https://github.com/fluxa/fluxa"
+    },
+    "description": "Fluxa is a multi-currency digital asset platform built on Stellar. It provides\nwallets, instant transfers, FX conversions, scheduled recurring payments,\nbatch disbursements, fiat on/off-ramps, and a developer-friendly webhook system.\n\nAll endpoints under `/v1` require a Bearer API key in the `Authorization` header.\n\n## API key scopes\n\nAn API key can be limited to specific resources and actions. Scopes have the\nform `<resource>:<action>`, where action is `read` or `write`:\n\n| Resource | Scopes | Covers |\n|---|---|---|\n| wallets | `wallets:read`, `wallets:write` | `/v1/wallets` (create, trustlines, contract wallet changes) |\n| transfers | `transfers:read`, `transfers:write` | `/v1/transfers`, `/v1/transactions`, `/v1/schedules`, `/v1/refunds` |\n| batches | `batches:read`, `batches:write` | `/v1/transfers/batch` |\n| webhooks | `webhooks:read`, `webhooks:write` | `/v1/webhooks` |\n| reports | `reports:read`, `reports:write` | `/v1/usage` (`reports:write` is reserved for report generation) |\n\nOther scopes: `keys:*`, `audit:read`, `fiat:*`, `fx:*`, `fees:read`,\n`beneficiaries:*`, `compliance:*`. `<resource>:*` grants both actions on one\nresource and `*` grants everything.\n\nOn scoped resource groups, `GET`/`HEAD` need the `read` scope and every other\nmethod needs the `write` scope. A key without the required scope gets `403`\nwith the stable error code `INSUFFICIENT_SCOPE`, and the denial is written to\nthe audit log as `api_key.scope_denied` (key id, required scope, method and\npath only; never the key itself).\n\n**Compatibility:** keys created without scopes (including every key that\nexisted before scopes were introduced) have an empty scope list and keep full\naccess. `transfers:read`/`transfers:write` continue to grant\n`batches:read`/`batches:write`, so keys issued before the batches scope keep\nworking. A scoped key that holds `keys:write` can only create keys with scopes\nit holds itself. Dashboard (JWT) sessions are governed by roles, not scopes.\n",
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    },
+    "title": "Fluxa API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/": {
+      "get": {
+        "description": "Returns API metadata and links to documentation and OpenAPI specification.",
+        "operationId": "getRoot",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "description": {
+                      "example": "Multi-currency digital asset platform built on Stellar",
+                      "type": "string"
+                    },
+                    "docs": {
+                      "example": "/docs",
+                      "type": "string"
+                    },
+                    "docs_url": {
+                      "example": "/docs",
+                      "type": "string"
+                    },
+                    "name": {
+                      "example": "Fluxa API",
+                      "type": "string"
+                    },
+                    "openapi": {
+                      "example": "/docs/openapi.yaml",
+                      "type": "string"
+                    },
+                    "openapi_url": {
+                      "example": "/docs/openapi.yaml",
+                      "type": "string"
+                    },
+                    "version": {
+                      "example": "1.0.0",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "API metadata"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "API root",
+        "tags": ["System"]
+      }
+    },
+    "/docs": {
+      "get": {
+        "description": "Serves an interactive Swagger UI API explorer loaded from CDN.",
+        "operationId": "getDocs",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Interactive Swagger UI HTML page"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "Interactive Swagger UI documentation",
+        "tags": ["System"]
+      }
+    },
+    "/docs/openapi.yaml": {
+      "get": {
+        "description": "Returns the raw OpenAPI 3.0 YAML specification file.",
+        "operationId": "getOpenAPISpec",
+        "responses": {
+          "200": {
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Raw OpenAPI 3.0 specification"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "OpenAPI specification",
+        "tags": ["System"]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Returns service health. Checks Postgres and Redis connectivity.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "services": {
+                    "postgres": "up",
+                    "redis": "up"
+                  },
+                  "status": "ok"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "All services healthy"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "services": {
+                    "postgres": "up",
+                    "redis": "down"
+                  },
+                  "status": "degraded"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "One or more services degraded"
+          }
+        },
+        "security": [],
+        "summary": "Health check",
+        "tags": ["System"]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Returns runtime metrics: uptime, request counts, active requests, error rate by status code.",
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "active_requests": 3,
+                  "requests_by_code": {
+                    "Bad Request": 80,
+                    "Not Found": 40,
+                    "OK": 140000
+                  },
+                  "started_at": "2026-01-15T10:00:00Z",
+                  "total_errors": 120,
+                  "total_requests": 142857,
+                  "uptime_seconds": 86400.5
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            },
+            "description": "Metrics snapshot"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "Server metrics",
+        "tags": ["System"]
+      }
+    },
+    "/v1/admin/compliance/reviews": {
+      "get": {
+        "description": "Lists transfers held by compliance screening. A held transfer is\npersisted with status `compliance_hold` and is deliberately not\nenqueued for settlement until it is approved.\n",
+        "operationId": "listComplianceReviews",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "approved", "rejected"]
+            },
+            "description": "Filter by review status"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "reviews": {
+                      "items": {
+                        "$ref": "#/components/schemas/ComplianceReview"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Compliance reviews"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "List compliance reviews",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/compliance/reviews/{id}": {
+      "get": {
+        "operationId": "getComplianceReview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceReview"
+                }
+              }
+            },
+            "description": "Compliance review"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Get a compliance review",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/compliance/reviews/{id}/approve": {
+      "post": {
+        "description": "Releases a held transfer. The transaction is reset to `pending` and\nthen re-enqueued for settlement — in that order, because the\nsettlement engine skips any transaction that is not `pending`.\n\nDecisions are terminal: approving an already-decided review returns\n`409 REVIEW_ALREADY_DECIDED`, which is what stops two reviewers from\nreleasing the same payment twice.\n",
+        "operationId": "approveComplianceReview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "notes": {
+                    "description": "Reviewer notes recorded on the audit trail",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
         },
         "responses": {
           "200": {
-            "description": "Transfer created successfully"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceReview"
+                }
+              }
+            },
+            "description": "Review approved and transfer released"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "REVIEW_ALREADY_DECIDED",
+                    "message": "compliance review has already been decided",
+                    "request_id": "req-example",
+                    "status": 409
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Review has already been decided"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Approve a held transfer",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/compliance/reviews/{id}/reject": {
+      "post": {
+        "description": "Rejects a held transfer. The transaction is marked `failed` and is\nnever enqueued for settlement.\n",
+        "operationId": "rejectComplianceReview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceReview"
+                }
+              }
+            },
+            "description": "Review rejected"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "REVIEW_ALREADY_DECIDED",
+                    "message": "compliance review has already been decided",
+                    "request_id": "req-example",
+                    "status": 409
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Reject a held transfer",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/compliance/sanctions-status": {
+      "get": {
+        "description": "Reports the state of the in-memory OFAC SDN set and the outcome of the\nlast refresh. `loaded: false` means screening is failing closed and\nevery transfer is being held for review.\n",
+        "operationId": "getSanctionsStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "address_count": 621,
+                  "entity_count": 17423,
+                  "last_refresh": {
+                    "duration_ms": 8412,
+                    "entity_count": 17423,
+                    "finished_at": "2026-01-15T03:00:12Z",
+                    "status": "success"
+                  },
+                  "loaded": true,
+                  "name_count": 16802,
+                  "updated_at": "2026-01-15T03:00:12Z"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/SanctionsStatus"
+                }
+              }
+            },
+            "description": "Sanctions list status"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Get sanctions list status",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/fees/collected": {
+      "get": {
+        "description": "Returns fee collection totals grouped by asset and tenant.\nRequires an admin role (Owner or Admin).\n",
+        "operationId": "listCollectedFees",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of period (RFC3339)"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of period (RFC3339)"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter by tenant"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "properties": {
+                          "asset": {
+                            "type": "string"
+                          },
+                          "collected_at": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "fee_amount": {
+                            "type": "string"
+                          },
+                          "fee_bps": {
+                            "type": "integer"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "tenant_id": {
+                            "type": "string"
+                          },
+                          "transaction_id": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Paginated fee collections"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "List collected fees",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/reconciliation/discrepancies": {
+      "get": {
+        "operationId": "listReconciliationDiscrepancies",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "acknowledged", "resolved"]
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated tenant discrepancies with transaction and audit details"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "List tenant reconciliation discrepancies",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/reconciliation/discrepancies/summary": {
+      "get": {
+        "operationId": "getReconciliationDiscrepancyMetrics",
+        "responses": {
+          "200": {
+            "description": "Counts by state and category",
+            "oldest unresolved timestamp": null,
+            "unresolved count": null
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Get unresolved reconciliation discrepancy metrics",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/reconciliation/discrepancies/{id}": {
+      "patch": {
+        "operationId": "updateReconciliationDiscrepancy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "enum": ["acknowledged", "assigned", "annotated", "resolved"],
+                    "type": "string"
+                  },
+                  "assigned_to": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": ["action"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated discrepancy with audit history"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Acknowledge, assign, annotate, or resolve a discrepancy",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/reconciliation/run": {
+      "post": {
+        "description": "Manually triggers a reconciliation pass that checks pending transactions\nagainst the Stellar Horizon API. Requires an admin API key.\n",
+        "operationId": "runReconciliation",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "run_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": ["started"],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Reconciliation run started"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Trigger a reconciliation run",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/reconciliation/summary": {
+      "get": {
+        "description": "Returns a daily breakdown of reconciliation results (ok / mismatch / not_found)\nand the count of pending stuck transactions. Requires an admin API key.\n",
+        "operationId": "getReconciliationSummary",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "minimum": 1,
+              "maximum": 90
+            },
+            "description": "Number of days to look back"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "days": [
+                    {
+                      "date": "2026-01-15",
+                      "ok": 1200,
+                      "mismatch": 3,
+                      "not_found": 1
+                    },
+                    {
+                      "date": "2026-01-14",
+                      "ok": 1150,
+                      "mismatch": 0,
+                      "not_found": 2
+                    }
+                  ],
+                  "pending_stuck": 0,
+                  "total_mismatch": 3,
+                  "total_not_found": 3,
+                  "total_ok": 2350
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationSummary"
+                }
+              }
+            },
+            "description": "Reconciliation summary"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Get reconciliation summary",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/admin/transfers/{transferID}/force-settle": {
+      "post": {
+        "description": "Requeues a transaction that is currently `failed` for settlement.\nOnly transfers in the authenticated tenant and environment can be\nretried. The status transition is atomic; a repeated request or a\ntransfer in any other state returns `409 CONFLICT`. Requires an\nOwner or Admin role. The response means the retry was queued, not\nthat Stellar has confirmed it.\n",
+        "operationId": "retryFailedSettlement",
+        "parameters": [
+          {
+            "name": "transferID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "enum": ["retry_queued"],
+                      "type": "string"
+                    },
+                    "transfer_id": {
+                      "format": "uuid",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["status", "transfer_id"],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Failed settlement retry queued"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Transfer is not failed or a retry is already in progress"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "summary": "Retry a failed settlement",
+        "tags": ["Admin"]
+      }
+    },
+    "/v1/audit": {
+      "get": {
+        "description": "Returns append-only tenant audit events with filtering by action, actor, resource, and time range.",
+        "operationId": "listAuditEvents",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by action name"
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by actor ID"
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by resource type"
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by resource ID"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of time range"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of time range"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "description": "Maximum results"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditListResponse"
+                }
+              }
+            },
+            "description": "List of audit events"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List audit events",
+        "tags": ["Audit"]
+      }
+    },
+    "/v1/audit/export": {
+      "get": {
+        "description": "Exports tenant audit events as CSV or JSON.",
+        "operationId": "exportAuditEvents",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["csv", "json"],
+              "default": "json"
+            },
+            "description": "Export format"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by action name"
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by actor ID"
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by resource type"
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by resource ID"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of time range"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of time range"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEvent"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Exported audit events"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Export audit events",
+        "tags": ["Audit"]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "description": "Authenticates an existing tenant and returns a new API key.",
+        "operationId": "loginTenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "ops@acme.com",
+                "password": "s3cret"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "api_key": "sk_live_abc123def456",
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "email": "ops@acme.com",
+                  "name": "Acme Corp",
+                  "tenant_id": "t_8f3a2b1c"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            },
+            "description": "Login successful"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "Login and issue a new API key",
+        "tags": ["Auth"]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "description": "Creates a new tenant account and returns the initial API key.",
+        "operationId": "registerTenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "ops@acme.com",
+                "name": "Acme Corp"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "api_key": "sk_live_abc123def456",
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "email": "ops@acme.com",
+                  "name": "Acme Corp",
+                  "tenant_id": "t_8f3a2b1c"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            },
+            "description": "Tenant registered"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [],
+        "summary": "Register a new tenant",
+        "tags": ["Auth"]
+      }
+    },
+    "/v1/beneficiaries": {
+      "get": {
+        "operationId": "listBeneficiaries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "beneficiaries": {
+                      "items": {
+                        "$ref": "#/components/schemas/Beneficiary"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Tenant beneficiaries"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List beneficiaries",
+        "tags": ["Beneficiaries"]
+      },
+      "post": {
+        "description": "Creates a pending beneficiary. Activation is blocked until the 24-hour cooling-off period ends.",
+        "operationId": "createBeneficiary",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBeneficiaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Beneficiary"
+                }
+              }
+            },
+            "description": "Beneficiary created"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create a beneficiary",
+        "tags": ["Beneficiaries"]
+      }
+    },
+    "/v1/beneficiaries/{id}": {
+      "delete": {
+        "operationId": "revokeBeneficiary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BeneficiaryID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Beneficiary revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Revoke a beneficiary",
+        "tags": ["Beneficiaries"]
+      },
+      "get": {
+        "operationId": "getBeneficiary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BeneficiaryID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Beneficiary"
+                }
+              }
+            },
+            "description": "Beneficiary"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get a beneficiary",
+        "tags": ["Beneficiaries"]
+      }
+    },
+    "/v1/beneficiaries/{id}/activate": {
+      "post": {
+        "operationId": "activateBeneficiary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BeneficiaryID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Beneficiary"
+                }
+              }
+            },
+            "description": "Beneficiary activated"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Activate a beneficiary after its cooling-off period",
+        "tags": ["Beneficiaries"]
+      }
+    },
+    "/v1/claimable-balances": {
+      "get": {
+        "description": "Lists the claimable balances created by the org. All filters are\noptional; an omitted `status` returns every balance.\n",
+        "operationId": "listClaimableBalances",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "claimed", "revoked", "expired"]
+            },
+            "description": "Only return balances in this state"
+          },
+          {
+            "name": "asset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only return balances for this asset"
+          },
+          {
+            "name": "claimant",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only return balances that include this claimant account"
+          },
+          {
+            "name": "expires_before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only return balances expiring before this RFC3339 timestamp"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "claimable_balances": {
+                      "items": {
+                        "$ref": "#/components/schemas/ClaimableBalanceResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of claimable balances"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List claimable balances",
+        "tags": ["Claimable balances"]
+      },
+      "post": {
+        "description": "Creates a deferred payment held by the Stellar network until one of its\nclaimants satisfies their predicate. The org's source wallet funds it,\nunless `sponsor_account` names a Fluxa-custodied wallet, in which case\nthe creation is wrapped in BeginSponsoringFutureReserves /\nEndSponsoringFutureReserves and the sponsor pays the 0.5 XLM entry\nreserve.\n\nThe returned `balance_id` is derived from the create operation, so it is\navailable without a second Horizon round trip.\n",
+        "operationId": "createClaimableBalance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "250.0000000",
+                "asset": "USDC",
+                "claimants": [
+                  {
+                    "account": "GCLAIMANTACCOUNT0000000000000000000000000000000000000000",
+                    "predicate": {
+                      "type": "before_absolute_time",
+                      "timestamp": 1798761600
+                    }
+                  },
+                  {
+                    "account": "GORGACCOUNT000000000000000000000000000000000000000000",
+                    "predicate": {
+                      "type": "after_absolute_time",
+                      "timestamp": 1798761600
+                    }
+                  }
+                ],
+                "revoke_on_expiry": true,
+                "source_wallet_id": "3f1c2b8e-9a4d-4d3f-8f4e-2b6c1a9d0e77",
+                "sponsor_account": "GBAXPW7YQFAZPJS7WFD3XCP3MHKX4ZR3Z4WQ3L7VQZ4X3Z4WQ3L7VQZ4X"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateClaimableBalanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateClaimableBalanceResponse"
+                }
+              }
+            },
+            "description": "Claimable balance created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed request, unsupported asset, no claimants, a sponsor Fluxa\ndoes not custody, or an invalid claim predicate.\n"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create a claimable balance",
+        "tags": ["Claimable balances"]
+      }
+    },
+    "/v1/claimable-balances/{id}": {
+      "get": {
+        "description": "Returns the stored balance together with its live status from Horizon\nand whether a claimant could claim right now. `on_chain` is absent when\nHorizon no longer knows the balance, which is what an already-claimed\nbalance looks like.\n",
+        "operationId": "getClaimableBalance",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClaimableBalanceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveClaimableBalanceResponse"
+                }
+              }
+            },
+            "description": "Claimable balance"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get a claimable balance",
+        "tags": ["Claimable balances"]
+      }
+    },
+    "/v1/claimable-balances/{id}/claim": {
+      "post": {
+        "description": "Claims on behalf of a claimant account Fluxa custodies, after checking\nthe claimant's predicate is satisfiable right now. A predicate that does\nnot hold is rejected with 400 `PREDICATE_NOT_SATISFIABLE` and no\ntransaction is submitted.\n\n`claimant_account` may be omitted when the balance has exactly one\nFluxa-custodied claimant.\n",
+        "operationId": "claimClaimableBalance",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ClaimableBalanceID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "claimant_account": "GCLAIMANTACCOUNT0000000000000000000000000000000000000000"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ClaimClaimableBalanceRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimClaimableBalanceResponse"
+                }
+              }
+            },
+            "description": "Balance claimed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The claimant's predicate is not currently satisfiable\n(`PREDICATE_NOT_SATISFIABLE`), the account is not a claimant, or no\ncustodied claimant could be resolved.\n"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The balance has already been claimed, revoked or expired."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Claim a claimable balance",
+        "tags": ["Claimable balances"]
+      }
+    },
+    "/v1/fees": {
+      "get": {
+        "description": "Returns the fee schedule for the authenticated tenant.",
+        "operationId": "getFeeSchedule",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "asset": "USDC",
+                  "conversion_fee_bps": 30,
+                  "max_fee_amount": "50.0000000",
+                  "min_fee_amount": "0.0100000",
+                  "transfer_fee_bps": 25
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleResponse"
+                }
+              }
+            },
+            "description": "Fee schedule"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get fee schedule",
+        "tags": ["Fees"]
+      }
+    },
+    "/v1/fees/preview": {
+      "post": {
+        "description": "Preview the calculated fees for a transfer or conversion.",
+        "operationId": "previewFee",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amount": {
+                    "type": "string"
+                  },
+                  "asset": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": ["transfer", "conversion"],
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "asset", "amount"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "fee_amount": {
+                      "type": "string"
+                    },
+                    "fee_bps": {
+                      "type": "integer"
+                    },
+                    "gross_amount": {
+                      "type": "string"
+                    },
+                    "net_amount": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Fee preview"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Preview fees",
+        "tags": ["Fees"]
+      }
+    },
+    "/v1/fiat/quote": {
+      "post": {
+        "description": "Get a read-only quote before creating a fiat deposit or withdrawal.",
+        "operationId": "previewFiat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amount": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "side": {
+                    "enum": ["deposit", "withdraw"],
+                    "type": "string"
+                  }
+                },
+                "required": ["side", "amount", "currency", "country"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiatQuotePreviewResponse"
+                }
+              }
+            },
+            "description": "Preview quote"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Preview a fiat deposit or withdrawal",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/fx/convert": {
+      "post": {
+        "description": "Executes a previously quoted FX conversion. The quote must not be expired or already used.",
+        "operationId": "executeConversion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "quote_id": "q_abc123",
+                "wallet_id": "w_1a2b3c4d"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/ConvertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "created_at": "2026-01-15T10:00:05Z",
+                  "dest_amount": "3450.2500000",
+                  "dest_asset": "XLM",
+                  "fee_amount": "0.2500000",
+                  "fee_bps": 25,
+                  "id": "conv_xyz789",
+                  "rate": "34.5025000",
+                  "source_amount": "100.0000000",
+                  "source_asset": "USDC",
+                  "tx_hash": "a1b2c3d4...",
+                  "wallet_id": "w_1a2b3c4d"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ConversionResponse"
+                }
+              }
+            },
+            "description": "Conversion executed"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "QUOTE_EXPIRED",
+                    "message": "quote expired",
+                    "request_id": "req-example",
+                    "status": 422
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Quote expired or already used"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Execute a conversion",
+        "tags": ["FX"]
+      }
+    },
+    "/v1/fx/quote": {
+      "post": {
+        "description": "Returns a time-limited conversion quote (valid for 30 seconds).\nUse the returned `id` with POST /v1/fx/convert to execute.\n",
+        "operationId": "getFXQuote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "100.0000000",
+                "from_asset": "USDC",
+                "to_asset": "XLM"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "expires_at": "2026-01-15T10:00:30Z",
+                  "fee": "0.2500000",
+                  "from_amount": "100.0000000",
+                  "from_asset": "USDC",
+                  "id": "q_abc123",
+                  "org_id": "t_8f3a2b1c",
+                  "rate": "34.5025000",
+                  "to_amount": "3450.2500000",
+                  "to_asset": "XLM",
+                  "used": false
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            },
+            "description": "FX quote"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get an FX quote",
+        "tags": ["FX"]
+      }
+    },
+    "/v1/fx/rates": {
+      "get": {
+        "description": "Returns the current exchange rate between two assets including fees.",
+        "operationId": "getFXRates",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Source asset code (e.g. USDC)"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Destination asset code (e.g. XLM)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "cached_at": "2026-01-15T10:00:00Z",
+                  "dest_amount": "3450.2500000",
+                  "fee_amount": "0.2500000",
+                  "fee_bps": 25,
+                  "mid_market_rate": "34.6000000",
+                  "net_amount": "3449.0000000",
+                  "provider": "stellar",
+                  "rate": "34.5025000",
+                  "source_amount": "100.0000000",
+                  "spread_bps": 28,
+                  "stale": false
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/RateResponse"
+                }
+              }
+            },
+            "description": "Rate information"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get exchange rate",
+        "tags": ["FX"]
+      }
+    },
+    "/v1/idempotency/{key}": {
+      "get": {
+        "description": "Returns the durable state of an idempotency key: processing, completed, failed, or unknown.\nOn completed requests, the stored response body and status code are faithfully reproduced without re-execution.\nClients should inspect existing keys rather than generating new keys following timeouts or network partitions.\n",
+        "operationId": "inspectIdempotencyKey",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Idempotency key (UUID or client reference string)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_hash",
+            "in": "query",
+            "required": false,
+            "description": "Expected SHA-256 request hash. If provided and mismatched, returns 422 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_BODY.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdempotencyInspectionResponse"
+                }
+              }
+            },
+            "description": "Idempotency key state"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Inspect idempotency key state",
+        "tags": ["Idempotency"]
+      }
+    },
+    "/v1/keys": {
+      "get": {
+        "description": "Returns all API keys for the authenticated tenant.",
+        "operationId": "listAPIKeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": [
+                  {
+                    "id": "k_9a8b7c6d",
+                    "prefix": "sk_live_a1b2",
+                    "label": "CI deploy key",
+                    "scopes": ["wallets:read", "transfers:read"],
+                    "last_used_at": "2026-01-15T12:00:00Z",
+                    "revoked_at": null,
+                    "created_at": "2026-01-15T10:00:00Z"
+                  }
+                ],
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/APIKeySummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "List of API keys"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List API keys",
+        "tags": ["Auth"]
+      },
+      "post": {
+        "description": "Generates a new API key for the authenticated tenant. The raw key is\nreturned only in this response — it cannot be retrieved later.\n",
+        "operationId": "createAPIKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "label": "Payouts integration",
+                "scopes": ["wallets:read", "transfers:read", "batches:write"]
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "id": "k_9a8b7c6d",
+                  "key": "sk_live_a1b2c3d4e5f6g7h8",
+                  "label": "Payouts integration",
+                  "prefix": "sk_live_a1b2",
+                  "scopes": ["wallets:read", "transfers:read", "batches:write"]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyCreated"
+                }
+              }
+            },
+            "description": "API key created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "BAD_REQUEST",
+                    "message": "invalid scope: wallets:delete"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "One or more scopes are not recognised"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create an API key",
+        "tags": ["Auth"]
+      }
+    },
+    "/v1/keys/{id}": {
+      "delete": {
+        "description": "Permanently revokes the given API key. The key can no longer be used.",
+        "operationId": "revokeAPIKey",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/KeyID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Key revoked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Revoke an API key",
+        "tags": ["Auth"]
+      }
+    },
+    "/v1/schedules": {
+      "get": {
+        "description": "Returns up to 100 recurring payout schedules belonging to the authenticated tenant. Requires transfers:read scope.",
+        "operationId": "listSchedules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "schedules": {
+                      "items": {
+                        "$ref": "#/components/schemas/ScheduleResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of schedules"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List schedules",
+        "tags": ["Schedules"]
+      },
+      "post": {
+        "description": "Creates a tenant-scoped recurring payout that runs daily, weekly, or monthly. Requires transfers:write scope and a UUID v4 Idempotency-Key; retries with the same key and body replay the original response.",
+        "operationId": "createSchedule",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "UUID v4 key for this schedule creation; reuse it only when retrying the same request."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "100.0000000",
+                "asset": "USDC",
+                "end_date": "2026-12-31T23:59:59Z",
+                "frequency": "monthly",
+                "from_wallet_id": "3f1c2b8e-9a4d-4d3f-8f4e-2b6c1a9d0e77",
+                "missed_run_policy": "skip",
+                "start_date": "2026-02-01T00:00:00Z",
+                "timezone": "Africa/Lagos",
+                "to_wallet_id": "4f1c2b8e-9a4d-4d3f-8f4e-2b6c1a9d0e77"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description": "Schedule created"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create a recurring tenant payout schedule",
+        "tags": ["Schedules"]
+      }
+    },
+    "/v1/schedules/{id}": {
+      "delete": {
+        "description": "Cancels a recurring tenant payout schedule. Requires transfers:write scope. Cannot be undone.",
+        "operationId": "cancelSchedule",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ScheduleID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Schedule cancelled"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Cancel a schedule",
+        "tags": ["Schedules"]
+      },
+      "patch": {
+        "description": "Updates the amount, recurrence settings, or status. Requires transfers:write scope.",
+        "operationId": "updateSchedule",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ScheduleID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "150.0000000",
+                "status": "paused"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description": "Schedule updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Update a schedule",
+        "tags": ["Schedules"]
+      }
+    },
+    "/v1/schedules/{id}/runs": {
+      "get": {
+        "description": "Returns the authenticated tenant's execution history, newest occurrence first. Requires transfers:read scope. Limit defaults to 20 and is capped at 100; offset defaults to 0.",
+        "operationId": "listScheduleRuns",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ScheduleID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "runs": {
+                      "items": {
+                        "$ref": "#/components/schemas/ScheduleRunResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Payout run history"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List payout attempts for a schedule",
+        "tags": ["Schedules"]
+      }
+    },
+    "/v1/transfers": {
+      "get": {
+        "description": "Returns all transactions for a given wallet.",
+        "operationId": "listTransfers",
+        "parameters": [
+          {
+            "name": "wallet_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter by wallet ID"
+          },
+          {
+            "name": "external_reference",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by external reference"
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by tag"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            },
+            "description": "Maximum number of results"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "transactions": {
+                      "items": {
+                        "$ref": "#/components/schemas/TransferResponse"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of transactions"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List transfers",
+        "tags": ["Transactions"]
+      },
+      "post": {
+        "description": "Moves an asset between two wallets, applying platform fees.",
+        "operationId": "initiateTransfer",
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional idempotency key to prevent duplicate transfers on retries"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated UUID v4 that makes this request safe to retry.\nThe result is held for 24 hours: a repeat with the same body\nreplays the original response, a repeat with a different body or\na concurrent repeat is rejected with 409.\n",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "100.0000000",
+                "asset": "USDC",
+                "from_wallet_id": "w_1a2b3c4d",
+                "to_wallet_id": "w_5e6f7g8h"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "amount": "100.0000000",
+                  "asset": "USDC",
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "fee_amount": "0.2500000",
+                  "fee_bps": 25,
+                  "from_wallet_id": "w_1a2b3c4d",
+                  "id": "tx_abc123",
+                  "net_amount": "99.7500000",
+                  "status": "pending",
+                  "to_wallet_id": "w_5e6f7g8h",
+                  "tx_hash": "",
+                  "type": "transfer"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/TransferResponse"
+                }
+              }
+            },
+            "description": "Transfer accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError",
+            "description": "Conflict: request in progress or idempotency key reused with different body"
+          }
+        },
+        "summary": "Initiate a transfer",
+        "tags": ["Transfers"]
+      }
+    },
+    "/v1/transfers/batch": {
+      "post": {
+        "description": "Submits up to 100 transfers from a single source wallet in one request.\nEach transfer is processed independently; partial success is possible.\n",
+        "operationId": "createBatch",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Client-generated UUID v4 that makes this request safe to retry.\nThe result is held for 24 hours: a repeat with the same body\nreplays the original response, a repeat with a different body or\na concurrent repeat is rejected with 409.\n",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "from_wallet_id": "w_1a2b3c4d",
+                "transfers": [
+                  {
+                    "to_wallet_id": "w_5e6f7g8h",
+                    "asset": "USDC",
+                    "amount": "50.0000000",
+                    "reference": "payroll-jan"
+                  },
+                  {
+                    "to_wallet_id": "w_9i0j1k2l",
+                    "asset": "USDC",
+                    "amount": "75.0000000",
+                    "reference": "payroll-jan"
+                  }
+                ]
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            },
+            "description": "Batch accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create a batch transfer",
+        "tags": ["Transfers"]
+      }
+    },
+    "/v1/transfers/batch/{batchId}": {
+      "get": {
+        "description": "Returns the batch and the status of every individual transfer in it.",
+        "operationId": "getBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Batch ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            },
+            "description": "Batch details"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get batch status",
+        "tags": ["Transfers"]
+      }
+    },
+    "/v1/transfers/batch/{batchId}/export": {
+      "get": {
+        "description": "Downloads the batch transfer results as a CSV file.",
+        "operationId": "exportBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Batch ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV file"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Export batch as CSV",
+        "tags": ["Transfers"]
+      }
+    },
+    "/v1/transfers/{id}": {
+      "get": {
+        "description": "Returns full details for a single transfer.",
+        "operationId": "getTransfer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Transaction ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferResponse"
+                }
+              }
+            },
+            "description": "Transfer details"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get transfer details",
+        "tags": ["Transfers"]
+      }
+    },
+    "/v1/usage": {
+      "get": {
+        "description": "Returns API usage metrics for the current tenant.",
+        "operationId": "getUsage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageResponse"
+                }
+              }
+            },
+            "description": "Usage summary"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get API usage",
+        "tags": ["Fees"]
+      }
+    },
+    "/v1/wallets": {
+      "post": {
+        "description": "Generates a new Stellar keypair, encrypts the secret, and returns the wallet.",
+        "operationId": "createWallet",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "id": "w_1a2b3c4d",
+                  "public_key": "GBXCAFE7RJHBEVGT5ANBZ7YXDU7S3Y3VQWZ5J4YKJ2D6S7F8G9H0I"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/WalletCreated"
+                }
+              }
+            },
+            "description": "Wallet created"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Create a wallet",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/wallets/{id}": {
+      "get": {
+        "description": "Returns the wallet metadata including public key and creation timestamp.",
+        "operationId": "getWallet",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WalletID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "id": "w_1a2b3c4d",
+                  "public_key": "GBXCAFE7RJHBEVGT5ANBZ7YXDU7S3Y3VQWZ5J4YKJ2D6S7F8G9H0I"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Wallet"
+                }
+              }
+            },
+            "description": "Wallet details"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get wallet details",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/wallets/{id}/balances": {
+      "get": {
+        "description": "Returns all asset balances for the wallet from the Stellar network.",
+        "operationId": "getWalletBalances",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WalletID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "balances": [
+                    {
+                      "asset_code": "USDC",
+                      "issuer": "GA5ZSEJ6BHT2ZKGDABICHI62W25ZJUXUNFFYGLYTIEXP6CZMUWqmOvxM",
+                      "balance": "1250.0000000"
+                    },
+                    {
+                      "asset_code": "XLM",
+                      "issuer": "",
+                      "balance": "42.5000000"
+                    }
+                  ],
+                  "wallet_id": "w_1a2b3c4d"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalances"
+                }
+              }
+            },
+            "description": "Wallet balances"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Get wallet balances",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/wallets/{id}/deposit/fiat": {
+      "post": {
+        "description": "Starts a fiat-to-crypto deposit via the configured payment rail (e.g. Flutterwave).\nReturns a payment link the customer should be redirected to.\n",
+        "operationId": "depositFiat",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WalletID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "amount": "100.00",
+                "currency": "NGN",
+                "email": "customer@acme.com",
+                "name": "John Doe"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/FiatDepositRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "payment_link": "https://checkout.flutterwave.com/pay/abc123",
+                  "reference": "DEP-a1b2c3d4"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DepositResponse"
+                }
+              }
+            },
+            "description": "Deposit initiated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Initiate a fiat deposit",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/wallets/{id}/trustlines": {
+      "post": {
+        "description": "Adds a trustline for an asset on the wallet so it can hold that token.",
+        "operationId": "createTrustline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WalletID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "asset_code": "USDC",
+                "asset_issuer": "GA5ZSEJ6BHT2ZKGDABICHI62W25ZJUXUNFFYGLYTIEXP6CZMUWqmOvxM",
+                "limit": "100000"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateTrustlineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "asset_code": "USDC",
+                  "asset_issuer": "GA5ZSEJ6BHT2ZKGDABICHI62W25ZJUXUNFFYGLYTIEXP6CZMUWqmOvxM",
+                  "status": "submitted",
+                  "wallet_id": "w_1a2b3c4d"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/TrustlineResponse"
+                }
+              }
+            },
+            "description": "Trustline submission accepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Establish a trustline",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/wallets/{id}/withdraw/fiat": {
+      "post": {
+        "description": "Converts USDC from the wallet and sends fiat to a bank account.",
+        "operationId": "withdrawFiat",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WalletID"
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional idempotency key to prevent duplicate withdrawals on network retries"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional idempotency key to prevent duplicate withdrawals on network retries"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "account_bank": "GTBank",
+                "account_number": 123456789,
+                "amount": "50.00",
+                "currency": "NGN"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/FiatWithdrawalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "reference": "WIT-e5f6g7h8",
+                  "status": "pending"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalResponse"
+                }
+              }
+            },
+            "description": "Withdrawal initiated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Initiate a fiat withdrawal",
+        "tags": ["Wallets"]
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "description": "Returns all registered webhook endpoints for the tenant.",
+        "operationId": "listWebhooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "endpoints": {
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEndpointSummary"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of webhook endpoints"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List webhook endpoints",
+        "tags": ["Webhooks"]
+      },
+      "post": {
+        "description": "Registers a new webhook endpoint. A signing secret is generated and\nreturned — it will be used to sign webhook payloads via HMAC-SHA256.\n",
+        "operationId": "registerWebhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "events": ["transfer.initiated", "transfer.settled"],
+                "url": "https://acme.com/hooks/fluxa"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/RegisterWebhookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "active": true,
+                  "created_at": "2026-01-15T10:00:00Z",
+                  "events": ["transfer.initiated", "transfer.settled"],
+                  "id": "wh_abc123",
+                  "secret": "whsec_abc123def456",
+                  "url": "https://acme.com/hooks/fluxa"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointResponse"
+                }
+              }
+            },
+            "description": "Webhook registered"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Register a webhook endpoint",
+        "tags": ["Webhooks"]
+      }
+    },
+    "/v1/webhooks/fiat/{provider}": {
+      "post": {
+        "description": "Receives webhook callbacks from fiat payment providers (e.g. Flutterwave).\nThis is an internal endpoint called by the provider, not by the tenant.\n",
+        "operationId": "handleFiatWebhook",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Provider name (e.g. flutterwave)"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Provider-specific webhook payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "example": "ok",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Webhook processed"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Handle a fiat provider webhook",
+        "tags": ["System"]
+      }
+    },
+    "/v1/webhooks/secret": {
+      "get": {
+        "description": "Returns version metadata only. Secret material is never returned by this endpoint.",
+        "operationId": "listWebhookSigningSecrets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSigningSecretsResponse"
+                }
+              }
+            },
+            "description": "Signing-secret metadata for the authenticated tenant"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Inspect webhook signing secret versions",
+        "tags": ["Webhooks"]
+      }
+    },
+    "/v1/webhooks/secret/rotate": {
+      "post": {
+        "description": "Generates a new secret and returns its plaintext once. A bounded overlap lets in-flight deliveries signed with the prior version remain verifiable.",
+        "operationId": "rotateWebhookSigningSecret",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateWebhookSigningSecretRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateWebhookSigningSecretResponse"
+                }
+              }
+            },
+            "description": "New signing secret, disclosed once for this idempotent operation"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Another request with the same idempotency key is still processing."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Rotate the tenant webhook signing secret",
+        "tags": ["Webhooks"]
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "delete": {
+        "description": "Permanently removes the webhook endpoint.",
+        "operationId": "deleteWebhook",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Delete a webhook endpoint",
+        "tags": ["Webhooks"]
+      }
+    },
+    "/v1/webhooks/{id}/deliveries": {
+      "get": {
+        "description": "Returns delivery attempts for a specific webhook endpoint.",
+        "operationId": "listWebhookDeliveries",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "deliveries": {
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookDelivery"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of deliveries"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "List webhook deliveries",
+        "tags": ["Webhooks"]
+      }
+    },
+    "/v1/withdrawals": {
+      "post": {
+        "description": "Converts USDC from the wallet and sends fiat to a bank account, protected by idempotency.",
+        "operationId": "initiateWithdrawal",
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional idempotency key to prevent duplicate withdrawals on network retries"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Optional idempotency key to prevent duplicate withdrawals on network retries"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "account_bank": {
+                    "type": "string"
+                  },
+                  "account_number": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "wallet_id": {
+                    "format": "uuid",
+                    "type": "string"
+                  }
+                },
+                "required": ["wallet_id", "amount", "currency", "account_bank", "account_number"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalResponse"
+                }
+              }
+            },
+            "description": "Withdrawal initiated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        },
+        "summary": "Initiate a withdrawal",
+        "tags": ["Wallets"]
       }
     }
-  }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "https://api.fluxa.io",
+      "description": "Production (not hosted publicly yet)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Tenant registration, login and API key management"
+    },
+    {
+      "name": "Wallets",
+      "description": "Stellar wallet creation, balances, and fiat deposits/withdrawals"
+    },
+    {
+      "name": "Beneficiaries",
+      "description": "Tenant-scoped beneficiary allowlists with cooling-off approval"
+    },
+    {
+      "name": "Transfers",
+      "description": "Single and batch transfers between wallets"
+    },
+    {
+      "name": "Transactions",
+      "description": "Transaction history"
+    },
+    {
+      "name": "FX",
+      "description": "Foreign-exchange quotes, conversions and rate lookups"
+    },
+    {
+      "name": "Schedules",
+      "description": "Scheduled and recurring tenant payouts"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Webhook endpoint management and delivery logs"
+    },
+    {
+      "name": "Fees",
+      "description": "Fee schedule queries"
+    },
+    {
+      "name": "Admin",
+      "description": "Administrative endpoints (require admin key)"
+    },
+    {
+      "name": "System",
+      "description": "Health, metrics and fiat provider webhooks"
+    },
+    {
+      "name": "Claimable balances",
+      "description": "Claimable balance lookup and claiming"
+    },
+    {
+      "name": "Audit",
+      "description": "Append-only tenant audit events and export"
+    },
+    {
+      "name": "Data",
+      "description": "Tenant compliance exports"
+    },
+    {
+      "name": "Idempotency",
+      "description": "Inspection and recovery of idempotent operations"
+    }
+  ]
 }

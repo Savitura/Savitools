@@ -31,7 +31,7 @@ export function CopyCurlButton({
     const baseUrl =
       provider === 'fluxa'
         ? (process.env.NEXT_PUBLIC_FLUXA_API_URL ?? 'https://api.fluxa.io')
-        : (process.env.NEXT_PUBLIC_CROWDPAY_API_URL ?? 'https://api.crowdpay.io');
+        : (process.env.NEXT_PUBLIC_CROWDPAY_API_URL ?? 'https://crowdpay.up.railway.app');
 
     const url = new URL(path, baseUrl);
     if (queryParams) {
