@@ -11,7 +11,7 @@ import { assertPublicHostname, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guar
 import { BoundedTtlMap } from '../../common/bounded-ttl-map';
 import * as smolToml from 'smol-toml';
 import { isStellarPublicKey } from '../../common/stellar-address';
-import { redactValue, isSensitiveKey, REDACTED } from '../../common/redaction';
+import { redactValue } from '../../common/redaction';
 
 const FETCH_TIMEOUT = 15_000;
 export const DEFAULT_FEDERATION_PROBE_TIMEOUT_MS = 3_000;
@@ -237,37 +237,6 @@ const SEP24_TERMINAL_STATES = new Set([
   'pending_user_transfer_complete',
 ]);
 
-/** Fields whose values must never leave the service. */
-const REDACTED_FIELD_KEYS = new Set([
-  'jwt',
-  'token',
-  'auth',
-  'authorization',
-  'signature',
-  'signed_challenge',
-  'secret',
-  'secret_key',
-  'seed',
-  'private_key',
-  'account_secret',
-  'password',
-  'ssn',
-  'tax_id',
-  'date_of_birth',
-  'email',
-  'phone',
-  'phone_number',
-  'address',
-  'first_name',
-  'last_name',
-  'full_name',
-  'bank_account',
-  'routing_number',
-  'id_number',
-  'passport_number',
-  'national_id',
-]);
-
 /** Reject non-https and non-public hosts before navigation. */
 async function assertSafeNavigationUrl(urlStr: string): Promise<URL> {
   let parsed: URL;
@@ -324,21 +293,10 @@ const HTTPS_URL_RE = /^https:\/\/[^\s]+$/i;
 
 // ─── Server diagnostics (Savitura/Savitools#341) ────────────────────────────
 
-export type DiagnosticStageName =
-  | 'toml'
-  | 'http'
-  | 'forward-lookup'
-  | 'reverse-lookup';
+export type DiagnosticStageName = 'toml' | 'http' | 'forward-lookup' | 'reverse-lookup';
 
 export type DiagnosticFailureKind =
-  | 'dns'
-  | 'toml'
-  | 'tls'
-  | 'http'
-  | 'timeout'
-  | 'schema'
-  | 'ssrf'
-  | 'redirects';
+  'dns' | 'toml' | 'tls' | 'http' | 'timeout' | 'schema' | 'ssrf' | 'redirects';
 
 /** One probed step of the diagnostic run. */
 export interface DiagnosticStage {
@@ -371,12 +329,18 @@ function classifyError(error: unknown): DiagnosticFailureKind {
   if (/non-public address/i.test(message)) return 'ssrf';
   if (/Could not resolve host/i.test(message)) return 'dns';
   if (/Unsupported protocol/i.test(message)) return 'tls';
-  if (error instanceof BadGatewayException || /Too many redirects|redirect loop|redirect/i.test(message)) {
+  if (
+    error instanceof BadGatewayException ||
+    /Too many redirects|redirect loop|redirect/i.test(message)
+  ) {
     return 'redirects';
   }
   if (error instanceof NotFoundException) return 'toml';
   // The bounded TOML parser reports malformed/oversized documents as 400s.
-  if (error instanceof BadRequestException && /Malformed TOML|TOML document|stellar\.toml/i.test(message)) {
+  if (
+    error instanceof BadRequestException &&
+    /Malformed TOML|TOML document|stellar\.toml/i.test(message)
+  ) {
     return 'toml';
   }
   return 'http';
@@ -480,9 +444,7 @@ function parseBoundedToml(raw: string): Record<string, unknown> {
   }
 
   if (countKeys(parsed) > TOML_MAX_KEYS) {
-    throw new BadRequestException(
-      `TOML document exceeds the maximum of ${TOML_MAX_KEYS} keys`,
-    );
+    throw new BadRequestException(`TOML document exceeds the maximum of ${TOML_MAX_KEYS} keys`);
   }
 
   return parsed;
@@ -588,13 +550,13 @@ export class FederationService {
       redirect: 'manual' as const,
     };
     try {
-      let response = await Promise.race([
-        fetch(target.toString(), requestInit),
-        abortPromise,
-      ]);
+      let response = await Promise.race([fetch(target.toString(), requestInit), abortPromise]);
       let hops = 0;
 
-      while ([301, 302, 303, 307, 308].includes(response.status) && response.headers.has('location')) {
+      while (
+        [301, 302, 303, 307, 308].includes(response.status) &&
+        response.headers.has('location')
+      ) {
         if (++hops > MAX_SAFE_REDIRECTS) {
           throw new BadGatewayException('Too many redirects');
         }
@@ -604,10 +566,7 @@ export class FederationService {
           throw new BadRequestException(`Unsupported protocol in redirect: ${target.protocol}`);
         }
         await assertPublicHostname(target.hostname);
-        response = await Promise.race([
-          fetch(target.toString(), requestInit),
-          abortPromise,
-        ]);
+        response = await Promise.race([fetch(target.toString(), requestInit), abortPromise]);
       }
       return response;
     } catch (error) {
@@ -619,18 +578,13 @@ export class FederationService {
     }
   }
 
-  private extractHomeDomain(
-    federationRecord: Record<string, unknown>,
-  ): string | null {
+  private extractHomeDomain(federationRecord: Record<string, unknown>): string | null {
     const domain = federationRecord.home_domain;
     if (typeof domain === 'string') return domain;
     return null;
   }
 
-  private async awaitWithinDeadline<T>(
-    promise: Promise<T>,
-    signal: AbortSignal,
-  ): Promise<T> {
+  private async awaitWithinDeadline<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const onAbort = () => reject(new RequestTimeoutError());
       if (signal.aborted) {
@@ -653,9 +607,7 @@ export class FederationService {
 
   // ─── GET /federation/resolve ────────────────────────────────────────────
 
-  async resolveFederation(
-    address: string,
-  ): Promise<FederationResolveResult> {
+  async resolveFederation(address: string): Promise<FederationResolveResult> {
     const input = address.trim();
 
     if (isStellarPublicKey(input)) {
@@ -676,16 +628,12 @@ export class FederationService {
     );
   }
 
-  private async reverseLookup(
-    publicKey: string,
-  ): Promise<FederationResolveResult> {
+  private async reverseLookup(publicKey: string): Promise<FederationResolveResult> {
     try {
       const url = `https://federation.stellar.org/federation?q=${encodeURIComponent(publicKey)}&type=id`;
       const res = await this.fetchWithTimeout(url);
       if (!res.ok) {
-        throw new NotFoundException(
-          `No federation record found for public key ${publicKey}`,
-        );
+        throw new NotFoundException(`No federation record found for public key ${publicKey}`);
       }
       const data = (await res.json()) as Record<string, unknown>;
       return {
@@ -698,22 +646,16 @@ export class FederationService {
     } catch (err: unknown) {
       if (err instanceof NotFoundException) throw err;
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      throw new BadRequestException(
-        `Federation reverse lookup failed: ${msg}`,
-      );
+      throw new BadRequestException(`Federation reverse lookup failed: ${msg}`);
     }
   }
 
-  private async nameLookup(
-    federationAddress: string,
-  ): Promise<FederationResolveResult> {
+  private async nameLookup(federationAddress: string): Promise<FederationResolveResult> {
     try {
       const url = `https://federation.stellar.org/federation?q=${encodeURIComponent(federationAddress)}&type=name`;
       const res = await this.fetchWithTimeout(url);
       if (!res.ok) {
-        throw new NotFoundException(
-          `No federation record found for ${federationAddress}`,
-        );
+        throw new NotFoundException(`No federation record found for ${federationAddress}`);
       }
       const data = (await res.json()) as Record<string, unknown>;
       return {
@@ -730,9 +672,7 @@ export class FederationService {
     }
   }
 
-  private async domainLookup(
-    domain: string,
-  ): Promise<FederationResolveResult> {
+  private async domainLookup(domain: string): Promise<FederationResolveResult> {
     const tomlData = await this.fetchToml(domain);
     if (!tomlData.FEDERATION_SERVER) {
       throw new NotFoundException(
@@ -761,7 +701,12 @@ export class FederationService {
     try {
       toml = await this.fetchTomlRecord(cleanDomain);
     } catch (err: unknown) {
-      if (err instanceof NotFoundException || err instanceof BadRequestException || err instanceof PayloadTooLargeException) throw err;
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof PayloadTooLargeException
+      )
+        throw err;
       const msg = err instanceof Error ? err.message : 'Unknown error';
       throw new BadRequestException(`Failed to fetch stellar.toml for ${cleanDomain}: ${msg}`);
     }
@@ -770,9 +715,7 @@ export class FederationService {
     const validationWarnings: string[] = [];
     for (const field of REQUIRED_TOML_FIELDS) {
       if (!parsed[field]) {
-        validationWarnings.push(
-          `Missing required SEP-1 field: ${field}`,
-        );
+        validationWarnings.push(`Missing required SEP-1 field: ${field}`);
       }
     }
 
@@ -781,11 +724,9 @@ export class FederationService {
       networkPassphrase: (parsed.NETWORK_PASSPHRASE as string) ?? null,
       federationServer: (parsed.FEDERATION_SERVER as string) ?? null,
       transferServer: (parsed.TRANSFER_SERVER as string) ?? null,
-      transferServerSep0024:
-        (parsed.TRANSFER_SERVER_SEP0024 as string) ?? null,
+      transferServerSep0024: (parsed.TRANSFER_SERVER_SEP0024 as string) ?? null,
       webAuthEndpoint: (parsed.WEB_AUTH_ENDPOINT as string) ?? null,
-      directPaymentServer:
-        (parsed.DIRECT_PAYMENT_SERVER as string) ?? null,
+      directPaymentServer: (parsed.DIRECT_PAYMENT_SERVER as string) ?? null,
       accounts: Array.isArray(parsed.ACCOUNTS)
         ? (parsed.ACCOUNTS as Array<string | Record<string, unknown>>).map((a) =>
             typeof a === 'string'
@@ -802,21 +743,13 @@ export class FederationService {
         ? (parsed.CURRENCIES as Record<string, unknown>[]).map((c) => ({
             code: String(c.CODE ?? ''),
             issuer: String(c.ISSUER ?? ''),
-            display_decimals: c.DISPLAY_DECIMALS
-              ? Number(c.DISPLAY_DECIMALS)
-              : undefined,
+            display_decimals: c.DISPLAY_DECIMALS ? Number(c.DISPLAY_DECIMALS) : undefined,
             name: c.NAME ? String(c.NAME) : undefined,
             desc: c.DESC ? String(c.DESC) : undefined,
-            conditions: c.CONDITIONS
-              ? String(c.CONDITIONS)
-              : undefined,
+            conditions: c.CONDITIONS ? String(c.CONDITIONS) : undefined,
             image: c.IMAGE ? String(c.IMAGE) : undefined,
-            anchor_asset_type: c.ANCHOR_ASSET_TYPE
-              ? String(c.ANCHOR_ASSET_TYPE)
-              : undefined,
-            anchor_asset: c.ANCHOR_ASSET
-              ? String(c.ANCHOR_ASSET)
-              : undefined,
+            anchor_asset_type: c.ANCHOR_ASSET_TYPE ? String(c.ANCHOR_ASSET_TYPE) : undefined,
+            anchor_asset: c.ANCHOR_ASSET ? String(c.ANCHOR_ASSET) : undefined,
             redemption_instructions: c.REDEMPTION_INSTRUCTIONS
               ? String(c.REDEMPTION_INSTRUCTIONS)
               : undefined,
@@ -824,12 +757,8 @@ export class FederationService {
               ? String(c.COLLATERAL_ADDRESSES)
               : undefined,
             regulated: c.REGULATED ? Boolean(c.REGULATED) : undefined,
-            approval_server: c.APPROVAL_SERVER
-              ? String(c.APPROVAL_SERVER)
-              : undefined,
-            approval_criteria: c.APPROVAL_CRITERIA
-              ? String(c.APPROVAL_CRITERIA)
-              : undefined,
+            approval_server: c.APPROVAL_SERVER ? String(c.APPROVAL_SERVER) : undefined,
+            approval_criteria: c.APPROVAL_CRITERIA ? String(c.APPROVAL_CRITERIA) : undefined,
           }))
         : [],
       validators: Array.isArray(parsed.VALIDATORS)
@@ -837,47 +766,25 @@ export class FederationService {
             PUBLIC_KEY: String(v.PUBLIC_KEY ?? ''),
             NAME: v.NAME ? String(v.NAME) : undefined,
             HOST: v.HOST ? String(v.HOST) : undefined,
-            HISTORY_URL: v.HISTORY_URL
-              ? String(v.HISTORY_URL)
-              : undefined,
+            HISTORY_URL: v.HISTORY_URL ? String(v.HISTORY_URL) : undefined,
           }))
         : [],
       documentation: parsed.DOCUMENTATION
         ? {
-            PRINCIPALS_NAME: (parsed.DOCUMENTATION as Record<string, unknown>)
-              .PRINCIPALS_NAME
-              ? String(
-                  (parsed.DOCUMENTATION as Record<string, unknown>)
-                    .PRINCIPALS_NAME,
-                )
+            PRINCIPALS_NAME: (parsed.DOCUMENTATION as Record<string, unknown>).PRINCIPALS_NAME
+              ? String((parsed.DOCUMENTATION as Record<string, unknown>).PRINCIPALS_NAME)
               : undefined,
-            PRINCIPAL_EMAIL: (parsed.DOCUMENTATION as Record<string, unknown>)
-              .PRINCIPAL_EMAIL
-              ? String(
-                  (parsed.DOCUMENTATION as Record<string, unknown>)
-                    .PRINCIPAL_EMAIL,
-                )
+            PRINCIPAL_EMAIL: (parsed.DOCUMENTATION as Record<string, unknown>).PRINCIPAL_EMAIL
+              ? String((parsed.DOCUMENTATION as Record<string, unknown>).PRINCIPAL_EMAIL)
               : undefined,
-            PROJECT_URL: (parsed.DOCUMENTATION as Record<string, unknown>)
-              .PROJECT_URL
-              ? String(
-                  (parsed.DOCUMENTATION as Record<string, unknown>)
-                    .PROJECT_URL,
-                )
+            PROJECT_URL: (parsed.DOCUMENTATION as Record<string, unknown>).PROJECT_URL
+              ? String((parsed.DOCUMENTATION as Record<string, unknown>).PROJECT_URL)
               : undefined,
-            OFFICIAL_CHAT: (parsed.DOCUMENTATION as Record<string, unknown>)
-              .OFFICIAL_CHAT
-              ? String(
-                  (parsed.DOCUMENTATION as Record<string, unknown>)
-                    .OFFICIAL_CHAT,
-                )
+            OFFICIAL_CHAT: (parsed.DOCUMENTATION as Record<string, unknown>).OFFICIAL_CHAT
+              ? String((parsed.DOCUMENTATION as Record<string, unknown>).OFFICIAL_CHAT)
               : undefined,
-            OTHER_INFO: (parsed.DOCUMENTATION as Record<string, unknown>)
-              .OTHER_INFO
-              ? String(
-                  (parsed.DOCUMENTATION as Record<string, unknown>)
-                    .OTHER_INFO,
-                )
+            OTHER_INFO: (parsed.DOCUMENTATION as Record<string, unknown>).OTHER_INFO
+              ? String((parsed.DOCUMENTATION as Record<string, unknown>).OTHER_INFO)
               : undefined,
           }
         : null,
@@ -886,10 +793,7 @@ export class FederationService {
     };
   }
 
-  async validateHomeDomain(
-    domain: string,
-    issuer: string,
-  ): Promise<HomeDomainValidationResult> {
+  async validateHomeDomain(domain: string, issuer: string): Promise<HomeDomainValidationResult> {
     const cleanDomain = normalizeHomeDomain(domain);
     if (!isStellarPublicKey(issuer)) {
       throw new BadRequestException('issuer must be a Stellar public key');
@@ -906,7 +810,10 @@ export class FederationService {
       return { valid: false, domain: cleanDomain, issuer, reason: 'issuer_not_declared' };
     }
     const declaredHomeDomain = typeof account === 'string' ? undefined : account.HOME_DOMAIN;
-    if (typeof declaredHomeDomain === 'string' && normalizeDomain(declaredHomeDomain) !== cleanDomain) {
+    if (
+      typeof declaredHomeDomain === 'string' &&
+      normalizeDomain(declaredHomeDomain) !== cleanDomain
+    ) {
       return { valid: false, domain: cleanDomain, issuer, reason: 'home_domain_mismatch' };
     }
     return { valid: true, domain: cleanDomain, issuer, reason: null };
@@ -939,18 +846,28 @@ export class FederationService {
     return {
       code: String(currency.CODE),
       issuer: String(currency.ISSUER),
-      display_decimals: currency.DISPLAY_DECIMALS == null ? undefined : Number(currency.DISPLAY_DECIMALS),
+      display_decimals:
+        currency.DISPLAY_DECIMALS == null ? undefined : Number(currency.DISPLAY_DECIMALS),
       name: typeof currency.NAME === 'string' ? currency.NAME : undefined,
       desc: typeof currency.DESC === 'string' ? currency.DESC : undefined,
       conditions: typeof currency.CONDITIONS === 'string' ? currency.CONDITIONS : undefined,
       image: typeof currency.IMAGE === 'string' ? currency.IMAGE : undefined,
-      anchor_asset_type: typeof currency.ANCHOR_ASSET_TYPE === 'string' ? currency.ANCHOR_ASSET_TYPE : undefined,
+      anchor_asset_type:
+        typeof currency.ANCHOR_ASSET_TYPE === 'string' ? currency.ANCHOR_ASSET_TYPE : undefined,
       anchor_asset: typeof currency.ANCHOR_ASSET === 'string' ? currency.ANCHOR_ASSET : undefined,
-      redemption_instructions: typeof currency.REDEMPTION_INSTRUCTIONS === 'string' ? currency.REDEMPTION_INSTRUCTIONS : undefined,
-      collateral_addresses: typeof currency.COLLATERAL_ADDRESSES === 'string' ? currency.COLLATERAL_ADDRESSES : undefined,
+      redemption_instructions:
+        typeof currency.REDEMPTION_INSTRUCTIONS === 'string'
+          ? currency.REDEMPTION_INSTRUCTIONS
+          : undefined,
+      collateral_addresses:
+        typeof currency.COLLATERAL_ADDRESSES === 'string'
+          ? currency.COLLATERAL_ADDRESSES
+          : undefined,
       regulated: typeof currency.REGULATED === 'boolean' ? currency.REGULATED : undefined,
-      approval_server: typeof currency.APPROVAL_SERVER === 'string' ? currency.APPROVAL_SERVER : undefined,
-      approval_criteria: typeof currency.APPROVAL_CRITERIA === 'string' ? currency.APPROVAL_CRITERIA : undefined,
+      approval_server:
+        typeof currency.APPROVAL_SERVER === 'string' ? currency.APPROVAL_SERVER : undefined,
+      approval_criteria:
+        typeof currency.APPROVAL_CRITERIA === 'string' ? currency.APPROVAL_CRITERIA : undefined,
     };
   }
 
@@ -963,10 +880,7 @@ export class FederationService {
     }
 
     const deadlineController = new AbortController();
-    const deadlineTimer = setTimeout(
-      () => deadlineController.abort(),
-      this.requestTimeoutMs,
-    );
+    const deadlineTimer = setTimeout(() => deadlineController.abort(), this.requestTimeoutMs);
     let tomlData: Record<string, unknown>;
     try {
       // A request deadline must not cancel the shared TOML flight, because
@@ -978,8 +892,7 @@ export class FederationService {
     } catch (error) {
       clearTimeout(deadlineTimer);
       const malformed =
-        error instanceof BadRequestException &&
-        /Malformed TOML|TOML document/.test(error.message);
+        error instanceof BadRequestException && /Malformed TOML|TOML document/.test(error.message);
       return {
         seps: [
           {
@@ -1032,75 +945,75 @@ export class FederationService {
 
     const transferServer = tomlData.TRANSFER_SERVER as string | undefined;
     const sep6 = transferServer
-      ? this.probeEndpoint(transferServer, '/info', deadlineController.signal).then((probeStatus): SepInfo => ({
-        number: 6,
-        name: 'Anchor API',
-        supported: true,
-        endpoint: transferServer,
-        probeStatus,
-      }))
+      ? this.probeEndpoint(transferServer, '/info', deadlineController.signal).then(
+          (probeStatus): SepInfo => ({
+            number: 6,
+            name: 'Anchor API',
+            supported: true,
+            endpoint: transferServer,
+            probeStatus,
+          }),
+        )
       : Promise.resolve<SepInfo>({
-        number: 6,
-        name: 'Anchor API',
-        supported: false,
-        endpoint: null,
-        probeStatus: 'red',
-      });
+          number: 6,
+          name: 'Anchor API',
+          supported: false,
+          endpoint: null,
+          probeStatus: 'red',
+        });
 
     const webAuthEndpoint = tomlData.WEB_AUTH_ENDPOINT as string | undefined;
     const sep10 = webAuthEndpoint
-      ? this.probeEndpoint(webAuthEndpoint, '/web_auth', deadlineController.signal).then((probeStatus): SepInfo => ({
-        number: 10,
-        name: 'Stellar Web Authentication',
-        supported: true,
-        endpoint: webAuthEndpoint,
-        probeStatus,
-      }))
+      ? this.probeEndpoint(webAuthEndpoint, '/web_auth', deadlineController.signal).then(
+          (probeStatus): SepInfo => ({
+            number: 10,
+            name: 'Stellar Web Authentication',
+            supported: true,
+            endpoint: webAuthEndpoint,
+            probeStatus,
+          }),
+        )
       : Promise.resolve<SepInfo>({
-        number: 10,
-        name: 'Stellar Web Authentication',
-        supported: false,
-        endpoint: null,
-        probeStatus: 'red',
-      });
+          number: 10,
+          name: 'Stellar Web Authentication',
+          supported: false,
+          endpoint: null,
+          probeStatus: 'red',
+        });
 
-    const transferServerSep0024 = tomlData.TRANSFER_SERVER_SEP0024 as
-      | string
-      | undefined;
+    const transferServerSep0024 = tomlData.TRANSFER_SERVER_SEP0024 as string | undefined;
     const sep24: SepInfo = transferServerSep0024
       ? {
-        number: 24,
-        name: 'Interactive Anchor API',
-        supported: true,
-        endpoint: transferServerSep0024,
-        probeStatus: 'green',
-      }
+          number: 24,
+          name: 'Interactive Anchor API',
+          supported: true,
+          endpoint: transferServerSep0024,
+          probeStatus: 'green',
+        }
       : {
-        number: 24,
-        name: 'Interactive Anchor API',
-        supported: false,
-        endpoint: null,
-        probeStatus: 'red',
-      };
+          number: 24,
+          name: 'Interactive Anchor API',
+          supported: false,
+          endpoint: null,
+          probeStatus: 'red',
+        };
 
-    const directPaymentServer = tomlData.DIRECT_PAYMENT_SERVER as
-      | string
-      | undefined;
+    const directPaymentServer = tomlData.DIRECT_PAYMENT_SERVER as string | undefined;
     const sep31: SepInfo = directPaymentServer
       ? {
-        number: 31,
-        name: 'Direct Payments',
-        supported: true,
-        endpoint: directPaymentServer,
-        probeStatus: 'green',
-      }
+          number: 31,
+          name: 'Direct Payments',
+          supported: true,
+          endpoint: directPaymentServer,
+          probeStatus: 'green',
+        }
       : {
-        number: 31,
-        name: 'Direct Payments',
-        supported: false,
-        endpoint: null,
-        probeStatus: 'red',
-      };
+          number: 31,
+          name: 'Direct Payments',
+          supported: false,
+          endpoint: null,
+          probeStatus: 'red',
+        };
 
     try {
       const [resolvedSep6, resolvedSep10] = await Promise.all([sep6, sep10]);
@@ -1127,15 +1040,11 @@ export class FederationService {
 
     // Amounts and memos stay strings end-to-end — no floating-point conversion.
     if (!DECIMAL_STRING_RE.test(params.amount)) {
-      throw new BadRequestException(
-        'amount must be a non-negative decimal string (e.g. "100.50")',
-      );
+      throw new BadRequestException('amount must be a non-negative decimal string (e.g. "100.50")');
     }
 
     if (params.callback && !HTTPS_URL_RE.test(params.callback)) {
-      throw new BadRequestException(
-        'callback must be a well-formed https:// URL',
-      );
+      throw new BadRequestException('callback must be a well-formed https:// URL');
     }
 
     if (params.sep !== '31' && !params.account) {
@@ -1166,9 +1075,7 @@ export class FederationService {
     const currencies = Array.isArray(tomlData.CURRENCIES)
       ? (tomlData.CURRENCIES as Record<string, unknown>[])
       : [];
-    const supportedCodes = new Set(
-      currencies.map((c) => String(c.CODE ?? '').toUpperCase()),
-    );
+    const supportedCodes = new Set(currencies.map((c) => String(c.CODE ?? '').toUpperCase()));
     if (!supportedCodes.has(params.asset.toUpperCase())) {
       throw new BadRequestException(
         `Asset '${params.asset}' is not supported by ${cleanDomain}. Supported assets: ` +
@@ -1342,7 +1249,9 @@ export class FederationService {
       stage: 'forward-lookup',
       ok: false,
       latencyMs: 0,
-      details: { requestUrl: redactUrl(appendQuery(federationServer, { q: testAddress, type: 'name' })) },
+      details: {
+        requestUrl: redactUrl(appendQuery(federationServer, { q: testAddress, type: 'name' })),
+      },
     };
     stages.push(forwardStage);
 
@@ -1452,9 +1361,7 @@ export class FederationService {
 
   // ─── Helpers ────────────────────────────────────────────────────────────
 
-  private async fetchToml(
-    domain: string,
-  ): Promise<Record<string, unknown>> {
+  private async fetchToml(domain: string): Promise<Record<string, unknown>> {
     return (await this.fetchTomlRecord(domain)).parsed;
   }
 
@@ -1481,9 +1388,7 @@ export class FederationService {
     const url = `https://${domain}/.well-known/stellar.toml`;
     const res = await this.fetchWithTimeout(url);
     if (!res.ok) {
-      throw new NotFoundException(
-        `stellar.toml not found at ${url} (HTTP ${res.status})`,
-      );
+      throw new NotFoundException(`stellar.toml not found at ${url} (HTTP ${res.status})`);
     }
     const raw = await res.text();
     const cached: CachedToml = {
@@ -1520,9 +1425,7 @@ export class FederationService {
    * transaction, validates the returned URL before navigation, and polls
    * transaction status until a terminal state, cancellation, or timeout.
    */
-  async debugSep24InteractiveFlow(
-    params: Sep24DebuggerParams,
-  ): Promise<Sep24DebuggerResult> {
+  async debugSep24InteractiveFlow(params: Sep24DebuggerParams): Promise<Sep24DebuggerResult> {
     const cleanDomain = normalizeDomain(params.domain);
     if (!isDomain(cleanDomain)) {
       throw new BadRequestException(`Invalid domain: ${params.domain}`);
@@ -1534,9 +1437,7 @@ export class FederationService {
       throw new BadRequestException('account must be a Stellar public key (G…)');
     }
     if (params.amount !== undefined && !DECIMAL_STRING_RE.test(params.amount)) {
-      throw new BadRequestException(
-        'amount must be a non-negative decimal string (e.g. "100.50")',
-      );
+      throw new BadRequestException('amount must be a non-negative decimal string (e.g. "100.50")');
     }
     if (params.callback && !HTTPS_URL_RE.test(params.callback)) {
       throw new BadRequestException('callback must be a well-formed https:// URL');
@@ -1565,8 +1466,7 @@ export class FederationService {
         at: new Date().toISOString(),
         latencyMs: Date.now() - discoveryStart,
         diagnostic: 'http',
-        message:
-          error instanceof Error ? error.message : 'stellar.toml discovery failed',
+        message: error instanceof Error ? error.message : 'stellar.toml discovery failed',
       });
       throw new BadRequestException(
         `SEP-24 discovery failed for ${cleanDomain}: ${
@@ -1580,9 +1480,7 @@ export class FederationService {
         ? tomlData.TRANSFER_SERVER_SEP0024
         : null;
     const webAuthEndpoint =
-      typeof tomlData.WEB_AUTH_ENDPOINT === 'string'
-        ? tomlData.WEB_AUTH_ENDPOINT
-        : null;
+      typeof tomlData.WEB_AUTH_ENDPOINT === 'string' ? tomlData.WEB_AUTH_ENDPOINT : null;
 
     if (!transferServerSep0024) {
       push({
@@ -1659,8 +1557,7 @@ export class FederationService {
         latencyMs: Date.now() - interactiveStart,
         request: { method: 'POST', url: redactUrl(interactiveEndpoint) },
         diagnostic: timedOut ? 'timeout' : 'http',
-        message:
-          error instanceof Error ? error.message : 'Interactive request failed',
+        message: error instanceof Error ? error.message : 'Interactive request failed',
       });
       throw new BadGatewayException(
         `SEP-24 interactive request failed: ${
@@ -1687,8 +1584,7 @@ export class FederationService {
         latencyMs: Date.now() - interactiveStart,
         request: { method: 'POST', url: redactUrl(interactiveEndpoint) },
         diagnostic: timedOut ? 'timeout' : 'http',
-        message:
-          error instanceof Error ? error.message : 'Interactive request failed',
+        message: error instanceof Error ? error.message : 'Interactive request failed',
       });
       throw new BadGatewayException(
         `SEP-24 interactive request failed: ${
@@ -1712,9 +1608,7 @@ export class FederationService {
         diagnostic: 'non-json',
         message: 'Anchor returned a non-JSON response to the interactive request',
       });
-      throw new BadGatewayException(
-        'SEP-24 interactive endpoint returned a non-JSON response',
-      );
+      throw new BadGatewayException('SEP-24 interactive endpoint returned a non-JSON response');
     }
 
     if (!interactiveResponse.ok) {
@@ -1732,15 +1626,11 @@ export class FederationService {
         diagnostic: expired ? 'expired-token' : 'anchor-error',
         message: `Anchor rejected the interactive request: ${anchorError}`,
       });
-      throw new BadGatewayException(
-        `SEP-24 anchor error: ${anchorError}`,
-      );
+      throw new BadGatewayException(`SEP-24 anchor error: ${anchorError}`);
     }
 
-    const interactiveUrl =
-      typeof interactiveJson.url === 'string' ? interactiveJson.url : null;
-    const transactionId =
-      typeof interactiveJson.id === 'string' ? interactiveJson.id : null;
+    const interactiveUrl = typeof interactiveJson.url === 'string' ? interactiveJson.url : null;
+    const transactionId = typeof interactiveJson.id === 'string' ? interactiveJson.id : null;
 
     if (!interactiveUrl) {
       push({
@@ -1783,8 +1673,7 @@ export class FederationService {
         latencyMs: Date.now() - redirectStart,
         request: { method: 'GET', url: redactUrl(interactiveUrl) },
         diagnostic: unsafe ? 'unsafe-url' : 'ssrf',
-        message:
-          error instanceof Error ? error.message : 'Interactive URL rejected',
+        message: error instanceof Error ? error.message : 'Interactive URL rejected',
       });
       throw error;
     }
@@ -1814,8 +1703,7 @@ export class FederationService {
         stage: 'status-poll',
         at: new Date().toISOString(),
         diagnostic: 'schema',
-        message:
-          'Interactive response did not include a transaction id; polling skipped',
+        message: 'Interactive response did not include a transaction id; polling skipped',
       });
     } else {
       while (!terminal && !cancelled && !timedOut) {
@@ -1893,8 +1781,7 @@ export class FederationService {
                 ? (parsedAny.status as string)
                 : null;
           const tx = (parsedAny?.transaction as Record<string, unknown>) ?? parsedAny;
-          moreInfoUrl =
-            typeof tx.more_info_url === 'string' ? tx.more_info_url : moreInfoUrl;
+          moreInfoUrl = typeof tx.more_info_url === 'string' ? tx.more_info_url : moreInfoUrl;
           requiredFields =
             tx.required_info_updates && typeof tx.required_info_updates === 'object'
               ? (redactValue(tx.required_info_updates) as Record<string, unknown>)
@@ -1932,8 +1819,7 @@ export class FederationService {
             latencyMs: Date.now() - pollAttemptStart,
             request: { method: 'GET', url: redactUrl(pollUrl) },
             diagnostic: timedOutAttempt ? 'timeout' : 'http',
-            message:
-              error instanceof Error ? error.message : 'Status poll failed',
+            message: error instanceof Error ? error.message : 'Status poll failed',
           });
           break;
         }

@@ -1,14 +1,8 @@
 import { randomUUID } from 'crypto';
-import { REDACTED, redactValue, redactString, redactHeaders, isSensitiveKey } from '../../common/redaction';
+import { redactValue } from '../../common/redaction';
 
 export type TimelineEntryKind =
-  | 'discovery'
-  | 'auth'
-  | 'interactive_url'
-  | 'redirect'
-  | 'callback'
-  | 'poll'
-  | 'error';
+  'discovery' | 'auth' | 'interactive_url' | 'redirect' | 'callback' | 'poll' | 'error';
 
 export interface TimelineEntry {
   id: string;
@@ -52,9 +46,7 @@ export class Sep24Timeline {
       ...entry,
       request: redactValue(entry.request),
       response: redactValue(entry.response),
-      details: entry.details
-        ? (redactValue(entry.details) as Record<string, unknown>)
-        : undefined,
+      details: entry.details ? (redactValue(entry.details) as Record<string, unknown>) : undefined,
     };
     this.entries.push(recorded);
     return recorded;
