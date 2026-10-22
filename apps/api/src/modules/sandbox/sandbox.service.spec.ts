@@ -134,8 +134,8 @@ describe('SandboxService', () => {
     });
   });
 
-  describe('resetAccount', () => {
-    it('resets a sandbox account to its known starting state', async () => {
+  describe('topUpAccount', () => {
+    it('tops up a sandbox account using Friendbot', async () => {
       const serverMock = (service as any).getServer('quickstart');
       jest.spyOn(serverMock, 'loadAccount').mockResolvedValueOnce({
         balances: [{ asset_type: 'native', balance: '10000.0000000' }],
@@ -145,13 +145,13 @@ describe('SandboxService', () => {
         json: async () => ({ hash: 'tx-reset-hash' }),
       });
 
-      const result = await service.resetAccount('GTEST', 'quickstart');
+      const result = await service.topUpAccount('GTEST', 'quickstart');
 
-      expect(result.reset).toBe(true);
+      expect(result.toppedUp).toBe(true);
       expect(result.publicKey).toBe('GTEST');
       expect(result.network).toBe('quickstart');
       expect(result.startingBalance).toBe('10000.0000000 XLM');
-      expect(result.message).toContain('Account GTEST on quickstart has been reset');
+      expect(result.message).toBe('Account GTEST on quickstart has been topped up.');
     });
   });
 

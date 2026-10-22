@@ -31,10 +31,10 @@ export class SandboxController {
     return this.sandboxService.fundFromFriendbot(dto.publicKey, dto.network);
   }
 
-  @Post('reset')
-  @ApiOperation({ summary: 'Reset a sandbox account to its known starting state' })
-  reset(@Body() dto: ResetAccountDto) {
-    return this.sandboxService.resetAccount(dto.publicKey, dto.network);
+  @Post('top-up')
+  @ApiOperation({ summary: 'Top up a sandbox account using Friendbot' })
+  topUp(@Body() dto: ResetAccountDto) {
+    return this.sandboxService.topUpAccount(dto.publicKey, dto.network);
   }
 
   @Get('account/:publicKey')
