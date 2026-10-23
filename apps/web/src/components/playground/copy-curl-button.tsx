@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolvePlaygroundBaseUrl } from '@/lib/playground-origins';
 
 interface CopyCurlButtonProps {
   method: string;
@@ -28,10 +29,9 @@ export function CopyCurlButton({
   const [copied, setCopied] = useState(false);
 
   const buildCurl = (): string => {
-    const baseUrl =
-      provider === 'fluxa'
-        ? (process.env.NEXT_PUBLIC_FLUXA_API_URL ?? 'https://api.fluxa.io')
-        : (process.env.NEXT_PUBLIC_CROWDPAY_API_URL ?? 'https://crowdpay.up.railway.app');
+    // `custom` has no configured host of its own yet, so it keeps documenting
+    // the CrowdPay base rather than silently defaulting to an unrelated one.
+    const baseUrl = resolvePlaygroundBaseUrl(provider === 'fluxa' ? 'fluxa' : 'crowdpay');
 
     const url = new URL(path, baseUrl);
     if (queryParams) {
