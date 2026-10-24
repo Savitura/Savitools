@@ -51,27 +51,33 @@ SaviTools implements the following security measures:
 
 The following security headers are set on all responses:
 
-| Header | Value | Purpose |
-| ------ | ----- | ------- |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://friendbot.stellar.org https://api.fluxa.io https://api.crowdpay.io wss://*.stellar.org; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'` | Mitigates XSS, injection, and unauthorized framing |
-| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Controls referrer information sent with requests |
-| `Permissions-Policy` | `accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()` | Restricts browser features and APIs |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` (production only) | Enforces HTTPS |
-| `X-DNS-Prefetch-Control` | `on` | Enables DNS prefetching for performance |
-| `X-Powered-By` | **Removed** | Hides Next.js version information |
+| Header                      | Value                                                                                                                                                                                                                                                                                                                                                                                                                         | Purpose                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `Content-Security-Policy`   | `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://horizon-testnet.stellar.org https://horizon.stellar.org https://friendbot.stellar.org https://api.fluxa.io https://api.crowdpay.io wss://*.stellar.org; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'` | Mitigates XSS, injection, and unauthorized framing |
+| `X-Content-Type-Options`    | `nosniff`                                                                                                                                                                                                                                                                                                                                                                                                                     | Prevents MIME-type sniffing                        |
+| `Referrer-Policy`           | `strict-origin-when-cross-origin`                                                                                                                                                                                                                                                                                                                                                                                             | Controls referrer information sent with requests   |
+| `Permissions-Policy`        | `accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()`                                                                                                                                                                                                                                                                                           | Restricts browser features and APIs                |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` (production only)                                                                                                                                                                                                                                                                                                                                                              | Enforces HTTPS                                     |
+| `X-DNS-Prefetch-Control`    | `on`                                                                                                                                                                                                                                                                                                                                                                                                                          | Enables DNS prefetching for performance            |
+| `X-Powered-By`              | **Removed**                                                                                                                                                                                                                                                                                                                                                                                                                   | Hides Next.js version information                  |
+
+### Supply Chain & Dependency Security
+
+- **Dependency Review Enforcement**: Automated pull request gating in GitHub Actions (`.github/workflows/dependency-review.yml`) powered by `actions/dependency-review-action@v4`. Every PR targeting `main` is scanned for newly introduced or upgraded vulnerable dependencies (blocking at `moderate`, `high`, or `critical` severity) and non-compliant or restrictive viral copyleft licenses (e.g. AGPL-3.0, GPL-3.0). See [Dependency Review Documentation](docs/dependency-review.md).
+- **SBOM Generation**: Automated CycloneDX Software Bill of Materials (SBOM) generation during builds.
+- **Local Review & Audit**: Contributors can run `npm run review:deps` and `npm audit` to validate dependency review configuration and package compliance locally before opening pull requests.
 
 ## Security-Related Configuration
 
-| Variable                  | Description                              |
-| ------------------------- | ---------------------------------------- |
-| `WEB_ORIGIN`              | Allowed CORS origin                      |
-| `THROTTLE_TTL`            | Rate limit window (ms)                   |
-| `THROTTLE_LIMIT`          | Max requests per window                  |
-| `TRUST_PROXY`             | Fastify trustProxy (false/true/hops/CIDR)|
-| `RUN_MIGRATIONS`          | Apply TypeORM migrations on API startup  |
-| `WEBHOOK_SIGNING_SECRET`  | HMAC key for webhook signatures          |
-| `JWT_SECRET`              | Secret for JWT token signing             |
+| Variable                 | Description                               |
+| ------------------------ | ----------------------------------------- |
+| `WEB_ORIGIN`             | Allowed CORS origin                       |
+| `THROTTLE_TTL`           | Rate limit window (ms)                    |
+| `THROTTLE_LIMIT`         | Max requests per window                   |
+| `TRUST_PROXY`            | Fastify trustProxy (false/true/hops/CIDR) |
+| `RUN_MIGRATIONS`         | Apply TypeORM migrations on API startup   |
+| `WEBHOOK_SIGNING_SECRET` | HMAC key for webhook signatures           |
+| `JWT_SECRET`             | Secret for JWT token signing              |
 
 ## Responsible Disclosure
 

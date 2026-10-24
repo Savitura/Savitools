@@ -20,7 +20,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "smoke:playground": "node scripts/check-playground-hosts.mjs",
     "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\"",
-    "sbom": "cyclonedx-bom -o dist/sbom/cyclonedx.json"
+    "sbom": "cyclonedx-bom -o dist/sbom/cyclonedx.json",
+    "review:deps": "node scripts/check-dependency-review.mjs"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
