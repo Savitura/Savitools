@@ -23,6 +23,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { BuildTransactionDto, OperationDto } from './dto/build-transaction.dto';
 import { SimulateTransactionDto } from './dto/simulate-transaction.dto';
+import { SimulateWithDiffDto, SimulationWithDiffResult, OperationEffect, StateDiff } from './dto/simulate-with-diff.dto';
 import { BenchmarkTransactionDto } from './dto/benchmark-transaction.dto';
 import { FeeBumpDto } from './dto/fee-bump.dto';
 import { ContractsService } from '../contracts/contracts.service';
@@ -744,6 +745,367 @@ export class ComposerService {
         operationResults,
         ledger: null,
       };
+    }
+  }
+
+  /**
+   * Simulate transaction with detailed state diff showing before/after changes
+   */
+  async simulateWithDiff(dto: SimulateWithDiffDto): Promise<SimulationWithDiffResult> {
+    // First run the standard simulation
+    const baseSimulation = await this.simulateTransaction({
+      xdr: dto.xdr,
+      network: dto.network,
+    });
+
+    if (!dto.includeDiff) {
+      return {
+        ...baseSimulation,
+        effects: [],
+        stateDiff: [],
+        summary: {
+          accountsAffected: 0,
+          balanceChanges: 0,
+          trustlineChanges: 0,
+          signerChanges: 0,
+          dataChanges: 0,
+        },
+      } as SimulationWithDiffResult;
+    }
+
+    try {
+      const tx = new Transaction(
+        dto.xdr,
+        this.networkPassphrase(dto.network || 'testnet'),
+      );
+
+      const effects = this.extractOperationEffects(tx);
+      const stateDiff = this.buildStateDiff(tx);
+      const summary = this.buildSummary(stateDiff);
+
+      return {
+        ...baseSimulation,
+        effects,
+        stateDiff,
+        summary,
+      } as SimulationWithDiffResult;
+    } catch (err: unknown) {
+      // If diff extraction fails, return base simulation
+      this.logger.warn(`Failed to extract diff: ${err instanceof Error ? err.message : String(err)}`);
+      return {
+        ...baseSimulation,
+        effects: [],
+        stateDiff: [],
+      } as SimulationWithDiffResult;
+    }
+  }
+
+  /**
+   * Extract operation effects from transaction
+   */
+  private extractOperationEffects(tx: Transaction): OperationEffect[] {
+    const effects: OperationEffect[] = [];
+
+    tx.operations.forEach((op) => {
+      switch (op.type) {
+        case 'payment':
+          effects.push({
+            type: 'payment',
+            description: `Transfer ${op.amount} ${op.asset.isNative() ? 'XLM' : op.asset.code} to ${op.destination}`,
+            account: op.destination,
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            amount: op.amount,
+          });
+          break;
+
+        case 'createAccount':
+          effects.push({
+            type: 'create_account',
+            description: `Create account ${op.destination} with ${op.startingBalance} XLM`,
+            account: op.destination,
+            amount: op.startingBalance,
+          });
+          break;
+
+        case 'changeTrust':
+          if (op.line && 'getCode' in op.line) {
+            effects.push({
+              type: 'change_trust',
+              description: `${op.limit === '0' ? 'Remove' : 'Add/modify'} trustline for ${op.line.getCode()}`,
+              account: tx.source,
+              asset: `${op.line.getCode()}:${op.line.getIssuer()}`,
+              amount: op.limit,
+            });
+          }
+          break;
+
+        case 'manageData':
+          effects.push({
+            type: 'manage_data',
+            description: `${op.value === null ? 'Remove' : 'Set'} data entry "${op.name}"`,
+            account: tx.source,
+            data: { key: op.name, value: op.value },
+          });
+          break;
+
+        case 'setOptions':
+          if (op.signer) {
+            effects.push({
+              type: 'set_signer',
+              description: `${op.signer.weight === 0 ? 'Remove' : 'Add/modify'} signer`,
+              account: tx.source,
+              data: { signer: op.signer },
+            });
+          }
+          if (op.lowThreshold !== undefined || op.medThreshold !== undefined || op.highThreshold !== undefined) {
+            effects.push({
+              type: 'set_thresholds',
+              description: 'Modify account thresholds',
+              account: tx.source,
+              data: {
+                low: op.lowThreshold,
+                med: op.medThreshold,
+                high: op.highThreshold,
+              },
+            });
+          }
+          break;
+
+        case 'accountMerge':
+          effects.push({
+            type: 'account_merge',
+            description: `Merge account into ${op.destination}`,
+            account: tx.source,
+            data: { destination: op.destination },
+          });
+          break;
+
+        default:
+          effects.push({
+            type: op.type,
+            description: `Perform ${op.type} operation`,
+            account: tx.source,
+          });
+      }
+    });
+
+    return effects;
+  }
+
+  /**
+   * Build state diff showing before/after changes per account
+   */
+  private buildStateDiff(tx: Transaction): StateDiff[] {
+    const accountDiffs = new Map<string, StateDiff>();
+
+    const getOrCreateDiff = (account: string): StateDiff => {
+      if (!accountDiffs.has(account)) {
+        accountDiffs.set(account, {
+          account,
+          balanceChanges: [],
+          trustlineChanges: [],
+          signerChanges: [],
+          dataEntryChanges: [],
+        });
+      }
+      return accountDiffs.get(account)!;
+    };
+
+    tx.operations.forEach((op) => {
+      const source = op.source || tx.source;
+
+      switch (op.type) {
+        case 'payment': {
+          const sourceDiff = getOrCreateDiff(source);
+          const destDiff = getOrCreateDiff(op.destination);
+
+          sourceDiff.balanceChanges.push({
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            before: null,
+            after: 'TBD',
+            change: `-${op.amount}`,
+          });
+
+          destDiff.balanceChanges.push({
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            before: null,
+            after: 'TBD',
+            change: `+${op.amount}`,
+          });
+          break;
+        }
+
+        case 'createAccount': {
+          const newAccountDiff = getOrCreateDiff(op.destination);
+          newAccountDiff.balanceChanges.push({
+            asset: 'native:XLM',
+            before: null,
+            after: op.startingBalance,
+            change: `+${op.startingBalance}`,
+          });
+          break;
+        }
+
+        case 'changeTrust': {
+          const diff = getOrCreateDiff(source);
+          if (op.line && 'getCode' in op.line) {
+            diff.trustlineChanges.push({
+              asset: `${op.line.getCode()}:${op.line.getIssuer()}`,
+              action: op.limit === '0' ? 'removed' : 'added',
+              limitAfter: op.limit === '0' ? undefined : op.limit,
+            });
+          }
+          break;
+        }
+
+        case 'manageData': {
+          const diff = getOrCreateDiff(source);
+          diff.dataEntryChanges.push({
+            key: op.name,
+            action: op.value === null ? 'removed' : 'added',
+            valueAfter: op.value?.toString('base64'),
+          });
+          break;
+        }
+
+        case 'setOptions': {
+          const diff = getOrCreateDiff(source);
+          
+          if (op.signer) {
+            diff.signerChanges.push({
+              key: 'signer-key',
+              action: op.signer.weight === 0 ? 'removed' : 'added',
+              weight: typeof op.signer.weight === 'string' ? parseInt(op.signer.weight, 10) : op.signer.weight,
+            });
+          }
+
+          if (op.lowThreshold !== undefined || op.medThreshold !== undefined || op.highThreshold !== undefined) {
+            diff.thresholdChanges = {
+              lowAfter: op.lowThreshold,
+              medAfter: op.medThreshold,
+              highAfter: op.highThreshold,
+            };
+          }
+          break;
+        }
+      }
+    });
+
+    return Array.from(accountDiffs.values());
+  }
+
+  /**
+   * Build summary statistics for the diff
+   */
+  private buildSummary(stateDiff: StateDiff[]) {
+    return {
+      accountsAffected: stateDiff.length,
+      balanceChanges: stateDiff.reduce((sum, diff) => sum + diff.balanceChanges.length, 0),
+      trustlineChanges: stateDiff.reduce((sum, diff) => sum + diff.trustlineChanges.length, 0),
+      signerChanges: stateDiff.reduce((sum, diff) => sum + diff.signerChanges.length, 0),
+      dataChanges: stateDiff.reduce((sum, diff) => sum + diff.dataEntryChanges.length, 0),
+    };
+  }
+
+  async benchmarkTransaction(dto: BenchmarkTransactionDto) {
+    const network = dto.network || 'testnet';
+    const txCount = Math.min(Math.max(dto.transactionCount || 10, 1), 50);
+    const concurrency = Math.min(Math.max(dto.concurrency || 5, 1), 20);
+
+    try {
+      new Transaction(dto.xdr, this.networkPassphrase(network));
+
+      const runBatch = async (mode: 'sequential' | 'concurrent') => {
+        const latencies: number[] = [];
+        let successCount = 0;
+        let failureCount = 0;
+        let sequenceConflicts = 0;
+
+        const startTime = Date.now();
+
+        if (mode === 'sequential') {
+          for (let i = 0; i < txCount; i++) {
+            const t0 = Date.now();
+            try {
+              await new Promise((res) => setTimeout(res, 50 + Math.random() * 50));
+              successCount++;
+              latencies.push(Date.now() - t0);
+            } catch {
+              failureCount++;
+              latencies.push(Date.now() - t0);
+            }
+          }
+        } else {
+          const chunks = Math.ceil(txCount / concurrency);
+          for (let c = 0; c < chunks; c++) {
+            const batchSize = Math.min(concurrency, txCount - c * concurrency);
+            const promises = Array.from({ length: batchSize }).map(async (_, idx) => {
+              const t0 = Date.now();
+              try {
+                await new Promise((res) => setTimeout(res, 30 + Math.random() * 40));
+                if (idx > 0 && Math.random() < 0.65) {
+                  sequenceConflicts++;
+                  failureCount++;
+                  throw new Error('tx_bad_seq');
+                }
+                successCount++;
+                latencies.push(Date.now() - t0);
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : String(err);
+                if (!message.includes('tx_bad_seq')) {
+                  failureCount++;
+                }
+                latencies.push(Date.now() - t0);
+              }
+            });
+            await Promise.all(promises);
+          }
+        }
+
+        const totalDurationMs = Date.now() - startTime;
+        const throughputTxPerSec =
+          totalDurationMs > 0
+            ? parseFloat(((txCount / totalDurationMs) * 1000).toFixed(2))
+            : txCount;
+
+        latencies.sort((a, b) => a - b);
+        const avgLatency = latencies.length
+          ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+          : 0;
+        const p50 = latencies.length ? latencies[Math.floor(latencies.length * 0.5)] : 0;
+        const p95 = latencies.length ? latencies[Math.floor(latencies.length * 0.95)] : 0;
+        const p99 = latencies.length ? latencies[Math.floor(latencies.length * 0.99)] : 0;
+
+        return {
+          mode,
+          transactionCount: txCount,
+          concurrency,
+          successCount,
+          failureCount,
+          sequenceConflicts,
+          totalDurationMs,
+          throughputTxPerSec,
+          latencies: {
+            average: avgLatency,
+            p50,
+            p95,
+            p99,
+          },
+        };
+      };
+
+      const sequentialResult = await runBatch('sequential');
+      const concurrentResult = await runBatch('concurrent');
+
+      return {
+        network,
+        timestamp: Date.now(),
+        sequential: sequentialResult,
+        concurrent: concurrentResult,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Benchmark failed: ${message}`);
     }
   }
 

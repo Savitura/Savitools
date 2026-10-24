@@ -506,6 +506,11 @@ describe('ComposerService', () => {
 
       expect(result.success).toBe(false);
       expect(result.resultCodes).toBe('tx_failed');
+      expect(result.operationResults).toBeTruthy();
+      expect(Array.isArray(result.operationResults)).toBe(true);
+      const ops = result.operationResults as string[];
+      expect(ops[0]).toContain('op[0] liquidityPoolDeposit');
+      expect(ops[0]).toContain('minPrice must be less than or equal to maxPrice');
       const operationResults = result.operationResults as string[] | null;
       expect(operationResults?.[0]).toContain('op[0] liquidityPoolDeposit');
       // stellar-core has reworded this diagnostic between protocol releases, so
@@ -563,6 +568,117 @@ describe('ComposerService', () => {
 
       const result = await service.simulateTransaction({ xdr, network: 'testnet' });
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('simulateWithDiff', () => {
+    it('returns simulation result with state diff for payment operations', async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const transaction = new TransactionBuilder(new Account(source.publicKey(), '1'), {
+        networkPassphrase: Networks.TESTNET,
+        fee: '100',
+      })
+        .addOperation(Operation.payment({
+          destination,
+          asset: Asset.native(),
+          amount: '100',
+        }))
+        .setTimeout(30)
+        .build();
+
+      const result = await service.simulateWithDiff({
+        xdr: transaction.toEnvelope().toXDR('base64'),
+        network: 'testnet',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.hash).toBeTruthy();
+      expect(result.stateDiff).toBeDefined();
+      expect(Array.isArray(result.stateDiff)).toBe(true);
+      expect(result.stateDiff!.length).toBe(2); // Source and destination
+      
+      const sourceDiff = result.stateDiff!.find((d) => d.account === source.publicKey());
+      const destDiff = result.stateDiff!.find((d) => d.account === destination);
+      
+      expect(sourceDiff).toBeDefined();
+      expect(sourceDiff?.balanceChanges.length).toBeGreaterThan(0);
+      expect(sourceDiff?.balanceChanges[0].change).toContain('-100');
+      expect(destDiff).toBeDefined();
+      expect(destDiff?.balanceChanges.length).toBeGreaterThan(0);
+      expect(destDiff?.balanceChanges[0].change).toContain('+100');
+      
+      expect(result.summary).toBeDefined();
+      expect(result.summary!.accountsAffected).toBe(2);
+      expect(result.summary!.balanceChanges).toBe(2);
+    });
+
+    it('returns state diff for createAccount operations', async () => {
+      const source = Keypair.random();
+      const newAccount = Keypair.random().publicKey();
+      const transaction = new TransactionBuilder(new Account(source.publicKey(), '1'), {
+        networkPassphrase: Networks.TESTNET,
+        fee: '100',
+      })
+        .addOperation(Operation.createAccount({
+          destination: newAccount,
+          startingBalance: '10',
+        }))
+        .setTimeout(30)
+        .build();
+
+      const result = await service.simulateWithDiff({
+        xdr: transaction.toEnvelope().toXDR('base64'),
+        network: 'testnet',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.stateDiff!.length).toBe(1); // Only new account
+      
+      const newAccountDiff = result.stateDiff!.find((d) => d.account === newAccount);
+      expect(newAccountDiff).toBeDefined();
+      expect(newAccountDiff?.balanceChanges.length).toBeGreaterThan(0);
+      expect(newAccountDiff?.balanceChanges[0].change).toContain('+10');
+    });
+
+    it('handles multiple operations affecting same account', async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const transaction = new TransactionBuilder(new Account(source.publicKey(), '1'), {
+        networkPassphrase: Networks.TESTNET,
+        fee: '100',
+      })
+        .addOperation(Operation.payment({
+          destination,
+          asset: Asset.native(),
+          amount: '50',
+        }))
+        .addOperation(Operation.payment({
+          destination,
+          asset: Asset.native(),
+          amount: '30',
+        }))
+        .setTimeout(30)
+        .build();
+
+      const result = await service.simulateWithDiff({
+        xdr: transaction.toEnvelope().toXDR('base64'),
+        network: 'testnet',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.summary).toBeDefined();
+      expect(result.summary!.balanceChanges).toBe(3); // 2 for dest, 1 for source
+      
+      const destDiff = result.stateDiff!.find((d) => d.account === destination);
+      expect(destDiff).toBeDefined();
+      expect(destDiff?.balanceChanges.length).toBe(2); // Two payment operations
+    });
+
+    it('throws on invalid XDR', async () => {
+      await expect(
+        service.simulateWithDiff({ xdr: 'invalid-xdr', network: 'testnet' }),
+      ).rejects.toThrow('Invalid XDR');
     });
   });
 

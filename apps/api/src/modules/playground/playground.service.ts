@@ -65,6 +65,9 @@ export const DEFAULT_SPEC_TTL_MS = 3_600_000;
 /** Maximum number of history entries retained per user. */
 export const PLAYGROUND_HISTORY_LIMIT = 50;
 
+/** Maximum response size in bytes (10MB) */
+export const MAX_RESPONSE_SIZE = 10 * 1024 * 1024;
+
 /**
  * Parse `PLAYGROUND_SPEC_TTL_MS` into a number. Env values are strings, so a
  * raw `get<number>()` would silently yield `NaN`. An absent value falls back to
@@ -401,6 +404,14 @@ export class PlaygroundService {
 
     const latencyMs = Date.now() - start;
 
+    // Check response size before reading body
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+      throw new BadGatewayException(
+        `Response from ${dto.provider} exceeds maximum size limit (${MAX_RESPONSE_SIZE} bytes)`
+      );
+    }
+
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
@@ -408,10 +419,20 @@ export class PlaygroundService {
 
     let body: unknown;
     const contentType = response.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
-      body = await response.json();
-    } else {
-      body = await response.text();
+    
+    try {
+      if (contentType.includes('application/json')) {
+        // Read response with size limit
+        const text = await this.readResponseWithLimit(response, MAX_RESPONSE_SIZE);
+        body = JSON.parse(text);
+      } else {
+        body = await this.readResponseWithLimit(response, MAX_RESPONSE_SIZE);
+      }
+    } catch (error) {
+      if (error instanceof BadGatewayException) {
+        throw error;
+      }
+      throw new BadGatewayException(`Failed to read response from ${dto.provider}: ${error}`);
     }
 
     this.logger.log(
@@ -433,6 +454,55 @@ export class PlaygroundService {
     };
   }
 
+  /**
+   * Read response body with size limit enforcement.
+   * Throws BadGatewayException if response exceeds MAX_RESPONSE_SIZE.
+   */
+  private async readResponseWithLimit(response: Response, maxSize: number): Promise<string> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        if (value) {
+          totalSize += value.length;
+          
+          if (totalSize > maxSize) {
+            reader.cancel();
+            throw new BadGatewayException(
+              `Response exceeds maximum size limit (${maxSize} bytes)`
+            );
+          }
+          
+          chunks.push(value);
+        }
+      }
+
+      // Combine all chunks into a single Uint8Array
+      const combined = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      // Decode as UTF-8 text
+      return new TextDecoder().decode(combined);
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  private async recordHistory(userId: string, dto: ProxyRequestDto, result: ProxyResult): Promise<void> {
   private async recordHistory(
     userId: string,
     dto: ProxyRequestDto,
