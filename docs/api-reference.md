@@ -4,11 +4,11 @@ Developer infrastructure for the Stellar ecosystem.
 
 ## Base URLs
 
-| Environment | URL | Notes |
-|-------------|-----|-------|
-| **Mainnet** | `https://api.savitools.com/api` | Production Stellar network |
-| **Testnet** | `https://testnet-api.savitools.com/api` | Stellar testnet environment |
-| **Local Development** | `http://localhost:3001/api` | Development server (default) |
+| Environment           | URL                                     | Notes                        |
+| --------------------- | --------------------------------------- | ---------------------------- |
+| **Mainnet**           | `https://api.savitools.com/api`         | Production Stellar network   |
+| **Testnet**           | `https://testnet-api.savitools.com/api` | Stellar testnet environment  |
+| **Local Development** | `http://localhost:3001/api`             | Development server (default) |
 
 ## API Versioning
 
@@ -31,14 +31,18 @@ Example: `GET /api/v1/health`
 ### Authentication Methods
 
 #### HTTP Cookie (Recommended)
+
 The API uses **HTTP-only cookies** to store JWT tokens automatically after authentication. When you call `POST /auth/login` or `POST /auth/register`, the response sets:
+
 - `access_token` cookie (15-minute expiration)
 - `refresh_token` cookie (7-day expiration)
 
 All subsequent requests automatically include these cookies. No header configuration needed.
 
 #### Header-Based Authentication (Optional)
+
 If cookies are disabled, use:
+
 ```
 Authorization: Bearer {accessToken}
 ```
@@ -46,6 +50,7 @@ Authorization: Bearer {accessToken}
 ### Cookie Refresh
 
 To refresh an expired access token:
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/refresh \
   -H "Content-Type: application/json" \
@@ -63,6 +68,7 @@ These public, read-only endpoints inspect the domain's `/.well-known/stellar.tom
 Checks the issuer key appears in the domain's `ACCOUNTS` array. An optional account `HOME_DOMAIN` value must also match the normalized domain. A mismatch is returned as a successful validation result with `valid: false`; malformed inputs use the standard `400` error envelope and an unavailable TOML uses the existing federation error responses.
 
 **Response (200):**
+
 ```json
 { "valid": true, "domain": "example.com", "issuer": "G...", "reason": null }
 ```
@@ -72,6 +78,7 @@ Checks the issuer key appears in the domain's `ACCOUNTS` array. An optional acco
 Returns the matching `[[CURRENCIES]]` metadata only when the issuer passes the home-domain check. Asset codes must contain 1–12 ASCII letters or digits and issuer must be a Stellar public key. An undeclared currency returns `404`; an issuer that fails domain validation returns `400`.
 
 **Response (200):**
+
 ```json
 { "code": "USDC", "issuer": "G...", "name": "USD Coin", "display_decimals": 7 }
 ```
@@ -85,11 +92,13 @@ The existing `FEDERATION_TOML_CACHE_TTL_MS` and `FEDERATION_TOML_CACHE_MAX_ENTRI
 Health check endpoint.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/health
 ```
 
 **Response (200):**
+
 ```json
 {
   "status": "ok"
@@ -105,6 +114,7 @@ curl http://localhost:3001/api/v1/health
 Register a new user with email and password.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/register \
   -H "Content-Type: application/json" \
@@ -115,6 +125,7 @@ curl -X POST http://localhost:3001/api/v1/auth/register \
 ```
 
 **Response (201):**
+
 ```json
 {
   "user": {
@@ -126,6 +137,7 @@ curl -X POST http://localhost:3001/api/v1/auth/register \
 ```
 
 **Errors:**
+
 - `400`: User already exists or invalid email format
 
 ---
@@ -135,6 +147,7 @@ curl -X POST http://localhost:3001/api/v1/auth/register \
 Login with email and password.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/login \
   -H "Content-Type: application/json" \
@@ -145,6 +158,7 @@ curl -X POST http://localhost:3001/api/v1/auth/login \
 ```
 
 **Response (200):**
+
 ```json
 {
   "user": {
@@ -156,10 +170,12 @@ curl -X POST http://localhost:3001/api/v1/auth/login \
 ```
 
 **Cookies Set:**
+
 - `access_token` (15 min TTL)
 - `refresh_token` (7 day TTL)
 
 **Errors:**
+
 - `401`: Invalid email or password
 
 ---
@@ -169,6 +185,7 @@ curl -X POST http://localhost:3001/api/v1/auth/login \
 Request a password reset email (see Savitura/Savitools#196). The response is identical whether or not the account exists — the endpoint cannot be used to enumerate registered emails. Requests are rate-limited per IP and per email.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/forgot-password \
   -H "Content-Type: application/json" \
@@ -176,6 +193,7 @@ curl -X POST http://localhost:3001/api/v1/auth/forgot-password \
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "If an account with that email exists, we have sent a link to reset your password."
@@ -191,6 +209,7 @@ The email contains a link to `/reset-password?token=…`. The token is stored ha
 Set a new password with a valid, unused, unexpired reset token. On success every active refresh-token family for the user is revoked, signing out all other sessions.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/reset-password \
   -H "Content-Type: application/json" \
@@ -201,6 +220,7 @@ curl -X POST http://localhost:3001/api/v1/auth/reset-password \
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Password updated. You can now sign in with your new password."
@@ -208,6 +228,7 @@ curl -X POST http://localhost:3001/api/v1/auth/reset-password \
 ```
 
 **Errors:**
+
 - `404`: Reset token is invalid (or already used)
 - `410`: `RESET_TOKEN_EXPIRED`
 
@@ -218,12 +239,14 @@ curl -X POST http://localhost:3001/api/v1/auth/reset-password \
 Rotate refresh token and issue a new access token.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/refresh \
   --cookie "refresh_token=YOUR_REFRESH_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "user": {
@@ -234,6 +257,7 @@ curl -X POST http://localhost:3001/api/v1/auth/refresh \
 ```
 
 **Errors:**
+
 - `401`: Invalid or expired refresh token
 
 ---
@@ -243,11 +267,13 @@ curl -X POST http://localhost:3001/api/v1/auth/refresh \
 Invalidate refresh token and clear auth cookies.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/logout
 ```
 
 **Response (200):**
+
 ```json
 {
   "success": true
@@ -261,6 +287,7 @@ curl -X POST http://localhost:3001/api/v1/auth/logout
 Exchange a Fluxa API key for a SaviTools session and link accounts.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/auth/fluxa \
   -H "Content-Type: application/json" \
@@ -270,6 +297,7 @@ curl -X POST http://localhost:3001/api/v1/auth/fluxa \
 ```
 
 **Response (200):**
+
 ```json
 {
   "user": {
@@ -281,6 +309,7 @@ curl -X POST http://localhost:3001/api/v1/auth/fluxa \
 ```
 
 **Errors:**
+
 - `400`: Invalid Fluxa API key
 
 ---
@@ -290,12 +319,14 @@ curl -X POST http://localhost:3001/api/v1/auth/fluxa \
 Get the current authenticated user.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/auth/me \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "user": {
@@ -307,6 +338,7 @@ curl http://localhost:3001/api/v1/auth/me \
 ```
 
 **Errors:**
+
 - `401`: Not authenticated
 
 ---
@@ -318,11 +350,13 @@ curl http://localhost:3001/api/v1/auth/me \
 Generate a new Stellar keypair (public key + secret).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/wallet/generate
 ```
 
 **Response (201):**
+
 ```json
 {
   "publicKey": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C",
@@ -337,6 +371,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/generate
 Fund a testnet account via Friendbot (10 XLM).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/wallet/fund \
   -H "Content-Type: application/json" \
@@ -346,6 +381,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/fund \
 ```
 
 **Response (200):**
+
 ```json
 {
   "success": true,
@@ -356,6 +392,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/fund \
 ```
 
 **Errors:**
+
 - `400`: Invalid public key or funding failed (rate-limited, etc.)
 
 ---
@@ -365,11 +402,13 @@ curl -X POST http://localhost:3001/api/v1/wallet/fund \
 Get asset balances for a Stellar account.
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C"
 ```
 
 **Response (200):**
+
 ```json
 {
   "balances": [
@@ -390,6 +429,7 @@ curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAW
 ```
 
 **Errors:**
+
 - `400`: Invalid public key or account not found
 
 ---
@@ -399,6 +439,7 @@ curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAW
 Submit a payment the client already built and signed (requires JWT authentication and rate limiting). The source secret never leaves the client.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/wallet/payment \
   -H "Content-Type: application/json" \
@@ -408,6 +449,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/payment \
 ```
 
 **Response (200):**
+
 ```json
 {
   "success": true,
@@ -416,6 +458,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/payment \
 ```
 
 **Errors:**
+
 - `400`: Invalid signed XDR, unsigned envelope, or Horizon rejected the transaction
 
 ---
@@ -427,6 +470,7 @@ curl -X POST http://localhost:3001/api/v1/wallet/payment \
 Find payment paths between two assets.
 
 **Query Parameters:**
+
 - `direction` (required): `strict_send` or `strict_receive`
 - `source_asset_type` (required): `native` | `credit_alphanum4` | `credit_alphanum12`
 - `source_asset_code` (optional): Asset code (e.g., `USDC`)
@@ -438,11 +482,13 @@ Find payment paths between two assets.
 - `network` (optional, default `mainnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/simulator/paths?direction=strict_send&source_asset_type=native&destination_asset_type=credit_alphanum4&destination_asset_code=USDC&destination_asset_issuer=GA...&amount=100&network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "paths": [
@@ -461,6 +507,7 @@ curl "http://localhost:3001/api/v1/simulator/paths?direction=strict_send&source_
 ```
 
 **Errors:**
+
 - `400`: Invalid parameters or no paths found
 
 ---
@@ -470,6 +517,7 @@ curl "http://localhost:3001/api/v1/simulator/paths?direction=strict_send&source_
 Compute destination_min or send_max for a selected path with slippage.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/simulator/estimate \
   -H "Content-Type: application/json" \
@@ -481,6 +529,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/estimate \
 ```
 
 **Response (200):**
+
 ```json
 {
   "sourceAmount": "100.0000000",
@@ -489,6 +538,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/estimate \
 ```
 
 **Errors:**
+
 - `400`: Invalid path or amount
 
 ---
@@ -498,6 +548,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/estimate \
 Find paths for a strict send payment (you control the amount sent).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/simulator/path-send \
   -H "Content-Type: application/json" \
@@ -510,6 +561,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/path-send \
 ```
 
 **Response (200):**
+
 ```json
 {
   "paths": [...],
@@ -524,6 +576,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/path-send \
 Find paths for a strict receive payment (you control the amount received).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/simulator/path-receive \
   -H "Content-Type: application/json" \
@@ -536,6 +589,7 @@ curl -X POST http://localhost:3001/api/v1/simulator/path-receive \
 ```
 
 **Response (200):**
+
 ```json
 {
   "paths": [...],
@@ -550,15 +604,18 @@ curl -X POST http://localhost:3001/api/v1/simulator/path-receive \
 Estimate transaction fee based on current network fee stats.
 
 **Query Parameters:**
+
 - `operations` (optional, default `1`): Number of operations in the transaction
 - `network` (optional, default `testnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/simulator/fee?operations=3&network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "baseFee": 100,
@@ -577,6 +634,7 @@ Price several slippage tolerances against a single simulated adverse rate move (
 A path payment carries a tolerance rather than a locked rate: `destinationMin` for `strict_send`, `sendMax` for `strict_receive`. The network fails the operation when the live route cannot fill inside it. This endpoint reads the live route table for a pair and prices up to ten tolerances against one adverse move, so they can be compared directly.
 
 **Request body:**
+
 - `direction` (required): `strict_send` or `strict_receive`
 - `sourceAsset` (required): `XLM` or `CODE:ISSUER`
 - `destinationAsset` (required): `XLM` or `CODE:ISSUER`
@@ -587,6 +645,7 @@ A path payment carries a tolerance rather than a locked rate: `destinationMin` f
 - `network` (optional, default `testnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl -X POST "http://localhost:3001/api/v1/simulator/path-payment-lab" \
   -H "content-type: application/json" \
@@ -602,6 +661,7 @@ curl -X POST "http://localhost:3001/api/v1/simulator/path-payment-lab" \
 ```
 
 **Response (200):**
+
 ```json
 {
   "network": "testnet",
@@ -649,29 +709,32 @@ curl -X POST "http://localhost:3001/api/v1/simulator/path-payment-lab" \
 
 **How the arithmetic works:**
 
-| | `destinationMin` (strict send) | `sendMax` (strict receive) |
-|---|---|---|
-| Guarantee | `floor(variable × (1 − s))` | `ceil(variable × (1 + s))` |
-| Worst case at the move | `floor(variable × (1 − m))` | `ceil(variable × (1 + m))` |
-| Headroom | `worstCase − guarantee` | `guarantee − worstCase` |
+|                        | `destinationMin` (strict send) | `sendMax` (strict receive) |
+| ---------------------- | ------------------------------ | -------------------------- |
+| Guarantee              | `floor(variable × (1 − s))`    | `ceil(variable × (1 + s))` |
+| Worst case at the move | `floor(variable × (1 − m))`    | `ceil(variable × (1 + m))` |
+| Headroom               | `worstCase − guarantee`        | `guarantee − worstCase`    |
 
-where `s` is the tolerance and `m` the adverse move, both as fractions. The two directions subtract differently because a `destinationMin` is a floor the fill must stay *above* while a `sendMax` is a ceiling it must stay *below*; in both cases a positive `headroom` means the payment clears.
+where `s` is the tolerance and `m` the adverse move, both as fractions. The two directions subtract differently because a `destinationMin` is a floor the fill must stay _above_ while a `sendMax` is a ceiling it must stay _below_; in both cases a positive `headroom` means the payment clears.
 
 - `verdict` is `pass`, `fail`, or `exact`. `exact` means the tolerance and the move produced the same amount, so the payment clears only if the rate does not move by another stroop — treat it as a failure.
 - All amount arithmetic runs on exact stroop integers and rounds the way the network rounds, so a reported `destinationMin`/`sendMax` is always one the network accepts. No amount is ever held in a floating-point number.
-- `recommendedSlippagePercent` is the *narrowest* compared tolerance that still absorbs the move; anything tighter would fail. It is `null` and `exceededByEveryScenario` is `true` when every compared tolerance is exceeded.
+- `recommendedSlippagePercent` is the _narrowest_ compared tolerance that still absorbs the move; anything tighter would fail. It is `null` and `exceededByEveryScenario` is `true` when every compared tolerance is exceeded.
 - `routeDispersionPercent` reports how far the selected route already sits below the best route, as a percentage of the best one. It is `null` when route `0` was simulated.
 
 **Limits:**
+
 - `slippageScenarios`: 1–10 entries, each `0.01`–`100`. A tolerance below `0.01%` would round to zero hundredths of a percent and mean "no tolerance", so it is rejected rather than silently accepted.
 - `adverseMovePercent`: `0`–`100`.
 - `routeIndex`: `0` to `routeCount − 1`.
 
 **Errors:**
+
 - `400`: invalid amount, asset format, or tolerance; `routeIndex` beyond the routes Horizon returned; no route for the pair
 - `429`: global rate limit exceeded
 
 **Operational notes:**
+
 - The call is not cached. A run is a pure function of the live route table plus the caller's tolerances, and any cached answer would describe a route table that has since moved.
 - `POST` answers `200`, not `201`: nothing is created.
 
@@ -684,16 +747,19 @@ where `s` is the tolerance and `m` the adverse move, both as fractions. The two 
 Search for liquidity pools by asset pair on Stellar.
 
 **Query Parameters:**
+
 - `assetA` (required): First asset in the pair. Use `XLM` for native or `CODE:ISSUER` for non-native.
 - `assetB` (required): Second asset in the pair. Use `XLM` for native or `CODE:ISSUER` for non-native.
 - `network` (optional, default `testnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/liquidity-pools/search?assetA=XLM&assetB=USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5&network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 [
   {
@@ -714,6 +780,7 @@ curl "http://localhost:3001/api/v1/liquidity-pools/search?assetA=XLM&assetB=USDC
 ```
 
 **Errors:**
+
 - `400`: Invalid asset format or network
 
 ---
@@ -723,15 +790,18 @@ curl "http://localhost:3001/api/v1/liquidity-pools/search?assetA=XLM&assetB=USDC
 Get detailed information about a specific pool.
 
 **Query Parameters:**
+
 - `poolId` (required): 64-character hex pool ID
 - `network` (optional, default `testnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/liquidity-pools/details?poolId=a468d41d61e...&network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "poolId": "a468d41d61e...",
@@ -750,6 +820,7 @@ curl "http://localhost:3001/api/v1/liquidity-pools/details?poolId=a468d41d61e...
 ```
 
 **Errors:**
+
 - `400`: Invalid pool ID or network
 - `404`: Pool not found
 
@@ -760,6 +831,7 @@ curl "http://localhost:3001/api/v1/liquidity-pools/details?poolId=a468d41d61e...
 Calculate the value of LP shares.
 
 **Request Body:**
+
 ```json
 {
   "poolId": "a468d41d61e...",
@@ -769,6 +841,7 @@ Calculate the value of LP shares.
 ```
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/liquidity-pools/share-value \
   -H "Content-Type: application/json" \
@@ -780,6 +853,7 @@ curl -X POST http://localhost:3001/api/v1/liquidity-pools/share-value \
 ```
 
 **Response (201):**
+
 ```json
 {
   "poolId": "a468d41d61e...",
@@ -794,6 +868,7 @@ curl -X POST http://localhost:3001/api/v1/liquidity-pools/share-value \
 ```
 
 **Errors:**
+
 - `400`: Invalid input or pool state (e.g., empty pool, shares exceed total)
 - `404`: Pool not found
 
@@ -804,6 +879,7 @@ curl -X POST http://localhost:3001/api/v1/liquidity-pools/share-value \
 Add a pool to your watchlist. Requires authentication.
 
 **Request Body:**
+
 ```json
 {
   "poolId": "a468d41d61e...",
@@ -815,6 +891,7 @@ Add a pool to your watchlist. Requires authentication.
 ```
 
 **Response (201):**
+
 ```json
 {
   "id": "uuid",
@@ -828,6 +905,7 @@ Add a pool to your watchlist. Requires authentication.
 ```
 
 **Errors:**
+
 - `400`: Invalid input or pool does not exist
 - `401`: Authentication required
 
@@ -838,6 +916,7 @@ Add a pool to your watchlist. Requires authentication.
 Remove a pool from your watchlist. Requires authentication.
 
 **Request Body:**
+
 ```json
 {
   "id": "uuid"
@@ -847,6 +926,7 @@ Remove a pool from your watchlist. Requires authentication.
 **Response (204):** No content
 
 **Errors:**
+
 - `401`: Authentication required
 - `404`: Watched pool not found
 
@@ -857,6 +937,7 @@ Remove a pool from your watchlist. Requires authentication.
 Get your watched pools. Requires authentication.
 
 **Response (200):**
+
 ```json
 [
   {
@@ -872,6 +953,7 @@ Get your watched pools. Requires authentication.
 ```
 
 **Errors:**
+
 - `401`: Authentication required
 
 ---
@@ -883,11 +965,13 @@ Get your watched pools. Requires authentication.
 Publishes the bounds `POST /multisig/simulate` accepts, so a client can validate a form before a round trip rather than after a 400 (Savitura/Savitools#352).
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/multisig/limits"
 ```
 
 **Response (200):**
+
 ```json
 {
   "maxSigners": 21,
@@ -912,6 +996,7 @@ Evaluate a weighted multisig against the signatures collected so far.
 A Stellar multisig is not "2 of 3 signers" — it is any subset of signers whose weights total at least the threshold. This endpoint answers what that collected weight authorises, which weight classes are cleared, which signers are still outstanding, and which configuration risks apply.
 
 **Request body:**
+
 - `threshold` (required): the weight the operation needs, `0`–`255`. This is the account's `medium` threshold, which gates payments and path payments
 - `signers` (required): 1–21 entries, each with:
   - `key` (required): a `G…` account id
@@ -922,6 +1007,7 @@ A Stellar multisig is not "2 of 3 signers" — it is any subset of signers whose
 - `minTime` / `maxTime` (optional): the transaction validity window, as unix seconds or an ISO 8601 timestamp. Omit or send an empty value for "unbounded"
 
 **Request:**
+
 ```bash
 curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
   -H "content-type: application/json" \
@@ -938,6 +1024,7 @@ curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
 ```
 
 **Response (200):**
+
 ```json
 {
   "threshold": 2,
@@ -992,6 +1079,7 @@ curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
 ```
 
 **Field notes:**
+
 - `satisfied` is `signedWeight >= threshold`. `canSubmit` additionally requires every `required` signer to have signed — a missing required signer blocks the account regardless of collected weight.
 - `progressPercent` is `min(signedWeight / threshold, 1)`, and is `100` when the threshold is `0`.
 - `minimumSignersNeeded` is the **smallest** set of outstanding signers that reaches the threshold, chosen on fewest signers and then the tightest fit, so the answer never commits more weight than the quorum needs. It is `null` when no combination of the remaining signers is enough. `null` and `[]` are therefore different answers: unreachable versus already satisfied.
@@ -1000,29 +1088,32 @@ curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
 
 **Risk codes:**
 
-| Code | Severity | Meaning |
-|---|---|---|
-| `THRESHOLD_ZERO` | critical | A threshold of 0 authorises the operation without any signature |
-| `THRESHOLD_UNREACHABLE` | critical | No signer carries weight, so no signature set can reach a threshold of 1 or more |
-| `THRESHOLD_ABOVE_TOTAL_WEIGHT` | critical | Total weight is below the threshold |
-| `REQUIRED_SIGNER_UNSIGNED` | critical | A required signer has not signed, so the account cannot be modified |
-| `SINGLE_SIGNER_CONTROLS` | warning | One signer's weight alone reaches the threshold |
-| `REQUIRES_EVERY_SIGNER` | warning | Removing any weighted signer drops the account below the threshold |
-| `QUORUM_SINGLE_POINT_OF_FAILURE` | warning | One outstanding signature completes the quorum, so that signer can stall the account alone |
-| `DUPLICATE_SIGNER` | warning | The same key appears more than once |
-| `ZERO_WEIGHT_SIGNERS` | info | Zero-weight signers are recorded but add no weight |
-| `REDUNDANT_SIGNER` | info | These signers could be dropped without weakening the quorum |
+| Code                             | Severity | Meaning                                                                                    |
+| -------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `THRESHOLD_ZERO`                 | critical | A threshold of 0 authorises the operation without any signature                            |
+| `THRESHOLD_UNREACHABLE`          | critical | No signer carries weight, so no signature set can reach a threshold of 1 or more           |
+| `THRESHOLD_ABOVE_TOTAL_WEIGHT`   | critical | Total weight is below the threshold                                                        |
+| `REQUIRED_SIGNER_UNSIGNED`       | critical | A required signer has not signed, so the account cannot be modified                        |
+| `SINGLE_SIGNER_CONTROLS`         | warning  | One signer's weight alone reaches the threshold                                            |
+| `REQUIRES_EVERY_SIGNER`          | warning  | Removing any weighted signer drops the account below the threshold                         |
+| `QUORUM_SINGLE_POINT_OF_FAILURE` | warning  | One outstanding signature completes the quorum, so that signer can stall the account alone |
+| `DUPLICATE_SIGNER`               | warning  | The same key appears more than once                                                        |
+| `ZERO_WEIGHT_SIGNERS`            | info     | Zero-weight signers are recorded but add no weight                                         |
+| `REDUNDANT_SIGNER`               | info     | These signers could be dropped without weakening the quorum                                |
 
 **Limits:**
+
 - `signers`: 1–21 entries
 - `weight`, `threshold`, `lowThreshold`, `highThreshold`: integers `0`–`255`
 - `minTime`/`maxTime`: unix seconds or ISO 8601; `minTime` must not be after `maxTime`
 
 **Errors:**
+
 - `400`: weight or threshold outside `0`–`255`, more than 21 signers, a `required` signer carrying weight, a window that closes before it opens, or an unreadable timestamp
 - `429`: global rate limit exceeded
 
 **Operational notes:**
+
 - The call is stateless: nothing is fetched and nothing is stored. The same request always yields the same answer, so it is safe to try configurations that do not exist.
 - `POST` answers `200`, not `201`: nothing is created.
 
@@ -1035,11 +1126,13 @@ curl -X POST "http://localhost:3001/api/v1/multisig/simulate" \
 List all supported operation types with field schemas.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/composer/operations
 ```
 
 **Response (200):**
+
 ```json
 {
   "operations": [
@@ -1081,6 +1174,7 @@ curl http://localhost:3001/api/v1/composer/operations
 Build a multi-op transaction and return unsigned XDR envelope.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/composer/build \
   -H "Content-Type: application/json" \
@@ -1103,6 +1197,7 @@ curl -X POST http://localhost:3001/api/v1/composer/build \
 ```
 
 **Response (200):**
+
 ```json
 {
   "xdr": "AAAAAgAAAAB+Ht3sW...",
@@ -1112,6 +1207,7 @@ curl -X POST http://localhost:3001/api/v1/composer/build \
 ```
 
 **Errors:**
+
 - `400`: Invalid transaction parameters
 
 ---
@@ -1121,6 +1217,7 @@ curl -X POST http://localhost:3001/api/v1/composer/build \
 Dry-run an XDR transaction against Horizon; returns fee and result codes.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/composer/simulate \
   -H "Content-Type: application/json" \
@@ -1131,6 +1228,7 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 ```
 
 **Response (200):**
+
 ```json
 {
   "resultXdr": "...",
@@ -1145,6 +1243,7 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 ```
 
 **Errors:**
+
 - `400`: Invalid XDR or simulation failed
 
 ---
@@ -1156,14 +1255,17 @@ curl -X POST http://localhost:3001/api/v1/composer/simulate \
 Fetch, decode, and inspect a Stellar transaction by hash.
 
 **Query Parameters:**
+
 - `network` (optional, default `testnet`): `testnet` or `mainnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c..."
 ```
 
 **Response (200):**
+
 ```json
 {
   "hash": "5fa1f6d8a7c...",
@@ -1203,6 +1305,7 @@ curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c..."
 ```
 
 **Errors:**
+
 - `404`: Transaction not found
 
 ---
@@ -1212,19 +1315,23 @@ curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c..."
 Export a transaction breakdown as CSV (UTF-8 BOM included for Excel compatibility).
 
 **Query Parameters:**
+
 - `network` (optional, default `testnet`): `testnet` or `mainnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/inspector/tx/5fa1f6d8a7c.../export?network=testnet"
 ```
 
 **Response (200):** `text/csv` attachment
+
 ```
 hash,network,ledger,created_at,source_account,sequence_number,fee_charged,max_fee,memo,memo_type,success,result_code,result_explanation,operation_index,operation_type,operation_label,operation_source,operation_result_code,operation_success,operation_effects,operation_fields
 ```
 
 **Errors:**
+
 - `404`: Transaction not found
 
 ---
@@ -1234,14 +1341,17 @@ hash,network,ledger,created_at,source_account,sequence_number,fee_charged,max_fe
 Get the last 20 transactions for a Stellar account.
 
 **Query Parameters:**
+
 - `network` (optional, default `testnet`): `testnet` or `mainnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/inspector/account/GBZR7.../txs"
 ```
 
 **Response (200):**
+
 ```json
 [
   {
@@ -1256,6 +1366,7 @@ curl "http://localhost:3001/api/v1/inspector/account/GBZR7.../txs"
 ```
 
 **Errors:**
+
 - `404`: Account not found
 
 ---
@@ -1265,6 +1376,7 @@ curl "http://localhost:3001/api/v1/inspector/account/GBZR7.../txs"
 Decode raw Stellar XDR envelope (offline, no Horizon network call required).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/inspector/decode-xdr \
   -H "Content-Type: application/json" \
@@ -1275,6 +1387,7 @@ curl -X POST http://localhost:3001/api/v1/inspector/decode-xdr \
 ```
 
 **Response (200):**
+
 ```json
 {
   "hash": "5fa1f6d8a7c...",
@@ -1314,7 +1427,98 @@ curl -X POST http://localhost:3001/api/v1/inspector/decode-xdr \
 ```
 
 **Errors:**
+
 - `400`: Invalid XDR
+
+---
+
+#### POST `/inspector/strkey/validate`
+
+Validate a batch of Stellar StrKeys offline (no Horizon call). Every value is trimmed and validated independently, so one malformed value never fails the request.
+
+**Limits:** `inputs` must hold 1–500 strings of at most 256 characters each; anything else is rejected with `400`. The global rate limit applies.
+
+**Supported prefixes:** `G` (`ed25519_public_key`), `S` (`ed25519_secret_seed`), `M` (`muxed_account`), `T` (`pre_auth_tx`), `X` (`sha256_hash`), `P` (`signed_payload`), `C` (`contract`).
+
+**Privacy:** values that look like secret seeds (`S…`, any case) are masked in the response (`S****…ABCD`, `redacted: true`), and seeds or JWTs embedded in other text are replaced with `[REDACTED]`. Inputs are not stored or logged. Prefer the browser-only StrKey lab for real secret seeds.
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:3001/api/v1/inspector/strkey/validate \
+  -H "Content-Type: application/json" \
+  -d '{ "inputs": ["GBZR7...", "gbzr7...", "CAAAA..."] }'
+```
+
+**Response (200):**
+
+```json
+{
+  "summary": { "total": 3, "valid": 2, "invalid": 1 },
+  "results": [
+    {
+      "index": 0,
+      "input": "GBZR7...",
+      "redacted": false,
+      "valid": true,
+      "keyType": "ed25519_public_key",
+      "error": null
+    },
+    {
+      "index": 1,
+      "input": "gbzr7...",
+      "redacted": false,
+      "valid": false,
+      "keyType": null,
+      "error": {
+        "code": "invalid_characters",
+        "message": "StrKeys use only upper-case A-Z and digits 2-7 (base32)"
+      }
+    },
+    {
+      "index": 2,
+      "input": "CAAAA...",
+      "redacted": false,
+      "valid": true,
+      "keyType": "contract",
+      "error": null
+    }
+  ]
+}
+```
+
+`keyType` is the type implied by the prefix (also on invalid rows), or `null` for an unknown prefix. `error.code` is one of `empty`, `invalid_characters`, `unknown_prefix`, `invalid_length`, `invalid_checksum`.
+
+**Errors:**
+
+- `400`: `inputs` missing, empty, longer than 500 items, or containing a non-string / over-long value
+
+---
+
+#### POST `/inspector/strkey/validate/export`
+
+Same request body and validation as `/inspector/strkey/validate`; responds with a `text/csv` attachment (`strkey-validation.csv`, UTF-8 BOM for Excel, `Cache-Control: no-store`). One row per input in request order. Secret seeds are masked exactly as in the JSON response, and inputs a spreadsheet would treat as a formula (leading `=`, `+`, `-`, `@`) are prefixed with `'`.
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:3001/api/v1/inspector/strkey/validate/export \
+  -H "Content-Type: application/json" \
+  -d '{ "inputs": ["GBZR7...", "gbzr7..."] }' \
+  -o strkey-validation.csv
+```
+
+**Response (200):** `text/csv` attachment
+
+```
+index,input,valid,key_type,error_code,error_message
+0,GBZR7...,true,ed25519_public_key,,
+1,gbzr7...,false,,invalid_characters,StrKeys use only upper-case A-Z and digits 2-7 (base32)
+```
+
+**Errors:**
+
+- `400`: same as `/inspector/strkey/validate`
 
 ---
 
@@ -1325,14 +1529,17 @@ curl -X POST http://localhost:3001/api/v1/inspector/decode-xdr \
 Get current Stellar network status and fees.
 
 **Query Parameters:**
+
 - `network` (optional, default `mainnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/network/status?network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "network": "testnet",
@@ -1350,14 +1557,17 @@ curl "http://localhost:3001/api/v1/network/status?network=testnet"
 Get last 60 minutes of network status history.
 
 **Query Parameters:**
+
 - `network` (optional, default `mainnet`): `mainnet` or `testnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/network/status/history?network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "network": "testnet",
@@ -1409,6 +1619,7 @@ Replay filtered events to a webhook. This endpoint requires authentication; URLs
 Deploy a Soroban smart contract from a WASM file.
 
 **Request (multipart/form-data):**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/contracts/deploy \
   -F "file=@contract.wasm" \
@@ -1416,6 +1627,7 @@ curl -X POST http://localhost:3001/api/v1/contracts/deploy \
 ```
 
 **Response (200):**
+
 ```json
 {
   "contractId": "CABC...",
@@ -1426,6 +1638,7 @@ curl -X POST http://localhost:3001/api/v1/contracts/deploy \
 ```
 
 **Errors:**
+
 - `400`: Invalid WASM file or deployment failed
 
 ---
@@ -1435,6 +1648,7 @@ curl -X POST http://localhost:3001/api/v1/contracts/deploy \
 Invoke a contract function.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/contracts/CABC.../invoke \
   -H "Content-Type: application/json" \
@@ -1445,6 +1659,7 @@ curl -X POST http://localhost:3001/api/v1/contracts/CABC.../invoke \
 ```
 
 **Response (200):**
+
 ```json
 {
   "result": "...",
@@ -1453,6 +1668,7 @@ curl -X POST http://localhost:3001/api/v1/contracts/CABC.../invoke \
 ```
 
 **Errors:**
+
 - `400`: Invalid contract ID or parameters
 
 ---
@@ -1462,11 +1678,13 @@ curl -X POST http://localhost:3001/api/v1/contracts/CABC.../invoke \
 Get contract metadata from the network.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/contracts/CABC.../info
 ```
 
 **Response (200):**
+
 ```json
 {
   "contractId": "CABC...",
@@ -1477,6 +1695,7 @@ curl http://localhost:3001/api/v1/contracts/CABC.../info
 ```
 
 **Errors:**
+
 - `404`: Contract not found
 
 ---
@@ -1488,25 +1707,25 @@ curl http://localhost:3001/api/v1/contracts/CABC.../info
 List all supported webhook event types with schemas and sample payloads.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/webhooks/templates
 ```
 
 **Response (200):**
+
 ```json
 [
-    {
-      "eventType": "transaction.submitted",
-      "description": "Emitted when a transaction is submitted",
+  {
+    "eventType": "transaction.submitted",
+    "description": "Emitted when a transaction is submitted",
     "schema": {},
     "samplePayload": {}
-    }
-  ]
+  }
+]
 ```
 
 ---
-
-
 
 ---
 
@@ -1515,6 +1734,7 @@ curl http://localhost:3001/api/v1/webhooks/templates
 Send a webhook payload to a target endpoint. Requires authentication.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/webhooks/send \
   -H "Content-Type: application/json" \
@@ -1552,6 +1772,7 @@ the Webhook Tester UI) can recompute the identical HMAC from `signature.timestam
 on the wire.
 
 **Errors:**
+
 - `400`: Invalid webhook payload or an unsafe destination
 - `502`: Request payload exceeds the size limit, or the destination failed
 
@@ -1562,12 +1783,14 @@ on the wire.
 Get the last 50 webhook send attempts. Requires authentication.
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/webhooks/history \
   --cookie "savitools_access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 [
   {
@@ -1601,6 +1824,7 @@ configured). Any recorded signing header is dropped first, so the replay never c
 timestamp that disagrees with the signature beside it.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/webhooks/replay/1f0c... \
   --cookie "savitools_access_token=YOUR_ACCESS_TOKEN"
@@ -1609,6 +1833,7 @@ curl -X POST http://localhost:3001/api/v1/webhooks/replay/1f0c... \
 **Response (201):** a new `WebhookHistoryEntry`, as returned by `/webhooks/send`.
 
 **Errors:**
+
 - `404`: Webhook attempt not found
 
 ---
@@ -1620,12 +1845,14 @@ curl -X POST http://localhost:3001/api/v1/webhooks/replay/1f0c... \
 Fetch and cache an OpenAPI spec for a provider (requires authentication).
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/playground/spec/stripe \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "provider": "stripe",
@@ -1634,6 +1861,7 @@ curl http://localhost:3001/api/v1/playground/spec/stripe \
 ```
 
 **Errors:**
+
 - `404`: Provider spec not found
 - `401`: Not authenticated
 
@@ -1644,6 +1872,7 @@ curl http://localhost:3001/api/v1/playground/spec/stripe \
 Proxy a request to the target API with server-side auth (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/playground/proxy \
   -H "Content-Type: application/json" \
@@ -1657,6 +1886,7 @@ curl -X POST http://localhost:3001/api/v1/playground/proxy \
 ```
 
 **Response (200):**
+
 ```json
 {
   "statusCode": 200,
@@ -1671,6 +1901,7 @@ curl -X POST http://localhost:3001/api/v1/playground/proxy \
 Save an encrypted API key (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/playground/keys \
   -H "Content-Type: application/json" \
@@ -1682,6 +1913,7 @@ curl -X POST http://localhost:3001/api/v1/playground/keys \
 ```
 
 **Response (201):**
+
 ```json
 {
   "id": "key-123",
@@ -1697,12 +1929,14 @@ curl -X POST http://localhost:3001/api/v1/playground/keys \
 List stored API keys (masked, requires authentication).
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/playground/keys \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "keys": [
@@ -1722,6 +1956,7 @@ curl http://localhost:3001/api/v1/playground/keys \
 Update a stored API key (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X PUT http://localhost:3001/api/v1/playground/keys/key-123 \
   -H "Content-Type: application/json" \
@@ -1732,6 +1967,7 @@ curl -X PUT http://localhost:3001/api/v1/playground/keys/key-123 \
 ```
 
 **Response (200):**
+
 ```json
 {
   "id": "key-123",
@@ -1746,6 +1982,7 @@ curl -X PUT http://localhost:3001/api/v1/playground/keys/key-123 \
 Delete a stored API key (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X DELETE http://localhost:3001/api/v1/playground/keys/key-123 \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
@@ -1763,15 +2000,18 @@ No content
 Get persisted tool state for the current user (requires authentication).
 
 **Path Parameters:**
+
 - `tool`: `sandbox` | `inspector` | `webhooks` | `composer`
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/workspaces/composer \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "tool": "composer",
@@ -1780,6 +2020,7 @@ curl http://localhost:3001/api/v1/workspaces/composer \
 ```
 
 **Errors:**
+
 - `400`: Invalid tool name
 - `401`: Not authenticated
 
@@ -1790,6 +2031,7 @@ curl http://localhost:3001/api/v1/workspaces/composer \
 Save tool state for the current user (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X PUT http://localhost:3001/api/v1/workspaces/composer \
   -H "Content-Type: application/json" \
@@ -1800,6 +2042,7 @@ curl -X PUT http://localhost:3001/api/v1/workspaces/composer \
 ```
 
 **Response (200):**
+
 ```json
 {
   "tool": "composer",
@@ -1816,6 +2059,7 @@ curl -X PUT http://localhost:3001/api/v1/workspaces/composer \
 Create a watch for an account or contract (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/monitor/watches \
   -H "Content-Type: application/json" \
@@ -1829,6 +2073,7 @@ curl -X POST http://localhost:3001/api/v1/monitor/watches \
 ```
 
 **Response (201):**
+
 ```json
 {
   "id": "watch-123",
@@ -1845,12 +2090,14 @@ curl -X POST http://localhost:3001/api/v1/monitor/watches \
 Get all watches for the current user (requires authentication).
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/monitor/watches \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "watches": [
@@ -1871,6 +2118,7 @@ curl http://localhost:3001/api/v1/monitor/watches \
 Delete a watch (requires authentication).
 
 **Request:**
+
 ```bash
 curl -X DELETE http://localhost:3001/api/v1/monitor/watches/watch-123 \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
@@ -1886,19 +2134,21 @@ No content
 Get alerts for a watch (requires authentication).
 
 **Request:**
+
 ```bash
 curl http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 [
-{
-  "id": "alert-456",
-  "watchId": "watch-123",
-  "conditionType": "balance_threshold"
-}
+  {
+    "id": "alert-456",
+    "watchId": "watch-123",
+    "conditionType": "balance_threshold"
+  }
 ]
 ```
 
@@ -1909,6 +2159,7 @@ curl http://localhost:3001/api/v1/monitor/watches/watch-123/alerts \
 Search watch events across the current user's watches (requires authentication). Accepts the same filters as the CSV export endpoint.
 
 **Query Parameters:**
+
 - `watchId` (optional): Restrict to a single watch
 - `eventType` (optional): `transaction`, `payment`, or `contract`
 - `q` (optional): Free-text search across event payloads (hashes, accounts, assets)
@@ -1918,12 +2169,14 @@ Search watch events across the current user's watches (requires authentication).
 - `limit` (optional, default `25`, max `100`)
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/monitor/search?eventType=payment&q=GBZR7...&limit=50" \
   --cookie "access_token=YOUR_ACCESS_TOKEN"
 ```
 
 **Response (200):**
+
 ```json
 {
   "items": [
@@ -1948,6 +2201,7 @@ curl "http://localhost:3001/api/v1/monitor/search?eventType=payment&q=GBZR7...&l
 Export monitor search results as CSV (requires authentication). Accepts the exact same query parameters as `GET /monitor/search`. The response is a `text/csv` attachment with a UTF-8 BOM; large result sets are streamed in chunks and capped at `10000` rows.
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/monitor/search/export?eventType=payment&limit=10000" \
   --cookie "access_token=YOUR_ACCESS_TOKEN" \
@@ -1955,6 +2209,7 @@ curl "http://localhost:3001/api/v1/monitor/search/export?eventType=payment&limit
 ```
 
 **Response (200):** `text/csv` attachment
+
 ```
 event_type,occurred_at,amount,asset,from,to,transaction_hash,paging_token,watch_id,payload
 ```
@@ -1968,6 +2223,7 @@ event_type,occurred_at,amount,asset,from,to,transaction_hash,paging_token,watch_
 Generate SDK code from a provider spec.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sdkgen/generate \
   -H "Content-Type: application/json" \
@@ -1979,6 +2235,7 @@ curl -X POST http://localhost:3001/api/v1/sdkgen/generate \
 ```
 
 **Response (200):**
+
 ```json
 {
   "code": "// Generated TypeScript SDK\nimport axios from 'axios';\n..."
@@ -1991,40 +2248,46 @@ curl -X POST http://localhost:3001/api/v1/sdkgen/generate \
 
 ### Common HTTP Status Codes
 
-| Code | Meaning | When It Occurs |
-|------|---------|----------------|
-| `200` | OK | Successful GET, POST, or PUT request |
-| `201` | Created | Successful resource creation (POST) |
-| `204` | No Content | Successful DELETE request |
-| `400` | Bad Request | Invalid request parameters or validation failed |
-| `401` | Unauthorized | Missing or invalid authentication token |
-| `404` | Not Found | Resource does not exist |
-| `422` | Unprocessable Entity | Semantic error in request (e.g., invalid WASM) |
-| `500` | Internal Server Error | Unexpected server error |
+| Code  | Meaning               | When It Occurs                                  |
+| ----- | --------------------- | ----------------------------------------------- |
+| `200` | OK                    | Successful GET, POST, or PUT request            |
+| `201` | Created               | Successful resource creation (POST)             |
+| `204` | No Content            | Successful DELETE request                       |
+| `400` | Bad Request           | Invalid request parameters or validation failed |
+| `401` | Unauthorized          | Missing or invalid authentication token         |
+| `404` | Not Found             | Resource does not exist                         |
+| `422` | Unprocessable Entity  | Semantic error in request (e.g., invalid WASM)  |
+| `500` | Internal Server Error | Unexpected server error                         |
 
 ### SaviTools-Specific Errors
 
 #### `400 Bad Request - Invalid Public Key`
+
 **Meaning:** The Stellar public key provided is malformed or invalid.
 **Suggested Resolution:** Verify the public key format (starts with `G`, 56 characters). Use `/wallet/generate` if unsure.
 
 #### `400 Bad Request - Insufficient Balance`
+
 **Meaning:** The source account doesn't have enough native asset to cover the transaction fee and amount.
 **Suggested Resolution:** Use `/wallet/fund` to add testnet funds, or send a smaller amount.
 
 #### `401 Unauthorized - Invalid Credentials`
+
 **Meaning:** Email/password combination is incorrect.
 **Suggested Resolution:** Double-check your email and password. Register a new account if needed.
 
 #### `401 Unauthorized - Expired Token`
+
 **Meaning:** Your access token has expired (default 15 minutes).
 **Suggested Resolution:** Call `POST /auth/refresh` with your refresh token to get a new access token.
 
 #### `404 Not Found - Transaction Not Found`
+
 **Meaning:** The specified transaction hash doesn't exist on the network.
 **Suggested Resolution:** Verify the transaction hash is correct and the network (mainnet/testnet) is correct.
 
 #### `422 Unprocessable Entity - Invalid WASM`
+
 **Meaning:** The uploaded file is not a valid Soroban WASM binary.
 **Suggested Resolution:** Ensure the file is a compiled `.wasm` file from a Soroban contract.
 
@@ -2039,6 +2302,7 @@ SaviTools proxies some errors directly from the Stellar Horizon API. These error
 - **`tx_bad_auth`**: Transaction hasn't been signed by the required signers
 
 **Example Horizon Error Response:**
+
 ```json
 {
   "type": "https://stellar.org/horizon-errors/transaction-failed",
@@ -2087,7 +2351,6 @@ Caching is not currently implemented in the API; all requests are processed dyna
 - **Bug Reports:** [GitHub Issues](https://github.com/Savitura/Savitools/issues)
 - **Questions:** Refer to [Stellar Docs](https://developers.stellar.org/)
 
-
 ---
 
 ### SEP-10 Web Authentication Debugger
@@ -2097,6 +2360,7 @@ Caching is not currently implemented in the API; all requests are processed dyna
 Fetches an authentication challenge from a SEP-10 server.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sep10/fetch-challenge \
   -H "Content-Type: application/json" \
@@ -2108,6 +2372,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/fetch-challenge \
 ```
 
 **Response (200):**
+
 ```json
 {
   "transaction": "AAAAAgAAAA...",
@@ -2126,6 +2391,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/fetch-challenge \
 Validates a SEP-10 challenge transaction.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sep10/validate-challenge \
   -H "Content-Type: application/json" \
@@ -2137,6 +2403,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/validate-challenge \
 ```
 
 **Response (200):**
+
 ```json
 {
   "isValid": true,
@@ -2157,6 +2424,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/validate-challenge \
 Signs a challenge transaction with a keypair.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sep10/sign-challenge \
   -H "Content-Type: application/json" \
@@ -2168,6 +2436,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/sign-challenge \
 ```
 
 **Response (200):**
+
 ```json
 {
   "signedTransaction": "AAAAAgAAAA..."
@@ -2181,6 +2450,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/sign-challenge \
 Exchanges a signed challenge for a JWT token.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sep10/token-exchange \
   -H "Content-Type: application/json" \
@@ -2191,6 +2461,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/token-exchange \
 ```
 
 **Response (200):**
+
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -2206,6 +2477,7 @@ curl -X POST http://localhost:3001/api/v1/sep10/token-exchange \
 Queries contract storage for a specific key.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/soroban-storage/query \
   -H "Content-Type: application/json" \
@@ -2218,6 +2490,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/query \
 ```
 
 **Response (200):**
+
 ```json
 {
   "key": "balance",
@@ -2236,6 +2509,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/query \
 Compares storage between two contracts.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/soroban-storage/compare \
   -H "Content-Type: application/json" \
@@ -2248,6 +2522,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/compare \
 ```
 
 **Response (200):**
+
 ```json
 {
   "key": "balance",
@@ -2270,6 +2545,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/compare \
 Generates a properly typed storage key.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/soroban-storage/typed-key \
   -H "Content-Type: application/json" \
@@ -2283,6 +2559,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/typed-key \
 ```
 
 **Response (200):**
+
 ```json
 {
   "key": "AAAADwAAAAhiYWxhbmNlcwAAAAEAAAATAAAA...",
@@ -2299,6 +2576,7 @@ curl -X POST http://localhost:3001/api/v1/soroban-storage/typed-key \
 Parses and validates stellar.toml content.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/stellar-toml/parse \
   -H "Content-Type: application/json" \
@@ -2309,6 +2587,7 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/parse \
 ```
 
 **Response (200):**
+
 ```json
 {
   "parsed": {
@@ -2327,6 +2606,7 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/parse \
 Formats stellar.toml content.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/stellar-toml/format \
   -H "Content-Type: application/json" \
@@ -2338,6 +2618,7 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/format \
 ```
 
 **Response (200):**
+
 ```json
 {
   "formatted": "VERSION = \"2.0.0\"\n\n[DOCUMENTATION]\nORG_NAME = \"Example\""
@@ -2351,6 +2632,7 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/format \
 Validates stellar.toml against SEP-1.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/stellar-toml/validate \
   -H "Content-Type: application/json" \
@@ -2362,6 +2644,7 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/validate \
 ```
 
 **Response (200):**
+
 ```json
 {
   "isValid": true,
@@ -2381,14 +2664,17 @@ curl -X POST http://localhost:3001/api/v1/stellar-toml/validate \
 Gets a pre-configured template.
 
 **Query Parameters:**
+
 - `type`: `minimal`, `anchor`, `issuer`, or `validator`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/stellar-toml/template?type=anchor"
 ```
 
 **Response (200):**
+
 ```json
 {
   "template": "VERSION=\"2.0.0\"\n..."
@@ -2404,15 +2690,18 @@ curl "http://localhost:3001/api/v1/stellar-toml/template?type=anchor"
 Gets the current sequence number for an account.
 
 **Query Parameters:**
+
 - `account`: Account address
 - `network`: `testnet` or `mainnet`
 
 **Request:**
+
 ```bash
 curl "http://localhost:3001/api/v1/sequence-planner/account-sequence?account=GABC...&network=testnet"
 ```
 
 **Response (200):**
+
 ```json
 {
   "account": "GABC...",
@@ -2428,6 +2717,7 @@ curl "http://localhost:3001/api/v1/sequence-planner/account-sequence?account=GAB
 Validates a proposed sequence number.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sequence-planner/validate-sequence \
   -H "Content-Type: application/json" \
@@ -2439,6 +2729,7 @@ curl -X POST http://localhost:3001/api/v1/sequence-planner/validate-sequence \
 ```
 
 **Response (200):**
+
 ```json
 {
   "isValid": true,
@@ -2456,6 +2747,7 @@ curl -X POST http://localhost:3001/api/v1/sequence-planner/validate-sequence \
 Plans sequences for multiple transactions with conflict detection.
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:3001/api/v1/sequence-planner/plan \
   -H "Content-Type: application/json" \
@@ -2472,6 +2764,7 @@ curl -X POST http://localhost:3001/api/v1/sequence-planner/plan \
 ```
 
 **Response (200):**
+
 ```json
 {
   "plannedTransactions": [...],
@@ -2501,6 +2794,7 @@ All endpoints return consistent error responses:
 ```
 
 Common status codes:
+
 - `200`: Success
 - `201`: Created
 - `400`: Bad Request (invalid parameters)
@@ -2513,10 +2807,12 @@ Common status codes:
 ## Rate Limiting
 
 The API enforces rate limiting via throttling:
+
 - Default: 100 requests per 60 seconds per IP
 - Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL` environment variables
 
 Rate limit headers:
+
 - `X-RateLimit-Limit`: Maximum requests per window
 - `X-RateLimit-Remaining`: Remaining requests
 - `X-RateLimit-Reset`: Time when the limit resets
@@ -2526,6 +2822,7 @@ Rate limit headers:
 ## Support
 
 For API support:
+
 - Documentation: https://docs.savitools.dev
 - GitHub Issues: https://github.com/your-org/savitools/issues
 - Email: support@savitools.dev

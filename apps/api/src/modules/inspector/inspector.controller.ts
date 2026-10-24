@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Header, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { DecodeXDrDto } from './dto/decode-xdr.dto';
 import { InspectAuthEntryDto } from './dto/inspect-auth-entry.dto';
+import { ValidateStrKeysDto } from './dto/validate-strkeys.dto';
 import { InspectorService } from './inspector.service';
 
 @ApiTags('inspector')
@@ -104,6 +116,34 @@ export class InspectorController {
   @ApiResponse({ status: 400, description: 'Invalid XDR or network' })
   decodeXdr(@Body() dto: DecodeXDrDto) {
     return this.inspectorService.decodeXdr(dto.xdr, dto.network ?? 'testnet');
+  }
+
+  @Post('strkey/validate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Validate a batch of StrKeys offline (per-row type, validity, and error reason)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Summary counts plus one result per input; secret seeds are masked',
+  })
+  @ApiResponse({ status: 400, description: 'Empty, oversized, or non-string inputs array' })
+  validateStrKeys(@Body() dto: ValidateStrKeysDto) {
+    return this.inspectorService.validateStrKeys(dto.inputs);
+  }
+
+  @Post('strkey/validate/export')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Validate StrKeys and download the per-row results as CSV (UTF-8 BOM for Excel)',
+  })
+  @ApiResponse({ status: 200, description: 'text/csv attachment, one row per input' })
+  @ApiResponse({ status: 400, description: 'Empty, oversized, or non-string inputs array' })
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="strkey-validation.csv"')
+  @Header('Cache-Control', 'no-store')
+  exportStrKeyValidation(@Body() dto: ValidateStrKeysDto) {
+    return this.inspectorService.exportStrKeyValidationCsv(dto.inputs);
   }
 
   @Post('auth-entry')

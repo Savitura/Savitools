@@ -4,6 +4,16 @@ All notable changes to SaviTools are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Batch StrKey validation with CSV export** (#500): `POST /inspector/strkey/validate`
+  validates up to 500 StrKeys (`G`, `S`, `M`, `T`, `X`, `P`, `C`) offline and returns a
+  per-row result (type, validity, error reason) plus summary counts;
+  `POST /inspector/strkey/validate/export` returns the same rows as CSV. Secret seeds are
+  masked in both responses. New shared `neutralizeCsvFormula` helper in `common/csv.ts`
+  guards echoed input against spreadsheet formula injection. Additive only; no existing
+  route changed.
+
 ### Fixed
 
 - **Client-side wallet signing** (#422, #420): `POST /wallet/payment` now accepts

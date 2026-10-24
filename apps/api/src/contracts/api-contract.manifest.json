@@ -278,6 +278,16 @@
       "auth": "public"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/inspector/strkey/validate",
+      "auth": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/inspector/strkey/validate/export",
+      "auth": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/inspector/tx/:hash",
       "auth": "public"
