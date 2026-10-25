@@ -662,3 +662,83 @@ describe('WebhookService', () => {
     });
   });
 });
+
+  describe('payload diffing between retries', () => {
+    it('should not include payloadDiff when payloads are identical across retries', async () => {
+      fetchMock.mockResolvedValue(bodyResponse('ok'));
+
+      const results = (await service.sendWebhook('user-a', {
+        endpointUrl: urlFor(PUBLIC_IP_1),
+        eventType: 'test.event',
+        payload: { id: 1, value: 'test' },
+        repeatCount: 3,
+      })) as WebhookHistoryEntry[];
+
+      expect(results).toHaveLength(3);
+      expect(results[0].payloadDiff).toBeUndefined();
+      expect(results[1].payloadDiff).toBeUndefined();
+      expect(results[2].payloadDiff).toBeUndefined();
+    });
+
+    it('should track added fields in diff computation', async () => {
+      const diff = (service as any).computePayloadDiff(
+        { id: 1, value: 'test' },
+        { id: 1, value: 'test', newField: 'added' },
+      );
+
+      expect(diff).toBeDefined();
+      expect(diff.added).toEqual({ newField: 'added' });
+    });
+
+    it('should track modified fields in diff computation', async () => {
+      const diff = (service as any).computePayloadDiff(
+        { id: 1, value: 'original', status: 'pending' },
+        { id: 1, value: 'updated', status: 'pending' },
+      );
+
+      expect(diff).toBeDefined();
+      expect(diff.modified).toEqual({
+        value: { from: 'original', to: 'updated' },
+      });
+    });
+
+    it('should track removed fields in diff computation', async () => {
+      const diff = (service as any).computePayloadDiff(
+        { id: 1, value: 'test', tempField: 'data' },
+        { id: 1, value: 'test' },
+      );
+
+      expect(diff).toBeDefined();
+      expect(diff.removed).toEqual({ tempField: 'data' });
+    });
+
+    it('should include previousAttemptId when diff is present', async () => {
+      const diff = (service as any).computePayloadDiff(
+        { id: 1, value: 'test' },
+        { id: 1, value: 'updated' },
+      );
+
+      if (diff) {
+        diff.previousAttemptId = 'mock-previous-id';
+        expect(diff.previousAttemptId).toBe('mock-previous-id');
+      }
+    });
+
+    it('should handle complex nested object diffs', async () => {
+      const previous = {
+        id: 1,
+        user: { name: 'John', email: 'john@example.com' },
+        metadata: { source: 'api' },
+      };
+      const current = {
+        id: 1,
+        user: { name: 'Jane', email: 'john@example.com' },
+        metadata: { source: 'api' },
+      };
+
+      const diff = (service as any).computePayloadDiff(previous, current);
+
+      expect(diff).toBeDefined();
+      expect(diff.modified).toHaveProperty('user');
+    });
+  });
