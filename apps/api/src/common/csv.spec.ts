@@ -1,4 +1,4 @@
-import { CSV_BOM, escapeCsvField, toCsv, toCsvRow } from './csv';
+import { CSV_BOM, escapeCsvField, neutralizeCsvFormula, toCsv, toCsvRow } from './csv';
 
 describe('csv helpers', () => {
   describe('escapeCsvField', () => {
@@ -53,6 +53,20 @@ describe('csv helpers', () => {
   describe('CSV_BOM', () => {
     it('is the UTF-8 byte-order mark for Excel compatibility', () => {
       expect(CSV_BOM).toBe('\uFEFF');
+    });
+  });
+
+  describe('neutralizeCsvFormula', () => {
+    it('prefixes values a spreadsheet would evaluate as a formula', () => {
+      for (const value of ['=1+1', '+cmd|calc', '-2+3', '@SUM(A1)', '\t=1', '\r=1']) {
+        expect(neutralizeCsvFormula(value)).toBe(`'${value}`);
+      }
+    });
+
+    it('leaves ordinary values untouched', () => {
+      for (const value of ['GABC', 'hello = world', '', '1-2']) {
+        expect(neutralizeCsvFormula(value)).toBe(value);
+      }
     });
   });
 });

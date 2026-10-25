@@ -13,6 +13,7 @@ import {
   parseSorobanEventsFromMeta,
 } from './event-parser';
 import { decodeAuthorizationEntry, DecodedAuthorizationEntry } from './auth-entry-decoder';
+import { StrKeyBatchValidation, strKeyBatchToCsv, validateStrKeyBatch } from './strkey-validation';
 
 export interface DecodedEffect {
   type: string;
@@ -107,7 +108,10 @@ export class InspectorService {
 
   // ─── GET /inspector/tx/:hash ──────────────────────────────────────────────
 
-  async inspectTransaction(hash: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TransactionBreakdown> {
+  async inspectTransaction(
+    hash: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TransactionBreakdown> {
     const server = this.horizon(network);
 
     let horizonTx: StellarSdk.Horizon.ServerApi.TransactionRecord;
@@ -153,9 +157,20 @@ export class InspectorService {
         .map((e) => ({
           type: String(e.type ?? ''),
           account: String(e.account ?? ''),
-          ...Object.fromEntries(
-            Object.entries(e).filter(([k]) => !['type', 'account', '_links', 'id', 'paging_token', 'operation_id', 'created_at'].includes(k))
-          ) as Record<string, string | number | boolean | null>,
+          ...(Object.fromEntries(
+            Object.entries(e).filter(
+              ([k]) =>
+                ![
+                  'type',
+                  'account',
+                  '_links',
+                  'id',
+                  'paging_token',
+                  'operation_id',
+                  'created_at',
+                ].includes(k),
+            ),
+          ) as Record<string, string | number | boolean | null>),
         }));
 
       return {
@@ -187,7 +202,10 @@ export class InspectorService {
       memo: (horizonTx.memo ?? null) as string | null,
       memoType: horizonTx.memo_type,
       /* eslint-disable @typescript-eslint/no-explicit-any -- Horizon response fields are loosely typed here */
-      timeBounds: this.extractTimeBounds((horizonTx as any).valid_before, (horizonTx as any).valid_after),
+      timeBounds: this.extractTimeBounds(
+        (horizonTx as any).valid_before,
+        (horizonTx as any).valid_after,
+      ),
       signatures: (horizonTx as any).signatures ?? [],
       /* eslint-enable @typescript-eslint/no-explicit-any */
       success: horizonTx.successful,
@@ -304,9 +322,24 @@ export class InspectorService {
     return CSV_BOM + toCsv([header, ...rows]);
   }
 
+  // ─── POST /inspector/strkey/validate(/export) ─────────────────────────────
+
+  /** Offline batch StrKey validation (Savitura/Savitools#500); no Horizon call. */
+  validateStrKeys(inputs: string[]): StrKeyBatchValidation {
+    return validateStrKeyBatch(inputs);
+  }
+
+  /** CSV of the same per-row results, with secret seeds masked. */
+  exportStrKeyValidationCsv(inputs: string[]): string {
+    return strKeyBatchToCsv(this.validateStrKeys(inputs));
+  }
+
   // ─── GET /inspector/account/:publicKey/txs ────────────────────────────────
 
-  async getAccountTransactions(publicKey: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TxSummary[]> {
+  async getAccountTransactions(
+    publicKey: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TxSummary[]> {
     const server = this.horizon(network);
 
     let page: StellarSdk.Horizon.ServerApi.CollectionPage<StellarSdk.Horizon.ServerApi.TransactionRecord>;
@@ -337,7 +370,10 @@ export class InspectorService {
 
   // ─── POST /inspector/decode-xdr ──────────────────────────────────────────
 
-  async decodeXdr(xdr: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TransactionBreakdown> {
+  async decodeXdr(
+    xdr: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TransactionBreakdown> {
     const passphrase = this.networkPassphrase(network);
 
     let tx: StellarSdk.Transaction | StellarSdk.FeeBumpTransaction;
@@ -361,11 +397,14 @@ export class InspectorService {
     }));
 
     const memo = innerTx.memo;
-    const memoText = memo.type === 'text'
-      ? (typeof memo.value === 'string' ? memo.value : memo.value?.toString('utf8') ?? null)
-      : memo.type === 'id' || memo.type === 'hash' || memo.type === 'return'
-        ? String(memo.value)
-        : null;
+    const memoText =
+      memo.type === 'text'
+        ? typeof memo.value === 'string'
+          ? memo.value
+          : (memo.value?.toString('utf8') ?? null)
+        : memo.type === 'id' || memo.type === 'hash' || memo.type === 'return'
+          ? String(memo.value)
+          : null;
 
     const timeBounds = innerTx.timeBounds
       ? {
@@ -558,25 +597,60 @@ export class InspectorService {
 }
 
 const COMPOSER_SUPPORTED_TYPES = new Set([
-  'payment', 'create_account', 'change_trust', 'manage_sell_offer',
-  'manage_buy_offer', 'create_passive_sell_offer', 'set_options',
-  'account_merge', 'allow_trust', 'path_payment_strict_send',
-  'path_payment_strict_receive', 'manage_data',
+  'payment',
+  'create_account',
+  'change_trust',
+  'manage_sell_offer',
+  'manage_buy_offer',
+  'create_passive_sell_offer',
+  'set_options',
+  'account_merge',
+  'allow_trust',
+  'path_payment_strict_send',
+  'path_payment_strict_receive',
+  'manage_data',
 ]);
 
 function buildComposerOp(op: DecodedOperation): Record<string, unknown> & { type: string } {
   const f = op.fields;
   switch (op.type) {
     case 'payment':
-      return { type: 'payment', destination: f.destination, amount: f.amount, asset: parseAssetField(f.asset) };
+      return {
+        type: 'payment',
+        destination: f.destination,
+        amount: f.amount,
+        asset: parseAssetField(f.asset),
+      };
     case 'create_account':
-      return { type: 'create_account', destination: f.destination, startingBalance: parseFloat(f.startingBalance ?? '0') };
+      return {
+        type: 'create_account',
+        destination: f.destination,
+        startingBalance: parseFloat(f.startingBalance ?? '0'),
+      };
     case 'change_trust':
-      return { type: 'change_trust', asset: parseAssetField(f.asset), limit: f.limit === 'max' ? undefined : f.limit };
+      return {
+        type: 'change_trust',
+        asset: parseAssetField(f.asset),
+        limit: f.limit === 'max' ? undefined : f.limit,
+      };
     case 'manage_sell_offer':
-      return { type: 'manage_sell_offer', selling: parseAssetField(f.selling), buying: parseAssetField(f.buying), amount: f.amount, price: parsePrice(f.price), offerId: f.offerId };
+      return {
+        type: 'manage_sell_offer',
+        selling: parseAssetField(f.selling),
+        buying: parseAssetField(f.buying),
+        amount: f.amount,
+        price: parsePrice(f.price),
+        offerId: f.offerId,
+      };
     case 'manage_buy_offer':
-      return { type: 'manage_buy_offer', selling: parseAssetField(f.selling), buying: parseAssetField(f.buying), buyAmount: f.buyAmount, price: parsePrice(f.price), offerId: f.offerId };
+      return {
+        type: 'manage_buy_offer',
+        selling: parseAssetField(f.selling),
+        buying: parseAssetField(f.buying),
+        buyAmount: f.buyAmount,
+        price: parsePrice(f.price),
+        offerId: f.offerId,
+      };
     case 'account_merge':
       return { type: 'account_merge', destination: f.destination };
     case 'manage_data':
