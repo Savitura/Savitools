@@ -50,27 +50,42 @@ function fakeRepo(initial: Row[] = []) {
 
   return {
     rows,
-    find: jest.fn(async (options: { where?: Record<string, unknown>; take?: number; skip?: number; order?: unknown } = {}) => {
-      let result = rows.filter((row) => matches(row, options.where));
-      if (options.skip) result = result.slice(options.skip);
-      if (options.take !== undefined) result = result.slice(0, options.take);
-      return result;
-    }),
-    findAndCount: jest.fn(async (options: { where?: Record<string, unknown>; take?: number; skip?: number } = {}) => {
-      const all = rows.filter((row) => matches(row, options.where));
-      let page = all;
-      if (options.skip) page = page.slice(options.skip);
-      if (options.take !== undefined) page = page.slice(0, options.take);
-      return [page, all.length];
-    }),
-    findOne: jest.fn(async (options: { where?: Record<string, unknown> } = {}) =>
-      rows.find((row) => matches(row, options.where)) ?? null,
+    find: jest.fn(
+      async (
+        options: {
+          where?: Record<string, unknown>;
+          take?: number;
+          skip?: number;
+          order?: unknown;
+        } = {},
+      ) => {
+        let result = rows.filter((row) => matches(row, options.where));
+        if (options.skip) result = result.slice(options.skip);
+        if (options.take !== undefined) result = result.slice(0, options.take);
+        return result;
+      },
     ),
-    create: jest.fn((dto: Partial<Row>) => ({
-      id: `ws-${++sequence}`,
-      createdAt: new Date(1_700_000_000_000 + sequence),
-      ...dto,
-    }) as Row),
+    findAndCount: jest.fn(
+      async (options: { where?: Record<string, unknown>; take?: number; skip?: number } = {}) => {
+        const all = rows.filter((row) => matches(row, options.where));
+        let page = all;
+        if (options.skip) page = page.slice(options.skip);
+        if (options.take !== undefined) page = page.slice(0, options.take);
+        return [page, all.length];
+      },
+    ),
+    findOne: jest.fn(
+      async (options: { where?: Record<string, unknown> } = {}) =>
+        rows.find((row) => matches(row, options.where)) ?? null,
+    ),
+    create: jest.fn(
+      (dto: Partial<Row>) =>
+        ({
+          id: `ws-${++sequence}`,
+          createdAt: new Date(1_700_000_000_000 + sequence),
+          ...dto,
+        }) as Row,
+    ),
     save: jest.fn(async (entity: Row) => {
       const index = rows.findIndex((row) => row.id === entity.id);
       if (index >= 0) {
@@ -124,8 +139,16 @@ describe('WorkspaceService', () => {
 
     it('resolves a pre-existing duplicate to the oldest row instead of throwing', async () => {
       repo = fakeRepo([
-        defaultRow({ id: 'ws-old', data: { kept: true }, createdAt: new Date('2024-01-01T00:00:00Z') }),
-        defaultRow({ id: 'ws-new', data: { dropped: true }, createdAt: new Date('2024-06-01T00:00:00Z') }),
+        defaultRow({
+          id: 'ws-old',
+          data: { kept: true },
+          createdAt: new Date('2024-01-01T00:00:00Z'),
+        }),
+        defaultRow({
+          id: 'ws-new',
+          data: { dropped: true },
+          createdAt: new Date('2024-06-01T00:00:00Z'),
+        }),
       ]);
       service = new WorkspaceService(repo as never);
 
@@ -173,9 +196,7 @@ describe('WorkspaceService', () => {
       );
       expect(defaults).toHaveLength(1);
       // Both callers succeeded; the loser folded into the winner's row.
-      expect([first, second]).toEqual(
-        expect.arrayContaining([{ writer: 'a' }, { writer: 'b' }]),
-      );
+      expect([first, second]).toEqual(expect.arrayContaining([{ writer: 'a' }, { writer: 'b' }]));
       expect(defaults[0].data).toEqual(expect.objectContaining({ writer: expect.any(String) }));
     });
 
@@ -208,9 +229,7 @@ describe('WorkspaceService', () => {
       expect(result.page).toBe(2);
       expect(result.limit).toBe(2);
       expect(result.items.map((item) => item.id)).toEqual(['ws-3', 'ws-4']);
-      expect(repo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 2, take: 2 }),
-      );
+      expect(repo.findAndCount).toHaveBeenCalledWith(expect.objectContaining({ skip: 2, take: 2 }));
     });
 
     it('applies the shared defaults when no query is supplied', async () => {
@@ -233,9 +252,7 @@ describe('WorkspaceService', () => {
       expect(result.items.map((item) => item.id)).toEqual(['ws-a']);
       expect(result.total).toBe(1);
 
-      await expect(service.listWorkspaces('user-1', 'nope')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.listWorkspaces('user-1', 'nope')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -255,14 +272,45 @@ describe('WorkspaceService', () => {
 
   describe('named workspaces', () => {
     it('rejects a duplicate name for the same tool', async () => {
+      repo = fakeRepo([defaultRow({ id: 'ws-1', tool: WorkspaceTool.COMPOSER, name: 'plan' })]);
+      service = new WorkspaceService(repo as never);
+
+      await expect(service.createWorkspace('user-1', { name: 'plan', data: {} })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('sanitizes secrets and signed transactions on export', async () => {
       repo = fakeRepo([
-        defaultRow({ id: 'ws-1', tool: WorkspaceTool.COMPOSER, name: 'plan' }),
+        defaultRow({
+          id: 'ws-export-1',
+          userId: 'user-1',
+          tool: WorkspaceTool.COMPOSER,
+          name: 'Export Plan',
+          data: {
+            sourceAccount: 'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+            secretSeed: 'SCWJZEYCUCR4DTJVHNCKLLTD3FK7YRIY7RRAU5B2H7PB22IWCIFISPHE',
+            signedTransaction: 'AAAAAgAAAA...',
+            signatures: ['sig1'],
+            nested: {
+              privateKey: 'priv-key',
+              safe: 'yes',
+            },
+          },
+        }),
       ]);
       service = new WorkspaceService(repo as never);
 
-      await expect(
-        service.createWorkspace('user-1', { name: 'plan', data: {} }),
-      ).rejects.toThrow(BadRequestException);
+      const exported = await service.exportWorkspace('user-1', 'ws-export-1');
+      expect(exported.id).toBe('ws-export-1');
+      expect(exported.data.sourceAccount).toBe(
+        'GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C',
+      );
+      expect((exported.data as any).secretSeed).toBeUndefined();
+      expect((exported.data as any).signedTransaction).toBeUndefined();
+      expect((exported.data as any).signatures).toBeUndefined();
+      expect((exported.data as any).nested.privateKey).toBeUndefined();
+      expect((exported.data as any).nested.safe).toBe('yes');
     });
   });
 });

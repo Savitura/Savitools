@@ -408,7 +408,7 @@ export class PlaygroundService {
     const contentLength = response.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
       throw new BadGatewayException(
-        `Response from ${dto.provider} exceeds maximum size limit (${MAX_RESPONSE_SIZE} bytes)`
+        `Response from ${dto.provider} exceeds maximum size limit (${MAX_RESPONSE_SIZE} bytes)`,
       );
     }
 
@@ -419,7 +419,7 @@ export class PlaygroundService {
 
     let body: unknown;
     const contentType = response.headers.get('content-type') ?? '';
-    
+
     try {
       if (contentType.includes('application/json')) {
         // Read response with size limit
@@ -470,19 +470,17 @@ export class PlaygroundService {
     try {
       while (true) {
         const { done, value } = await reader.read();
-        
+
         if (done) break;
-        
+
         if (value) {
           totalSize += value.length;
-          
+
           if (totalSize > maxSize) {
             reader.cancel();
-            throw new BadGatewayException(
-              `Response exceeds maximum size limit (${maxSize} bytes)`
-            );
+            throw new BadGatewayException(`Response exceeds maximum size limit (${maxSize} bytes)`);
           }
-          
+
           chunks.push(value);
         }
       }
@@ -502,7 +500,6 @@ export class PlaygroundService {
     }
   }
 
-  private async recordHistory(userId: string, dto: ProxyRequestDto, result: ProxyResult): Promise<void> {
   private async recordHistory(
     userId: string,
     dto: ProxyRequestDto,

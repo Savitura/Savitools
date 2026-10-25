@@ -661,7 +661,6 @@ describe('WebhookService', () => {
       }
     });
   });
-});
 
   describe('payload diffing between retries', () => {
     it('should not include payloadDiff when payloads are identical across retries', async () => {
@@ -742,3 +741,4 @@ describe('WebhookService', () => {
       expect(diff.modified).toHaveProperty('user');
     });
   });
+});

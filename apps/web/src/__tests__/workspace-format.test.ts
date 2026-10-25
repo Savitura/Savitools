@@ -88,4 +88,71 @@ describe('workspace format', () => {
       /Missing or invalid "operations" array/,
     );
   });
+
+  describe('export sanitization', () => {
+    it('strips Stellar secret seeds and sensitive keys from serialized export', () => {
+      const stateWithSecrets = {
+        ...STATE,
+        secretSeed: 'SCWJZEYCUCR4DTJVHNCKLLTD3FK7YRIY7RRAU5B2H7PB22IWCIFISPHE',
+        privateKey: 'private-key-material',
+        authToken: 'Bearer secret_token',
+        nested: {
+          signingKey: 'SCWJZEYCUCR4DTJVHNCKLLTD3FK7YRIY7RRAU5B2H7PB22IWCIFISPHE',
+          safeField: 'ok',
+        },
+      };
+
+      const json = serializeWorkspaceFile({
+        name: 'Sensitive Workspace',
+        composerState: stateWithSecrets,
+        operations: STATE.operations,
+      });
+
+      const parsed = JSON.parse(json);
+      expect(parsed.composerState.secretSeed).toBeUndefined();
+      expect(parsed.composerState.privateKey).toBeUndefined();
+      expect(parsed.composerState.authToken).toBeUndefined();
+      expect(parsed.composerState.nested.signingKey).toBeUndefined();
+      expect(parsed.composerState.nested.safeField).toBe('ok');
+    });
+
+    it('strips signed transaction payloads and signatures', () => {
+      const stateWithSignatures = {
+        ...STATE,
+        signedTransaction: 'AAAAAgAAAA...',
+        signedXdr: 'AAAAAgAAAA...',
+        signatures: ['sig1', 'sig2'],
+        signature: 'single-sig',
+      };
+
+      const json = serializeWorkspaceFile({
+        name: 'Signed Workspace',
+        composerState: stateWithSignatures,
+        operations: STATE.operations,
+      });
+
+      const parsed = JSON.parse(json);
+      expect(parsed.composerState.signedTransaction).toBeUndefined();
+      expect(parsed.composerState.signedXdr).toBeUndefined();
+      expect(parsed.composerState.signatures).toBeUndefined();
+      expect(parsed.composerState.signature).toBeUndefined();
+      expect(parsed.composerState.sourceAccount).toBe(STATE.sourceAccount);
+    });
+
+    it('redacts secret seeds embedded inside string fields like memo', () => {
+      const stateWithEmbeddedSeed = {
+        ...STATE,
+        memo: 'seed SCWJZEYCUCR4DTJVHNCKLLTD3FK7YRIY7RRAU5B2H7PB22IWCIFISPHE inside memo',
+      };
+
+      const json = serializeWorkspaceFile({
+        name: 'Embedded Seed Workspace',
+        composerState: stateWithEmbeddedSeed,
+        operations: STATE.operations,
+      });
+
+      const parsed = JSON.parse(json);
+      expect(parsed.composerState.memo).toBe('seed [REDACTED] inside memo');
+    });
+  });
 });

@@ -167,19 +167,20 @@ function writeStorage(Key: string, value: string) {
 
 function fetchNetworkPassphrase(horizonUrl: string): Promise<string> {
   const baseUrl = sanitizeUrl(horizonUrl);
-  return fetch(`${baseUrl}/`).then((r) => {
-    if (!r.ok) throw new Error(`Did not receive 200 from Horizon at ${horizonUrl}`);
-    return r.json();
-  }).then((data: any) => {
-    const passphrase = data?.network_passphrase;
-    if (!passphrase || typeof passphrase !== 'string') {
-      throw new Error('No network passphrase found in Horizon response');
-    }
-    return passphrase;
-  });
+  return fetch(`${baseUrl}/`)
+    .then((r) => {
+      if (!r.ok) throw new Error(`Did not receive 200 from Horizon at ${horizonUrl}`);
+      return r.json();
+    })
+    .then((data: any) => {
+      const passphrase = data?.network_passphrase;
+      if (!passphrase || typeof passphrase !== 'string') {
+        throw new Error('No network passphrase found in Horizon response');
+      }
+      return passphrase;
+    });
 }
 
-export function NetworkProvider( { children }: { children: React.ReactNode }) {
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetworkState] = useState<Network>('testnet');
   const [profiles, setProfiles] = useState<NetworkProfile[]>([]);

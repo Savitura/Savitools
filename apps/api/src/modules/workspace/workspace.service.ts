@@ -12,6 +12,7 @@ import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
 import { RenameWorkspaceDTO } from './dto/rename-workspace.dto';
 import { UpdateWorkspaceDTO } from './dto/update-workspace.dto';
 import { ComposerStateSchema } from './composer-state.schema';
+import { sanitizeWorkspaceData } from './workspace-sanitizer';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspaceTool } from './workspace-tool.enum';
 
@@ -174,12 +175,13 @@ export class WorkspaceService {
 
   async exportWorkspace(userId: string, id: string) {
     const workspace = await this.findWorkspaceForUser(userId, id);
+    const { sanitized } = sanitizeWorkspaceData(workspace.data as Record<string, unknown>);
 
     return {
       id: workspace.id,
       name: workspace.name,
       tool: workspace.tool,
-      data: workspace.data,
+      data: sanitized,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
     };
@@ -238,6 +240,8 @@ export class WorkspaceService {
       throw new NotFoundException('Shared workspace link has expired');
     }
 
+    const { sanitized } = sanitizeWorkspaceData(workspace.data as Record<string, unknown>);
+    workspace.data = sanitized;
     return workspace;
   }
 
