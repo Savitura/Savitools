@@ -30,6 +30,7 @@ jobs:
           fi
       - run: npx turbo lint
       - run: npx turbo typecheck
+      - run: npm run review:deps
       # Most of the repo predates the Prettier config, so checking every file
       # fails on code nobody touched. Check only the files this push or PR
       # changes; run `npm run format:check` locally for the full report.
