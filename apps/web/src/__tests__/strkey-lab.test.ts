@@ -30,17 +30,21 @@ import {
  */
 const FIXTURE_PAYLOADS: Record<StrKeyType, Uint8Array> = {
   // All 0x01 bytes - a classic test vector that is easy to spot in hex.
+  ED25519_PUBLIC_KEY: new Uint8Array(Array.from({ length: 32 }, () => 0x01)),
   EDNARD_KEYS: new Uint8Array(Array.from({ length: 32 }, () => 0x01)),
   // All 0x02 bytes - distinct from the public key fixture.
+  ED25519_SECRET_SEED: new Uint8Array(Array.from({ length: 32 }, () => 0x02)),
   PRIVATE_KEY: new Uint8Array(Array.from({ length: 32 }, () => 0x02)),
   // All 0x03 bytes.
   PRE_AUTH_TX: new Uint8Array(Array.from({ length: 32 }, () => 0x03)),
   // All 0x04 bytes.
+  SHA256_HASH: new Uint8Array(Array.from({ length: 32 }, () => 0x04)),
   HASH_X: new Uint8Array(Array.from({ length: 32 }, () => 0x04)),
   // 32-byte ed25519 public key + 8-byte muxed id.
-  MUXED_ACCOUNT: new Uint8Array(Array.from({ length: 40 }, ( _, i) => (i < 32 ? 0x05 : 0x06))),
+  MED25519_PUBLIC_KEY: new Uint8Array(Array.from({ length: 40 }, (_, i) => (i < 32 ? 0x05 : 0x06))),
+  MUXED_ACCOUNT: new Uint8Array(Array.from({ length: 40 }, (_, i) => (i < 32 ? 0x05 : 0x06))),
   // 32-byte hash + 8-byte signer key data.
-  SIGNED_PAYLOAD: new Uint8Array(Array.from({ length: 40 }, ( _, i) => (i < 32 ? 0x07 : 0x08))),
+  SIGNED_PAYLOAD: new Uint8Array(Array.from({ length: 40 }, (_, i) => (i < 32 ? 0x07 : 0x08))),
   // All 0x09 bytes.
   CONTRACT: new Uint8Array(Array.from({ length: 32 }, () => 0x09)),
 };
@@ -266,9 +270,25 @@ describe('secret masking', () => {
 
   it('identifies the secret type and not others', () => {
     expect(isSecretType('PRIVATE_KEY')).toBe(true);
+    expect(isSecretType('ED25519_SECRET_SEED')).toBe(true);
+    expect(isSecretType('ED25519_PUBLIC_KEY')).toBe(false);
     expect(isSecretType('EDNARD_KEYS')).toBe(false);
     expect(isSecretType('CONTRACT')).toBe(false);
     expect(isSecretType(null)).toBe(false);
+  });
+
+  it('defines valid SEP-23 StrKey version bytes (type << 3)', () => {
+    expect(STRKEY_VERSIONS.ED25519_PUBLIC_KEY).toBe(48); // 6 << 3 (G)
+    expect(STRKEY_VERSIONS.EDNARD_KEYS).toBe(48); // backward-compatible alias
+    expect(STRKEY_VERSIONS.PRIVATE_KEY).toBe(144); // 18 << 3 (S)
+    expect(STRKEY_VERSIONS.ED25519_SECRET_SEED).toBe(144);
+    expect(STRKEY_VERSIONS.PRE_AUTH_TX).toBe(152); // 19 << 3 (T)
+    expect(STRKEY_VERSIONS.HASH_X).toBe(184); // 23 << 3 (X)
+    expect(STRKEY_VERSIONS.SHA256_HASH).toBe(184);
+    expect(STRKEY_VERSIONS.MUXED_ACCOUNT).toBe(96); // 12 << 3 (M)
+    expect(STRKEY_VERSIONS.MED25519_PUBLIC_KEY).toBe(96);
+    expect(STRKEY_VERSIONS.SIGNED_PAYLOAD).toBe(120); // 15 << 3 (P)
+    expect(STRKEY_VERSIONS.CONTRACT).toBe(16); // 2 << 3 (C)
   });
 
   it('never echoes the secret payload in the masked value', () => {
