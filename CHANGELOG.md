@@ -4,6 +4,12 @@ All notable changes to SaviTools are documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Workspace export sanitization** (#524): Prevent exported and shared workspaces
+  from containing secrets (Stellar secret seeds, private credentials, bearer/JWT tokens)
+  or signed transactions and signature payloads.
+
 ### Fixed
 
 - **Client-side wallet signing** (#422, #420): `POST /wallet/payment` now accepts
