@@ -1,61 +1,3598 @@
 {
-  "openapi": "3.0.0",
+  "components": {
+    "schemas": {
+      "Announcement": {
+        "properties": {
+          "active_from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "active_until": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "deactivated_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "details_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": ["info", "warning", "critical"],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "severity",
+          "active_from",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "AnnouncementCreateRequest": {
+        "properties": {
+          "active_from": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "active_until": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "details_url": {
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "default": "info",
+            "enum": ["info", "warning", "critical"],
+            "type": "string"
+          }
+        },
+        "required": ["message"],
+        "type": "object"
+      },
+      "CampaignCommunicationPreferencePatch": {
+        "additionalProperties": false,
+        "description": "Partial patch — only the channels present in the body are written. Unknown keys and non-boolean values are ignored.",
+        "example": {
+          "milestones": false,
+          "surveys": true,
+          "updates": true
+        },
+        "properties": {
+          "funding_updates": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "boolean"
+          },
+          "milestones": {
+            "type": "boolean"
+          },
+          "surveys": {
+            "type": "boolean"
+          },
+          "updates": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CampaignCommunicationPreferences": {
+        "description": "Per-campaign communication overrides for the authenticated contributor. Every channel defaults to true; an absent row means the contributor has never overridden anything for this campaign.",
+        "properties": {
+          "campaign_id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "funding_updates": {
+            "description": "Funding progress milestones",
+            "type": "boolean"
+          },
+          "messages": {
+            "description": "Comment replies and thank-you messages",
+            "type": "boolean"
+          },
+          "milestones": {
+            "description": "Milestone progress and releases",
+            "type": "boolean"
+          },
+          "surveys": {
+            "description": "Outcome surveys and research",
+            "type": "boolean"
+          },
+          "updates": {
+            "description": "Campaign updates and progress notes",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FeatureFlag": {
+        "properties": {
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": ["key", "enabled", "default_enabled", "updated_at"],
+        "type": "object"
+      },
+      "FeatureFlagToggleRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["enabled"],
+        "type": "object"
+      },
+      "OutcomeSurvey": {
+        "properties": {
+          "campaign_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "closed_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "closes_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "intro": {
+            "nullable": true,
+            "type": "string"
+          },
+          "opens_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/OutcomeSurveyQuestion"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": ["draft", "open", "closed"],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OutcomeSurveyDraft": {
+        "properties": {
+          "intro": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/OutcomeSurveyQuestion"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": ["title"],
+        "type": "object"
+      },
+      "OutcomeSurveyQuestion": {
+        "properties": {
+          "id": {
+            "description": "Stable id derived from the prompt",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "prompt": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "enum": ["rating", "single_choice", "text"],
+            "type": "string"
+          }
+        },
+        "required": ["id", "prompt", "type", "required"],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
   "info": {
     "title": "CrowdPay API",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://api.crowdpay.io"
-    }
-  ],
-  "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer"
-      }
-    }
-  },
+  "openapi": "3.0.0",
   "paths": {
-    "/v1/payments": {
-      "post": {
-        "summary": "Create a new payment",
+    "/api/admin/audit-log": {
+      "get": {
+        "summary": "Get admin audit log"
+      }
+    },
+    "/api/admin/campaigns": {
+      "get": {
+        "summary": "List all campaigns for admin"
+      }
+    },
+    "/api/admin/campaigns/{id}": {
+      "delete": {
+        "summary": "Soft-delete a campaign"
+      }
+    },
+    "/api/admin/campaigns/{id}/restore": {
+      "patch": {
+        "summary": "Restore a suspended campaign"
+      }
+    },
+    "/api/admin/campaigns/{id}/revisions": {
+      "get": {
+        "summary": "List revision history for a campaign"
+      }
+    },
+    "/api/admin/campaigns/{id}/suspend": {
+      "patch": {
+        "summary": "Suspend a campaign"
+      }
+    },
+    "/api/admin/disputes": {
+      "get": {
+        "summary": "Get disputes list"
+      }
+    },
+    "/api/admin/feature-flags": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureFlag"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        },
         "security": [
           {
             "bearerAuth": []
           }
         ],
+        "summary": "List all feature flags with full details (admin only)",
+        "tags": ["Admin — Feature Flags"]
+      }
+    },
+    "/api/admin/feature-flags/{key}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "campaign_id": {
-                    "type": "string",
-                    "example": "CAMP_123"
-                  },
-                  "amount": {
-                    "type": "number",
-                    "example": 50.00
-                  },
-                  "currency": {
-                    "type": "string",
-                    "example": "USD"
-                  }
+                "$ref": "#/components/schemas/FeatureFlagToggleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlag"
                 }
+              }
+            },
+            "description": "Flag updated"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Flag not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Toggle a feature flag (admin only)",
+        "tags": ["Admin — Feature Flags"]
+      }
+    },
+    "/api/admin/fraud/contributions/{id}/resolve": {
+      "post": {
+        "summary": "Approve or reject flagged contribution"
+      }
+    },
+    "/api/admin/fraud/dashboard": {
+      "get": {
+        "summary": "Get fraud dashboard data"
+      }
+    },
+    "/api/admin/fraud/retrain": {
+      "post": {
+        "summary": "Retrain fraud scoring model"
+      }
+    },
+    "/api/admin/health": {
+      "get": {
+        "summary": "Get platform health snapshot"
+      }
+    },
+    "/api/admin/impersonate/exit": {
+      "post": {
+        "description": "This endpoint only requires authentication (not admin) since it's called by the impersonated user",
+        "summary": "Stop impersonating a user"
+      }
+    },
+    "/api/admin/impersonate/{userId}": {
+      "post": {
+        "summary": "Start impersonating a user"
+      }
+    },
+    "/api/admin/kyc/campaigns": {
+      "get": {
+        "summary": "Get campaigns requiring KYC review"
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "summary": "Get admin dashboard statistics"
+      }
+    },
+    "/api/admin/users/{id}/ban": {
+      "patch": {
+        "summary": "Ban a user"
+      }
+    },
+    "/api/admin/users/{id}/kyc": {
+      "patch": {
+        "summary": "Update user KYC status"
+      }
+    },
+    "/api/admin/users/{id}/unban": {
+      "patch": {
+        "summary": "Unban a user"
+      }
+    },
+    "/api/admin/withdrawals": {
+      "get": {
+        "summary": "Get withdrawal requests queue"
+      }
+    },
+    "/api/announcements/active": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Announcement"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List active platform announcements",
+        "tags": ["Announcements"]
+      }
+    },
+    "/api/announcements/create": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            },
+            "description": "Announcement created successfully"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a platform announcement",
+        "tags": ["Announcements"]
+      }
+    },
+    "/api/announcements/{id}/deactivate": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Announcement"
+                }
+              }
+            },
+            "description": "Announcement deactivated successfully"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Announcement not found or already deactivated"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Deactivate a platform announcement",
+        "tags": ["Announcements"]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": ["email", "password"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "properties": {
+                        "email": {
+                          "format": "email",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "integer"
+                        },
+                        "kyc_completed_at": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "kyc_required_for_campaigns": {
+                          "type": "boolean"
+                        },
+                        "kyc_status": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "wallet_public_key": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": ["token", "user"],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          }
+        },
+        "summary": "Login",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/login-alerts": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "acknowledged",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of login alerts"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List login alerts for current user",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/login-alerts/{id}/acknowledge": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert acknowledged"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Acknowledge a login alert",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/login-attempts": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "List of login attempts"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List login attempts for current user",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "minLength": 6,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": ["contributor", "creator"],
+                    "type": "string"
+                  }
+                },
+                "required": ["email", "password", "name"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "properties": {
+                        "email": {
+                          "format": "email",
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "integer"
+                        },
+                        "kyc_completed_at": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "kyc_required_for_campaigns": {
+                          "type": "boolean"
+                        },
+                        "kyc_status": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "wallet_public_key": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": ["token", "user"],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Email already registered"
+          }
+        },
+        "summary": "Register a new user",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "sessions": {
+                      "items": {
+                        "properties": {
+                          "device": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "lastSeen": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "location": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of active sessions"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List active sessions for current user",
+        "tags": ["Users"]
+      }
+    },
+    "/api/auth/sessions/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Session revoked"
+          },
+          "404": {
+            "description": "Session not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke a specific session",
+        "tags": ["Users"]
+      }
+    },
+    "/api/campaigns": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asset",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaigns": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List campaigns",
+        "tags": ["Campaigns"]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_type": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "deadline": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "description": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "max_contribution": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "milestones": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "min_contribution": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "target_amount": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": ["title", "target_amount", "asset_type"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create campaign",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/bulk/import": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Initiate asynchronous bulk campaign creation from CSV",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/bulk/jobs/{jobId}": {
+      "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Check progress and results of a bulk campaign import job",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/bulk/template": {
+      "get": {
+        "summary": "Download CSV template for bulk campaign creation",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/bulk/validate": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Pre-validate a CSV file before bulk campaign import",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/communication-preferences/channels": {
+      "get": {
+        "description": "Channel metadata so the UI renders labels and help text from one source instead of hardcoding them per client.",
+        "responses": {
+          "200": {
+            "description": "Supported channels with descriptions"
+          }
+        },
+        "summary": "List the communication channels this build supports",
+        "tags": ["Campaigns — Communication Preferences"]
+      }
+    },
+    "/api/campaigns/{campaignId}/communication-preferences": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignCommunicationPreferences"
+                }
+              }
+            },
+            "description": "Default preferences (all channels enabled)"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reset preferences for this campaign back to the defaults",
+        "tags": ["Campaigns — Communication Preferences"]
+      },
+      "get": {
+        "description": "Resolves to the defaults when the contributor has no override row for this campaign, so clients never have to special-case a 404 on the preference resource.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignCommunicationPreferences"
+                }
+              }
+            },
+            "description": "Effective preferences for this campaign"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the authenticated contributor's per-campaign preferences",
+        "tags": ["Campaigns — Communication Preferences"]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignCommunicationPreferencePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignCommunicationPreferences"
+                }
+              }
+            },
+            "description": "Stored preferences"
+          },
+          "400": {
+            "description": "Malformed request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Campaign not found"
+          },
+          "422": {
+            "description": "No recognised boolean channel was supplied"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Alias for PUT (the endpoint is a partial update either way)",
+        "tags": ["Campaigns — Communication Preferences"]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignCommunicationPreferencePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignCommunicationPreferences"
+                }
+              }
+            },
+            "description": "Stored preferences"
+          },
+          "400": {
+            "description": "Malformed request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Campaign not found"
+          },
+          "422": {
+            "description": "No recognised boolean channel was supplied"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set one or more per-campaign communication preferences",
+        "tags": ["Campaigns — Communication Preferences"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey": {
+      "get": {
+        "description": "Public. Returns `survey: null` when the campaign has no survey yet and the `draft` status for the creator's unpublished draft. An authenticated backer also receives their own `my_response`; nobody else can read individual answers through this endpoint.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey, response count, and the caller's own response"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the campaign's outcome survey and aggregate response count",
+        "tags": ["Campaigns — Outcome Surveys"]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutcomeSurveyDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Draft created"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign not found"
+          },
+          "409": {
+            "description": "Campaign not finished funding, or a survey already exists"
+          },
+          "422": {
+            "description": "Invalid title, intro, or question set"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create the campaign's outcome survey as a draft",
+        "tags": ["Campaigns — Outcome Surveys"]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutcomeSurveyDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Draft updated"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign or survey not found"
+          },
+          "409": {
+            "description": "The survey is already open or closed"
+          },
+          "422": {
+            "description": "Invalid title, intro, or question set"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Edit the survey while it is still a draft",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey/close": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey closed (idempotent)"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign or survey not found"
+          },
+          "409": {
+            "description": "The survey was never opened"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Stop accepting responses",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey/events": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ordered lifecycle events"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Lifecycle audit trail for the survey",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey/open": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "closes_at": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "Survey opened with the number of backers invited"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign or survey not found"
+          },
+          "409": {
+            "description": "Not a draft, or the survey has no questions"
+          },
+          "422": {
+            "description": "closes_at is in the past"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish the survey and invite eligible backers",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey/respond": {
+      "post": {
+        "description": "One response per (survey, backer). A second submission is a 409, and answers are validated against the published question set so a stale client cannot submit ids that no longer exist.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "answers": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                },
+                "required": ["answers"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Response recorded"
+          },
+          "400": {
+            "description": "Malformed request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not a contributor to this campaign"
+          },
+          "404": {
+            "description": "Campaign or survey not found"
+          },
+          "409": {
+            "description": "Survey not open, already closed, or already answered"
+          },
+          "422": {
+            "description": "Answers failed validation"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Submit this backer's answers",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{campaignId}/outcome-survey/results": {
+      "get": {
+        "description": "Per-question aggregates only. Individual response rows are never returned, so a creator cannot deanonymise their backers.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaignId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated results"
+          },
+          "403": {
+            "description": "Creator, accepted manager, or admin only"
+          },
+          "404": {
+            "description": "Campaign or survey not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Aggregated results for the campaign team",
+        "tags": ["Campaigns — Outcome Surveys"]
+      }
+    },
+    "/api/campaigns/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "summary": "Get campaign by id",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/balance": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "asset_type": {
+                        "type": "string"
+                      },
+                      "balance": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "summary": "Get live on-chain balance for a campaign wallet",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/matches": {
+      "get": {
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching progress data"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "summary": "Get campaign matching progress",
+        "tags": ["Sponsor Matching"]
+      },
+      "post": {
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "match_ratio": {
+                    "description": "Match multiplier, e.g. 1 for 1:1, 2 for 2:1",
+                    "example": 1,
+                    "type": "number"
+                  },
+                  "pledge_amount": {
+                    "description": "Total matching pool in the campaign asset",
+                    "example": "1000",
+                    "type": "string"
+                  }
+                },
+                "required": ["match_ratio", "pledge_amount"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Matching pledge created"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Campaign not found"
+          },
+          "409": {
+            "description": "Sponsor already has an active pledge for this campaign"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create sponsor matching pledge",
+        "tags": ["Sponsor Matching"]
+      }
+    },
+    "/api/campaigns/{id}/matches/{matchId}/complete": {
+      "patch": {
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "matchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching pledge completed"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Not the sponsor or campaign creator"
+          },
+          "404": {
+            "description": "Match not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Complete a matching pledge",
+        "tags": ["Sponsor Matching"]
+      }
+    },
+    "/api/campaigns/{id}/payout-schedules": {
+      "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List recurring payout schedules for a campaign",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      },
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a recurring payout schedule",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      }
+    },
+    "/api/campaigns/{id}/payout-schedules/{scheduleId}": {
+      "delete": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel a payout schedule",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      },
+      "get": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get payout schedule details and run history",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      }
+    },
+    "/api/campaigns/{id}/payout-schedules/{scheduleId}/pause": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Pause an active payout schedule",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      }
+    },
+    "/api/campaigns/{id}/payout-schedules/{scheduleId}/resume": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resume a paused payout schedule",
+        "tags": ["Withdrawals", "PayoutSchedules"]
+      }
+    },
+    "/api/campaigns/{id}/referrals": {
+      "post": {
+        "description": "Creates the referral program for a campaign, or updates the terms of an existing one. Updating the commission rate does not invalidate referral links that have already been issued.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "commissionPercentage": {
+                    "description": "Percentage of each referred contribution paid to the referrer (1-20)",
+                    "example": 10,
+                    "type": "number"
+                  },
+                  "maxReferrers": {
+                    "description": "Maximum number of referrers that may claim a link (1-100)",
+                    "example": 25,
+                    "type": "integer"
+                  }
+                },
+                "required": ["commissionPercentage", "maxReferrers"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Referral program created or updated"
+          },
+          "400": {
+            "description": "commissionPercentage or maxReferrers outside the allowed range"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enable or update the campaign's referral program (creator only)",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/referrals/commissions": {
+      "get": {
+        "description": "Powers the campaign analytics Referrals tab: every referrer with their referred contribution count, total referred amount, and the commission still owed to them at the next withdrawal.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Program terms and the per-referrer commission breakdown"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "This campaign does not have a referral program"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Referrer breakdown with commission owed (creator only)",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/referrals/links": {
+      "post": {
+        "description": "Issues a unique 8-character referral code for the caller. The call is idempotent: a user who already holds a link for this campaign gets the same code back with a 200 instead of a 201. Contributions made through the returned shareUrl are attributed on-chain via the Stellar transaction memo (`ref:<code>`).\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "example": "a1b2c3d4",
+                      "type": "string"
+                    },
+                    "shareUrl": {
+                      "example": "https://crowdpay.com/c/<campaignId>?ref=a1b2c3d4",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller already held a link; the existing code is returned"
+          },
+          "201": {
+            "description": "A new referral link was issued"
+          },
+          "404": {
+            "description": "This campaign does not have a referral program"
+          },
+          "409": {
+            "description": "REFERRER_LIMIT_REACHED - the maxReferrers cap is full"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Claim a trackable referral link for the authenticated user",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/referrals/program": {
+      "get": {
+        "description": "Public endpoint used by the share page to show the commission rate and how many of the referrer slots have already been claimed.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Program terms plus the current referrer_count"
+          },
+          "404": {
+            "description": "This campaign does not have a referral program"
+          }
+        },
+        "summary": "Get the campaign's public referral program terms",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/subscriptions": {
+      "post": {
+        "description": "Locks the full commitment into one Stellar claimable balance per period. Each balance is claimable unconditionally by the platform and, 30 days after its scheduled date, by the contributor. Every period must fall on or before the campaign deadline: a longer schedule is rejected with SUBSCRIPTION_EXCEEDS_DEADLINE unless truncateToDeadline is true, in which case it is shortened to the periods that fit. If the campaign is later funded, fails, is suspended or deleted, or its deadline passes, remaining installments are closed (never claimed) and the contributor can reclaim them on-ledger once each balance's reclaim date opens.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amountPerPeriod": {
+                    "type": "number"
+                  },
+                  "asset": {
+                    "example": "XLM",
+                    "type": "string"
+                  },
+                  "periodMonths": {
+                    "enum": [1, 3, 6],
+                    "type": "integer"
+                  },
+                  "totalPeriods": {
+                    "maximum": 24,
+                    "minimum": 2,
+                    "type": "integer"
+                  },
+                  "truncateToDeadline": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": ["amountPerPeriod", "asset", "periodMonths", "totalPeriods"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created (totalPeriods reflects any truncation)"
+          },
+          "400": {
+            "INSUFFICIENT_BALANCE_FOR_SUBSCRIPTION or SUBSCRIPTION_EXCEEDS_DEADLINE": null,
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enable a recurring pledge on a campaign",
+        "tags": ["Subscriptions"]
+      }
+    },
+    "/api/campaigns/{id}/subscriptions/prepare": {
+      "post": {
+        "description": "Returns unsigned XDR for a Freighter wallet to sign. The unsigned XDR is bound to the contributor, campaign, asset, amount, and schedule. The caller must then sign with Freighter and submit via POST /subscriptions/submit.\n",
+        "responses": {
+          "200": {
+            "description": "Unsigned XDR ready for Freighter signing"
+          },
+          "400": {
+            "description": "UNSUPPORTED_WALLET_TYPE or INVALID_SUBSCRIPTION"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Prepare a recurring pledge for Freighter signing",
+        "tags": ["Subscriptions"]
+      }
+    },
+    "/api/campaigns/{id}/subscriptions/submit": {
+      "post": {
+        "description": "Submits the signed XDR from a Freighter wallet, verifies it matches the prepared unsigned XDR, confirms on Horizon, and persists the balance IDs.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "signedXdr": {
+                    "description": "The signed XDR from Freighter",
+                    "type": "string"
+                  },
+                  "unsignedXdr": {
+                    "description": "The original unsigned XDR",
+                    "type": "string"
+                  }
+                },
+                "required": ["unsignedXdr", "signedXdr"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created"
+          },
+          "400": {
+            "description": "XDR_MISMATCH or INVALID_SUBSCRIPTION"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Submit a signed Freighter recurring pledge",
+        "tags": ["Subscriptions"]
+      }
+    },
+    "/api/campaigns/{id}/subscriptions/{subscriptionId}": {
+      "delete": {
+        "description": "Periods scheduled more than 7 days out stop being claimed and become reclaimable by the contributor. Periods due sooner, or already claimed, are returned as non-cancellable.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subscriptionId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancellation summary"
+          },
+          "404": {
+            "description": "Subscription not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel a recurring pledge",
+        "tags": ["Subscriptions"]
+      }
+    },
+    "/api/campaigns/{id}/thank-you": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of thank-you messages with delivery metrics"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List thank-you delivery history for a campaign",
+        "tags": ["Thank You"]
+      }
+    },
+    "/api/campaigns/{id}/tiers": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of reward tiers"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "summary": "List a campaign's reward tiers with remaining availability",
+        "tags": ["Campaigns"]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Updated list of reward tiers"
+          },
+          "400": {
+            "description": "Invalid input or tier cap exceeded"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Add one or more reward tiers to an existing campaign (creator only)",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/policy": {
+      "post": {
+        "description": "Only settable before the treasury contract is deployed — once deployed the on-chain policy is the one that governs and cannot be edited from here.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "autoRefundOnMiss": {
+                    "example": true,
+                    "type": "boolean"
+                  },
+                  "maxSingleWithdrawalPct": {
+                    "example": 25,
+                    "type": "integer"
+                  },
+                  "minHoldDays": {
+                    "example": 30,
+                    "type": "integer"
+                  },
+                  "requireAuditorForAbove": {
+                    "example": "5000",
+                    "type": "string"
+                  },
+                  "withdrawalCooldownHours": {
+                    "example": 24,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The stored policy"
+          },
+          "400": {
+            "description": "INVALID_POLICY - a field is outside its permitted range"
+          },
+          "403": {
+            "description": "Not the campaign creator"
+          },
+          "409": {
+            "description": "TREASURY_ALREADY_DEPLOYED or CAMPAIGN_LIVE"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set the Soroban treasury spending policy (creator only)",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/reconciliation": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts and totals from both sides plus an inSync flag"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Compare on-chain withdrawal history against the database (creator only)",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/refund": {
+      "post": {
+        "description": "Callable by any authenticated user, matching the contract, so refunds do not depend on the creator or the platform choosing to act. The contract still checks the deadline, the goal, and the policy flag.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The recorded refund event"
+          },
+          "422": {
+            "description": "AUTO_REFUND_DISABLED or REFUND_CONDITIONS_NOT_MET"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Trigger the automatic refund for a missed goal",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/status": {
+      "get": {
+        "description": "Reads totals, policy, pause state, and withdrawal history directly from the Soroban contract on every call — never from the database cache — so the public transparency panel shows what the contract actually enforces.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live contract state"
+          },
+          "404": {
+            "description": "Campaign not found"
+          },
+          "409": {
+            "description": "NOT_CONTRACT_WALLET - the campaign uses the multisig wallet"
+          }
+        },
+        "summary": "Live treasury state read from the contract",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/withdrawal": {
+      "post": {
+        "description": "The contract validates the hold period, the per-withdrawal ceiling, and the cooldown before anything moves. A request above requireAuditorForAbove is parked for the auditor and reported as `pending_auditor`; anything else executes immediately and comes back as `immediate`.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amount": {
+                    "example": "2500",
+                    "type": "string"
+                  },
+                  "destination": {
+                    "example": "GA...",
+                    "type": "string"
+                  },
+                  "memo": {
+                    "example": "tranche-1",
+                    "type": "string"
+                  }
+                },
+                "required": ["amount", "destination"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "{ type: immediate | pending_auditor }"
+          },
+          "403": {
+            "description": "Not the campaign creator"
+          },
+          "422": {
+            "description": "A policy constraint rejected it: HOLD_PERIOD_NOT_ELAPSED, EXCEEDS_MAX_WITHDRAWAL_PCT, COOLDOWN_NOT_ELAPSED, INSUFFICIENT_BALANCE, TREASURY_PAUSED"
+          },
+          "501": {
+            "description": "FREIGHTER_SIGNING_UNSUPPORTED - the creator's wallet is non-custodial and cannot yet sign contract calls server-side"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Request a withdrawal against the treasury policy (creator only)",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/campaigns/{id}/treasury/withdrawal/{pendingId}/approve": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pendingId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The completed withdrawal"
+          },
+          "403": {
+            "description": "Not the campaign auditor"
+          },
+          "404": {
+            "description": "PENDING_NOT_FOUND"
+          },
+          "409": {
+            "description": "AUDITOR_NOT_CONFIGURED"
+          },
+          "501": {
+            "description": "FREIGHTER_SIGNING_UNSUPPORTED - the auditor's wallet is non-custodial and cannot yet sign contract calls server-side"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Auditor approval that releases a parked withdrawal",
+        "tags": ["Treasury"]
+      }
+    },
+    "/api/categories": {
+      "get": {
+        "description": "Returns every campaign category with live follower and active-campaign counts. When authenticated, each entry also carries `following` for the current user. Public; cached for 60 seconds.\n",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "active_campaigns": {
+                        "type": "integer"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "follower_count": {
+                        "type": "integer"
+                      },
+                      "following": {
+                        "type": "boolean"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Category list with counts"
+          }
+        },
+        "summary": "List followable campaign categories",
+        "tags": ["Categories"]
+      }
+    },
+    "/api/feature-flags": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureFlag"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List all feature flags (public, only key + enabled)",
+        "tags": ["Feature Flags"]
+      }
+    },
+    "/api/feature-flags/enabled": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List only enabled feature flags (public)",
+        "tags": ["Feature Flags"]
+      }
+    },
+    "/api/referrals/analytics": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Referral analytics"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get referral analytics for authenticated user",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/fraud-checks": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "List of fraud checks"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get fraud checks for authenticated user",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/fraud-checks/{id}/resolve": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fraud check resolved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve a fraud check",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/leaderboard": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "leaderboard": {
+                      "items": {
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "totalContributions": {
+                            "type": "integer"
+                          },
+                          "totalEarned": {
+                            "type": "number"
+                          },
+                          "totalReferrals": {
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of top referrers"
+          }
+        },
+        "summary": "Get referral performance leaderboard",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/links": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "links": {
+                      "items": {
+                        "properties": {
+                          "campaign_title": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "commission_earned": {
+                            "type": "string"
+                          },
+                          "referred_amount": {
+                            "type": "string"
+                          },
+                          "share_url": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": ["no_referrals", "pending", "paid"],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of referral links"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Affiliate links held by the authenticated user, with commission earned",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/rewards": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": ["earned", "paid_out", "cancelled"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of user rewards"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get rewards for authenticated user",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/referrals/rewards/summary": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Reward summary"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get reward summary for authenticated user",
+        "tags": ["Referrals"]
+      }
+    },
+    "/api/subscriptions/mine": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Subscriptions with next payment date and claimed period count. A subscription whose campaign stopped accepting installments has status 'closed', a closure_reason, the closed period count/amount and reclaimable_from — the first date the contributor can reclaim a closed balance on-ledger.\n"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the authenticated contributor's subscriptions",
+        "tags": ["Subscriptions"]
+      }
+    },
+    "/api/user/sponsor-matches": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Array of matching pledges"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get user's sponsor matching pledges",
+        "tags": ["Sponsor Matching"]
+      }
+    },
+    "/api/users/api-keys/:id/rotate": {
+      "post": {
+        "description": "Issues a one-time replacement key with inherited or explicitly chosen label and scopes. The predecessor remains valid for the grace period. Returns the replacement key exactly once and records predecessor/successor IDs.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "expires_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "scopes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Payment successful"
+          "201": {
+            "description": "Replacement key issued"
+          },
+          "404": {
+            "description": "Key not found or cannot be rotated"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rotate an API key with a bounded grace period",
+        "tags": ["API Keys"]
+      }
+    },
+    "/api/users/login": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": ["email", "password"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        },
+        "summary": "Login (alias of /api/auth/login)",
+        "tags": ["Users"]
+      }
+    },
+    "/api/users/me/category-follows": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Followed categories"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the categories the current user follows",
+        "tags": ["Categories"]
+      },
+      "post": {
+        "description": "Idempotent. Following an already-followed category returns 200 with `created: false` instead of an error, so retries and concurrent double-taps have deterministic behaviour.\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "category": {
+                    "enum": [
+                      "technology",
+                      "community",
+                      "arts",
+                      "education",
+                      "environment",
+                      "health",
+                      "business",
+                      "open_source",
+                      "other"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": ["category"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Already following (idempotent repeat)"
+          },
+          "201": {
+            "description": "Category followed"
+          },
+          "400": {
+            "description": "Invalid category"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Follow a campaign category",
+        "tags": ["Categories"]
+      }
+    },
+    "/api/users/me/category-follows/{category}": {
+      "delete": {
+        "description": "Idempotent. Unfollowing a category that is not followed still returns 204 so retries have deterministic behaviour. Scoped to the current user: users can only remove their own follows.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "technology",
+                "community",
+                "arts",
+                "education",
+                "environment",
+                "health",
+                "business",
+                "open_source",
+                "other"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unfollowed (or was not following)"
+          },
+          "400": {
+            "description": "Invalid category"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Unfollow a campaign category",
+        "tags": ["Categories"]
+      }
+    },
+    "/api/users/me/credentials/activity": {
+      "get": {
+        "description": "Fetch the audit trail for API key and webhook lifecycle events (creation, rotation, revocation).",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "activity": {
+                      "items": {
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "id": {
+                            "format": "uuid",
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "type": "object"
+                          },
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "resourceType": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "List of credential events"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get credential activity log",
+        "tags": ["Users"]
+      }
+    },
+    "/api/users/register": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "email": {
+                    "format": "email",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "minLength": 6,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": ["contributor", "creator"],
+                    "type": "string"
+                  }
+                },
+                "required": ["email", "password", "name"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "409": {
+            "description": "Email already registered"
+          }
+        },
+        "summary": "Register a new user (alias of /api/auth/register)",
+        "tags": ["Users"]
+      }
+    },
+    "/api/withdrawals/request": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "amount": {
+                    "type": "string"
+                  },
+                  "campaign_id": {
+                    "type": "string"
+                  },
+                  "destination_key": {
+                    "type": "string"
+                  }
+                },
+                "required": ["campaign_id", "destination_key", "amount"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a pending withdrawal request",
+        "tags": ["Withdrawals"]
+      }
+    },
+    "/api/withdrawals/{id}/audit": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Withdrawal audit timeline (alias of /events)",
+        "tags": ["Withdrawals"]
+      }
+    },
+    "/api/withdrawals/{id}/reject": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Platform rejection",
+        "tags": ["Withdrawals"]
+      }
+    },
+    "/campaigns": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated campaign list"
+          }
+        },
+        "summary": "List public campaigns",
+        "tags": ["Public API v1"]
+      }
+    },
+    "/campaigns/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Campaign detail"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "summary": "Campaign detail with milestones",
+        "tags": ["Public API v1"]
+      }
+    },
+    "/campaigns/{id}/contributions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contribution list"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List contributions (campaign creator only)",
+        "tags": ["Public API v1"]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "tx_hash": {
+                    "type": "string"
+                  }
+                },
+                "required": ["tx_hash"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Contribution created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Record a contribution from a Stellar transaction hash",
+        "tags": ["Public API v1"]
+      }
+    },
+    "/users/me": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "User profile"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Authenticated user profile and stats",
+        "tags": ["Public API v1"]
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "https://crowdpay.up.railway.app",
+      "description": "Testnet backend"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Users",
+      "description": "User registration and login"
+    },
+    {
+      "name": "Campaigns",
+      "description": "Campaign discovery and management"
+    },
+    {
+      "name": "Categories",
+      "description": "Follow campaign categories and receive matching campaigns in the weekly digest"
+    },
+    {
+      "name": "Invites",
+      "description": "Campaign team invitations"
+    },
+    {
+      "name": "Sponsor Matching",
+      "description": "Sponsor matching pools and pledge management"
+    },
+    {
+      "name": "Subscriptions",
+      "description": "Recurring pledges backed by Stellar claimable balance schedules"
+    },
+    {
+      "name": "Public API v1",
+      "description": "Versioned public API for third-party integrations"
+    },
+    {
+      "name": "Withdrawals",
+      "description": "Withdrawal requests and audit timeline"
+    }
+  ]
 }

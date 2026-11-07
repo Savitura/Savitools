@@ -35,7 +35,7 @@ export interface DecodedSorobanEvent {
   type: string;
   /** Resolved event name (topic[0] friendly / symbol); null if unknown. */
   eventName: string | null;
-  /** Human-readable signature, e.g. `Transfer(Address, Address, I128)`. */
+  /** Human-readable signature, e.g. `Transfer(Address, Address, I108)`. */
   signature: string;
   topics: DecodedEventTopic[];
   data: DecodedScVal | null;
@@ -77,12 +77,28 @@ function contractIdFromHash(hash: Buffer | Uint8Array | null | undefined): strin
 
 function eventTypeName(type: xdr.ContractEventType): string {
   try {
-    const name = type.name as string;
-    // contractEventTypeContract → contract
-    return name.replace(/^contractEventType/i, '').toLowerCase() || name;
+    // xdr enums expose a name() accessor in the Stellar SDK.
+    const name = typeof (type as unknown as { name?: () => string }).name === 'function'
+      ? (type as unknown as { name: () => string }).name()
+      : (type as unknown as { name?: string }).name;
+    if (typeof name === 'string' && name.length > 0) {
+      // contractEventTypeContract → contract
+      return name.replace(/^contractEventType/i, '').toLowerCase() || name;
+    }
   } catch {
-    return 'unknown';
+    /* fall through */
   }
+  // Numeric fallback: 0 = system, 1 = contract, 2 = diagnostic.
+  try {
+    const v = (type as unknown as { value?: () => number }).value;
+    const num = typeof v === 'function' ? v.call(type) : (type as unknown as { value?: number }).value;
+    if (num === 0) return 'system';
+    if (num === 1) return 'contract';
+    if (num === 2) return 'diagnostic';
+  } catch {
+    /* ignore */
+  }
+  return 'unknown';
 }
 
 function resolveFriendlyName(decoded: DecodedScVal | null): string | null {
@@ -107,8 +123,8 @@ function shortTypeLabel(decoded: DecodedScVal | null): string {
 
 function buildSignature(eventName: string | null, topics: DecodedEventTopic[], data: DecodedScVal | null): string {
   const name = eventName ?? 'event';
-  // Skip topic[0] (the name) when building arg list.
-  const argTopics = topics.slice(1);
+  // Skip topic[0] (the name) if it resolved to a name; otherwise keep all topics.
+  const argTopics = eventName ? topics.slice(1) : topics;
   const typed = [
     ...argTopics.map((t) => shortTypeLabel(t.value)),
     shortTypeLabel(data),
@@ -231,6 +247,36 @@ function collectFromSorobanMeta(meta: xdr.SorobanTransactionMeta): DecodedSoroba
   return out;
 }
 
+function extractSorobanMeta(meta: xdr.TransactionMeta): xdr.SorobanTransactionMeta | null {
+  // Try named arms first (v3/v4), then numeric switch fallbacks.
+  for (const arm of ['v3', 'v4'] as const) {
+    try {
+      const accessor = (meta as unknown as Record<string, () => { sorobanMeta?: () => xdr.SorobanTransactionMeta | null }>)[arm];
+      if (typeof accessor !== 'function') continue;
+      const soroban = accessor.call(meta)?.sorobanMeta?.();
+      if (soroban) return soroban;
+    } catch {
+      /* try next */
+    }
+  }
+
+  // Numeric switch fallback (SDK variants that expose a numeric switch).
+  try {
+    const switchVal = (meta as unknown as { switch?: () => number }).switch;
+    const sw = typeof switchVal === 'function' ? switchVal.call(meta) : undefined;
+    if (sw !== undefined && sw >= 3) {
+      const v3 = (meta as unknown as { v3?: () => xdr.TransactionMetaV3 }).v3;
+      const accessor = typeof v3 === 'function' ? v3.call(meta) : undefined;
+      const soroban = accessor?.sorobanMeta?.();
+      if (soroban) return soroban;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
 /**
  * Extract and decode Soroban events from a Horizon `result_meta_xdr` blob.
  * Returns [] on missing/unparseable meta (never throws).
@@ -242,43 +288,9 @@ export function parseSorobanEventsFromMeta(resultMetaXdr: string | null | undefi
 
   try {
     const meta = xdr.TransactionMeta.fromXDR(resultMetaXdr, 'base64');
-    const switchVal = meta.switch();
-
-    // TransactionMeta is a union keyed by int version (0/1/2/3/…).
-    if (typeof switchVal === 'number') {
-      if (switchVal >= 3) {
-        try {
-          const v3 = (meta as unknown as { v3: () => xdr.TransactionMetaV3 }).v3?.();
-          const soroban = v3?.sorobanMeta?.();
-          if (soroban) return collectFromSorobanMeta(soroban);
-        } catch {
-          /* try v4 below */
-        }
-      }
-      if (switchVal >= 4) {
-        try {
-          const v4 = (meta as unknown as { v4: () => { sorobanMeta?: () => xdr.SorobanTransactionMeta | null } }).v4?.();
-          const soroban = v4?.sorobanMeta?.();
-          if (soroban) return collectFromSorobanMeta(soroban);
-        } catch {
-          /* fall through */
-        }
-      }
-    }
-
-    // Named-arm fallbacks for SDK variants.
-    for (const arm of ['v3', 'v4'] as const) {
-      try {
-        const accessor = (meta as unknown as Record<string, () => { sorobanMeta?: () => xdr.SorobanTransactionMeta | null }>)[arm];
-        if (typeof accessor !== 'function') continue;
-        const soroban = accessor.call(meta)?.sorobanMeta?.();
-        if (soroban) return collectFromSorobanMeta(soroban);
-      } catch {
-        /* try next */
-      }
-    }
-
-    return [];
+    const soroban = extractSorobanMeta(meta);
+    if (!soroban) return [];
+    return collectFromSorobanMeta(soroban);
   } catch {
     return [];
   }

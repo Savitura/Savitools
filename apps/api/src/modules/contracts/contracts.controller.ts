@@ -8,20 +8,18 @@ import {
   Query,
   BadRequestException,
   ServiceUnavailableException,
-  UnprocessableEntityException,
   UseGuards,
-  Inject,
-  Optional,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags, ApiConsumes, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 import { ContractsService } from './contracts.service';
 import { InvokeContractDto } from './dto/invoke-contract.dto';
-import { DeployContractDto } from './dto/deploy-contract.dto';
 import { DeployWizardDto } from './dto/wizard.dto';
 import { AttachAbiDto } from './dto/attach-abi.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ContractAuthorizationGuard } from './guards/contract-authorization.guard';
+import { ContractQuotaService } from './contract-quota.service';
+import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import * as crypto from 'crypto';
 
 @ApiTags('contracts')
@@ -32,7 +30,10 @@ export class ContractsController {
   private static wizardBufferBytes = 0;
   private static wizardSessions = new Map<string, { lastStep: number; wasmBuffer?: Buffer; admin?: string; salt?: string; args?: unknown[]; expiresAt: number; deploying?: boolean }>();
 
-  constructor(private readonly contractsService: ContractsService) {}
+  constructor(
+    private readonly contractsService: ContractsService,
+    private readonly quotaService: ContractQuotaService,
+  ) {}
 
   @Post('deploy')
   @ApiCookieAuth()
@@ -43,7 +44,8 @@ export class ContractsController {
   @ApiResponse({ status: 400, description: 'Invalid WASM file or parameters' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Not authorized to deploy contracts' })
-  async deploy(@Req() req: FastifyRequest) {
+  @ApiResponse({ status: 429, description: 'Daily deploy quota reached' })
+  async deploy(@Req() req: FastifyRequest, @CurrentUser() user: AuthUser) {
     let file;
     try {
       file = await req.file();
@@ -61,6 +63,7 @@ export class ContractsController {
       const constructorArgs: unknown[] | undefined = argsField?.value
         ? this.parseArgs(argsField.value)
         : undefined;
+      await this.quotaService.consume(user.id, 'deploy');
       return this.contractsService.deploy(wasmBuffer, constructorArgs);
     }
 
@@ -72,6 +75,7 @@ export class ContractsController {
 
     const { buffer: wasmBuffer } = await this.contractsService.fetchWasmFromUrl(wasmUrl);
     const constructorArgs: unknown[] | undefined = body.args ? this.parseArgs(body.args) : undefined;
+    await this.quotaService.consume(user.id, 'deploy');
     return this.contractsService.deploy(wasmBuffer, constructorArgs);
   }
 
@@ -81,7 +85,12 @@ export class ContractsController {
   @ApiOperation({ summary: 'Soroban contract deployment wizard with step validation' })
   @ApiResponse({ status: 200, description: 'Wizard step processed successfully' })
   @ApiResponse({ status: 400, description: 'Validation failed or out of order step' })
-  async deployWizard(@Req() req: FastifyRequest, @Body() dto: DeployWizardDto) {
+  @ApiResponse({ status: 429, description: 'Daily deploy quota reached' })
+  async deployWizard(
+    @Req() req: FastifyRequest,
+    @Body() dto: DeployWizardDto,
+    @CurrentUser() user: AuthUser,
+  ) {
     const now = Date.now();
     for (const [k, v] of ContractsController.wizardSessions.entries()) {
       if (v.expiresAt < now && !v.deploying) {
@@ -220,6 +229,7 @@ export class ContractsController {
         throw new BadRequestException('Deployment is already in progress for this session');
       }
 
+      await this.quotaService.consume(user.id, 'deploy');
       session.deploying = true;
       let result: Awaited<ReturnType<ContractsService['deployConfigured']>>;
       try {
@@ -261,6 +271,7 @@ export class ContractsController {
   @ApiResponse({ status: 403, description: 'Not authorized' })
   @ApiResponse({ status: 422, description: 'SHA-256 checksum verification failed' })
   async uploadWasm(@Req() req: FastifyRequest) {
+    /* eslint-disable @typescript-eslint/no-explicit-any -- @fastify/multipart field shapes are not worth typing here */
     const file = await req.file();
     const fields = file ? file.fields : (req.body as any) || {};
 
@@ -293,6 +304,7 @@ export class ContractsController {
       checksum: typeof checksumField === 'string' ? checksumField : undefined,
       source: gitRepoUrl ? 'git' : 'file',
     });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   }
 
   @Post(':contractId/invoke')
@@ -304,10 +316,13 @@ export class ContractsController {
   @ApiResponse({ status: 400, description: 'Invalid contract ID or parameters' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Not authorized to invoke this function' })
+  @ApiResponse({ status: 429, description: 'Daily invoke quota reached' })
   async invoke(
     @Param('contractId') contractId: string,
     @Body() dto: InvokeContractDto,
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.quotaService.consume(user.id, 'invoke');
     return this.contractsService.invoke(contractId, dto.functionName, dto.args);
   }
 

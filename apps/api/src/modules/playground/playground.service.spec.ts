@@ -229,7 +229,7 @@ describe('PlaygroundService#proxyRequest SSRF protections', () => {
   });
 
   it('gives up after too many redirect hops', async () => {
-    fetchMock.mockImplementation(async (url: string) =>
+    fetchMock.mockImplementation(async (_url: string) =>
       jsonResponse(302, {}, { location: `${PROVIDER_ORIGIN}/hop-${Math.random()}` }),
     );
 
@@ -314,15 +314,21 @@ describe('PlaygroundService key encryption migration (Savitura/Savitools#206)', 
       expect.any(String),
     );
     // ...and persists it as keyVersion 2, so a retry of the migration is a no-op read.
-    expect(apiKeysRepository.update).toHaveBeenCalledWith('key-1', {
-      encryptedKey: 'v2-ciphertext',
-      iv: 'v2-iv',
-      authTag: 'v2-auth-tag',
-      keyVersion: 2,
-    });
+    // The display mask rides along in the same write (Savitura/Savitools#293).
+    expect(apiKeysRepository.update).toHaveBeenCalledTimes(1);
+    expect(apiKeysRepository.update).toHaveBeenCalledWith(
+      'key-1',
+      expect.objectContaining({
+        encryptedKey: 'v2-ciphertext',
+        iv: 'v2-iv',
+        authTag: 'v2-auth-tag',
+        keyVersion: 2,
+        maskedKey: 'plaintex...-key',
+      }),
+    );
   });
 
-  it('reads an already-upgraded (keyVersion: 2) row without touching the legacy decrypt path or re-writing it', async () => {
+  it('reads a row that already carries its mask without decrypting or writing', async () => {
     const upgradedRecord = {
       id: 'key-2',
       userId: 'user-1',
@@ -330,6 +336,7 @@ describe('PlaygroundService key encryption migration (Savitura/Savitools#206)', 
       iv: 'v2-iv',
       authTag: 'v2-auth-tag',
       keyVersion: 2,
+      maskedKey: 'plaintex...-key',
     };
 
     const apiKeysRepository = {
@@ -345,6 +352,110 @@ describe('PlaygroundService key encryption migration (Savitura/Savitools#206)', 
     };
 
     const service = new PlaygroundService(
+      apiKeysRepository as never,
+      historyRepository as never,
+      configService as never,
+      authService as never,
+      encryptionService as never,
+    );
+
+    const keys = await service.listKeys('user-1');
+
+    expect(keys[0].maskedKey).toBe('plaintex...-key');
+    // Nothing to decrypt and nothing to write: the mask is already stored.
+    expect(encryptionService.decryptForUser).not.toHaveBeenCalled();
+    expect(encryptionService.encryptForUser).not.toHaveBeenCalled();
+    expect(apiKeysRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('backfills the mask once for a row written before the column existed', async () => {
+    const withoutMask = {
+      id: 'key-2',
+      userId: 'user-1',
+      encryptedKey: 'v2-ciphertext',
+      iv: 'v2-iv',
+      authTag: 'v2-auth-tag',
+      keyVersion: 2,
+    };
+
+    const apiKeysRepository = {
+      find: jest.fn().mockResolvedValue([withoutMask]),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const historyRepository = { create: jest.fn(), save: jest.fn() };
+    const configService = { get: jest.fn(), getOrThrow: jest.fn() };
+    const authService = { resolveKey: jest.fn() };
+    const encryptionService = {
+      encryptForUser: jest.fn(),
+      decryptForUser: jest.fn().mockReturnValue('plaintext-api-key'),
+    };
+
+    const service = new PlaygroundService(
+      apiKeysRepository as never,
+      historyRepository as never,
+      configService as never,
+      authService as never,
+      encryptionService as never,
+    );
+
+    const keys = await service.listKeys('user-1');
+
+    expect(keys[0].maskedKey).toBe('plaintex...-key');
+    expect(encryptionService.decryptForUser).toHaveBeenCalledTimes(1);
+    // A single write, and it only stores the mask — the ciphertext is untouched.
+    expect(apiKeysRepository.update).toHaveBeenCalledTimes(1);
+    expect(apiKeysRepository.update).toHaveBeenCalledWith('key-2', {
+      maskedKey: 'plaintex...-key',
+    });
+  });
+});
+
+describe('PlaygroundService#proxyRequest response-size limits', () => {
+  const PROVIDER_ORIGIN = 'https://api.provider.com';
+
+  let service: PlaygroundService;
+  let fetchMock: jest.Mock;
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+
+    const apiKeysRepository = { findOne: jest.fn().mockResolvedValue(null) };
+    const historyQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getQuery: jest.fn().mockReturnValue('SELECT 1'),
+      delete: jest.fn().mockReturnThis(),
+      setParameter: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const historyRepository = {
+      create: jest.fn((entry) => entry),
+      save: jest.fn().mockResolvedValue(undefined),
+      createQueryBuilder: jest.fn(() => historyQueryBuilder),
+    };
+
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'FLUXA_API_URL') return PROVIDER_ORIGIN;
+        return undefined;
+      }),
+      getOrThrow: jest.fn(),
+    };
+
+    const authService = { resolveKey: jest.fn().mockResolvedValue('sk_live_secret') };
+    const encryptionService = {
+      encryptForUser: jest.fn(),
+      decryptForUser: jest.fn(),
+    };
+
+    service = new PlaygroundService(
       apiKeysRepository as any,
       historyRepository as any,
       configService as any,
@@ -352,15 +463,147 @@ describe('PlaygroundService key encryption migration (Savitura/Savitools#206)', 
       encryptionService as any,
     );
 
-    const keys = await service.listKeys('user-1');
+    originalFetch = global.fetch;
+    fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
 
-    expect(keys[0].maskedKey).toContain('plai');
-    expect(encryptionService.decryptForUser).toHaveBeenCalledWith(
-      'user-1',
-      { encrypted: 'v2-ciphertext', iv: 'v2-iv', authTag: 'v2-auth-tag' },
-      expect.any(String),
-    );
-    expect(encryptionService.encryptForUser).not.toHaveBeenCalled();
-    expect(apiKeysRepository.update).not.toHaveBeenCalled();
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('rejects response when content-length exceeds MAX_RESPONSE_SIZE', async () => {
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    const oversizedLength = (MAX_SIZE + 1).toString();
+
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === 'content-length') return oversizedLength;
+          if (name === 'content-type') return 'application/json';
+          return null;
+        },
+        has: () => true,
+        forEach: () => {},
+      },
+      body: null,
+    } as unknown as Response);
+
+    await expect(
+      service.proxyRequest('user-1', {
+        provider: ApiKeyProvider.FLUXA,
+        method: 'GET',
+        path: '/v1/large-data',
+      } as any),
+    ).rejects.toThrow(BadGatewayException);
+
+    await expect(
+      service.proxyRequest('user-1', {
+        provider: ApiKeyProvider.FLUXA,
+        method: 'GET',
+        path: '/v1/large-data',
+      } as any),
+    ).rejects.toThrow(/exceeds maximum size limit/);
+  });
+
+  it('rejects response when streaming body exceeds MAX_RESPONSE_SIZE', async () => {
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    const numChunks = 11; // 11MB total
+
+    const mockReader = {
+      read: jest.fn(),
+      cancel: jest.fn(),
+      releaseLock: jest.fn(),
+    };
+
+    // Simulate streaming 11MB of data
+    for (let i = 0; i < numChunks; i++) {
+      mockReader.read.mockResolvedValueOnce({
+        done: false,
+        value: new Uint8Array(chunkSize),
+      });
+    }
+    mockReader.read.mockResolvedValueOnce({ done: true });
+
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === 'content-type') return 'application/json';
+          return null;
+        },
+        has: () => false,
+        forEach: (cb: (value: string, key: string) => void) => {
+          cb('application/json', 'content-type');
+        },
+      },
+      body: {
+        getReader: () => mockReader,
+      },
+    } as unknown as Response);
+
+    await expect(
+      service.proxyRequest('user-1', {
+        provider: ApiKeyProvider.FLUXA,
+        method: 'GET',
+        path: '/v1/stream-data',
+      } as any),
+    ).rejects.toThrow(BadGatewayException);
+
+    await expect(
+      service.proxyRequest('user-1', {
+        provider: ApiKeyProvider.FLUXA,
+        method: 'GET',
+        path: '/v1/stream-data',
+      } as any),
+    ).rejects.toThrow(/exceeds maximum size limit/);
+
+    expect(mockReader.cancel).toHaveBeenCalled();
+  });
+
+  it('allows response when size is within MAX_RESPONSE_SIZE', async () => {
+    const validSize = 1024; // 1KB
+    const mockData = 'a'.repeat(validSize);
+
+    const mockReader = {
+      read: jest.fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(mockData),
+        })
+        .mockResolvedValueOnce({ done: true }),
+      cancel: jest.fn(),
+      releaseLock: jest.fn(),
+    };
+
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === 'content-type') return 'application/json';
+          if (name === 'content-length') return validSize.toString();
+          return null;
+        },
+        has: (name: string) => name === 'content-type' || name === 'content-length',
+        forEach: (cb: (value: string, key: string) => void) => {
+          cb('application/json', 'content-type');
+          cb(validSize.toString(), 'content-length');
+        },
+      },
+      body: {
+        getReader: () => mockReader,
+      },
+    } as unknown as Response);
+
+    const result = await service.proxyRequest('user-1', {
+      provider: ApiKeyProvider.FLUXA,
+      method: 'GET',
+      path: '/v1/small-data',
+    } as any);
+
+    expect(result.status).toBe(200);
+    expect(mockReader.cancel).not.toHaveBeenCalled();
   });
 });

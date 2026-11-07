@@ -15,14 +15,17 @@ import {
   AlertTriangle,
   ExternalLink,
   Search,
+  RotateCcw,
 } from 'lucide-react';
 import {
   sandboxFund,
   sandboxGetAccount,
   sandboxSendPayment,
+  sandboxResetAccount,
   type SandboxAccountDetails,
   type SandboxFundResult,
   type SandboxPaymentResult,
+  type SandboxResetResult,
   type Balance,
 } from '@/lib/api';
 import { useNetwork } from '@/lib/network-context';
@@ -34,6 +37,7 @@ import {
   SandboxEmptyAccountState,
   SandboxPaymentEmptyState,
 } from './state-display';
+import { AsyncStatusAnnouncer, type AsyncStatusAnnouncement } from '@/components/ui/live-region';
 
 interface GeneratedKeypair {
   publicKey: string;
@@ -68,17 +72,24 @@ export function SandboxTool() {
   const [generating, setGenerating] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
-  
+
   const [fundResult, setFundResult] = useState<SandboxFundResult | null>(null);
+  const [fundError, setFundError] = useState<string | null>(null);
   const [funding, setFunding] = useState(false);
-  
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<SandboxResetResult | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // True while any network operation is in progress — used to block network switching.
+  const inFlight = generating || funding || resetting;
+
   const [inspector, setInspector] = useState<AccountInspectorState>({
     publicKey: '',
     account: null,
     loading: false,
     error: null,
   });
-  
+
   const [payment, setPayment] = useState<PaymentFormState>({
     fromSecret: '',
     toPublicKey: '',
@@ -96,8 +107,7 @@ export function SandboxTool() {
   const destinationPreview = previewDestination(payment.toPublicKey);
   // NetworkContext also allows 'custom'; the sandbox is testnet-only, so a
   // custom profile gets the testnet explorer rather than no link at all.
-  const explorerNetwork: 'testnet' | 'mainnet' =
-    network === 'mainnet' ? 'mainnet' : 'testnet';
+  const explorerNetwork: 'testnet' | 'mainnet' = network === 'mainnet' ? 'mainnet' : 'testnet';
 
   // Security: hold a ref to the latest generated secret so we can drop it
   // from memory when the component unmounts (see Savitura/Savitools#145). JS
@@ -123,9 +133,7 @@ export function SandboxTool() {
       // The SDK accepts a Buffer-like seed and copies it internally, so we can
       // pass our zeroable Uint8Array directly (its type signature says Buffer,
       // but any byte view works — see Keypair constructor in stellar-sdk).
-      const pair = Keypair.fromRawEd25519Seed(
-        seed as unknown as Buffer,
-      );
+      const pair = Keypair.fromRawEd25519Seed(seed as unknown as Buffer);
       const publicKey = pair.publicKey();
       const secretKey = pair.secret();
       zeroBuffer(seed);
@@ -162,34 +170,38 @@ export function SandboxTool() {
     }
   };
 
-  const handleInspectAccount = useCallback(async (publicKey: string) => {
-    setInspector((prev) => ({ ...prev, publicKey, loading: true, error: null, account: null }));
-    try {
-      const account = await sandboxGetAccount(publicKey);
-      setInspector((prev) => ({ ...prev, account, loading: false }));
-      addRecentItem({
-        category: 'sandbox',
-        title: `Account: ${publicKey.slice(0, 8)}…`,
-        subtitle: `${account.balances.length} balance(s)`,
-        href: '/sandbox',
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load account';
-      setInspector((prev) => ({ ...prev, error: message, loading: false }));
-    }
-  }, []);
+  const handleInspectAccount = useCallback(
+    async (publicKey: string) => {
+      setInspector((prev) => ({ ...prev, publicKey, loading: true, error: null, account: null }));
+      try {
+        const account = await sandboxGetAccount(publicKey, network);
+        setInspector((prev) => ({ ...prev, account, loading: false }));
+        addRecentItem({
+          category: 'sandbox',
+          title: `Account: ${publicKey.slice(0, 8)}…`,
+          subtitle: `${account.balances.length} balance(s)`,
+          href: '/sandbox',
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load account';
+        setInspector((prev) => ({ ...prev, error: message, loading: false }));
+      }
+    },
+    [network],
+  );
 
   const handleFund = useCallback(async () => {
     if (!keypair) return;
     setFunding(true);
     setFundResult(null);
+    setFundError(null);
     try {
-      const result = await sandboxFund(keypair.publicKey);
+      const result = await sandboxFund(keypair.publicKey, network);
       setFundResult(result);
       addRecentItem({
         category: 'sandbox',
         title: `Funded: ${keypair.publicKey.slice(0, 8)}…`,
-        subtitle: '10,000 testnet XLM received',
+        subtitle: `${network} XLM received`,
         href: '/sandbox',
       });
       // Auto-refresh inspector if it matches
@@ -197,11 +209,30 @@ export function SandboxTool() {
         handleInspectAccount(keypair.publicKey);
       }
     } catch (err) {
-      console.error('Funding failed:', err);
+      setFundError(err instanceof Error ? err.message : 'Funding failed');
     } finally {
       setFunding(false);
     }
-  }, [keypair, inspector.publicKey, handleInspectAccount]);
+  }, [keypair, network, inspector.publicKey, handleInspectAccount]);
+
+  const handleReset = useCallback(async () => {
+    if (!keypair) return;
+    setResetting(true);
+    setResetResult(null);
+    setResetError(null);
+    try {
+      const result = await sandboxResetAccount(keypair.publicKey, network);
+      setResetResult(result);
+      // Refresh inspector if it is viewing this account
+      if (inspector.publicKey === keypair.publicKey) {
+        handleInspectAccount(keypair.publicKey);
+      }
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Reset failed');
+    } finally {
+      setResetting(false);
+    }
+  }, [keypair, network, inspector.publicKey, handleInspectAccount]);
 
   const validateAsset = (value: string) => {
     if (value === 'XLM') {
@@ -209,8 +240,17 @@ export function SandboxTool() {
       return;
     }
     const parts = value.split(':');
-    if (parts.length !== 2 || !parts[0] || !parts[1] || parts[0].length > 12 || parts[1].length !== 56) {
-      setPayment((prev) => ({ ...prev, assetError: 'Invalid format. Use CODE:ISSUER (e.g., USDC:G...) or XLM' }));
+    if (
+      parts.length !== 2 ||
+      !parts[0] ||
+      !parts[1] ||
+      parts[0].length > 12 ||
+      parts[1].length !== 56
+    ) {
+      setPayment((prev) => ({
+        ...prev,
+        assetError: 'Invalid format. Use CODE:ISSUER (e.g., USDC:G...) or XLM',
+      }));
     } else {
       setPayment((prev) => ({ ...prev, assetError: null }));
     }
@@ -238,6 +278,7 @@ export function SandboxTool() {
         payment.asset,
         payment.amount,
         payment.memo || undefined,
+        network,
       );
       setPaymentResult(result);
       if (result.txHash) {
@@ -291,10 +332,72 @@ export function SandboxTool() {
     handleFund,
   ]);
 
+  const inspectorStatus: AsyncStatusAnnouncement | null = inspector.loading
+    ? { tone: 'loading', message: 'Loading account details…' }
+    : inspector.error
+      ? {
+          tone: 'error',
+          message: `Account lookup failed: ${inspector.error}`,
+          key: `inspector-error:${inspector.publicKey}:${inspector.error}`,
+        }
+      : inspector.account
+        ? {
+            tone: 'success',
+            message: `Account loaded with ${inspector.account.balances.length} balance${
+              inspector.account.balances.length === 1 ? '' : 's'
+            }.`,
+            key: `inspector-success:${inspector.publicKey}:${inspector.account.sequenceNumber}`,
+          }
+        : null;
 
+  const paymentStatus: AsyncStatusAnnouncement | null = sending
+    ? { tone: 'loading', message: 'Sending test payment…' }
+    : paymentError
+      ? {
+          tone: 'error',
+          message: `Payment failed: ${paymentError}`,
+          key: `payment-error:${paymentError}`,
+        }
+      : paymentResult
+        ? {
+            tone: 'success',
+            message: 'Test payment confirmed.',
+            key: `payment-success:${paymentResult.txHash}`,
+          }
+        : null;
 
+  const actionStatus: AsyncStatusAnnouncement | null = funding
+    ? { tone: 'loading', message: 'Funding account via Friendbot…' }
+    : resetting
+      ? { tone: 'loading', message: 'Resetting sandbox account…' }
+      : fundError
+        ? { tone: 'error', message: `Funding failed: ${fundError}`, key: `fund-error:${fundError}` }
+        : resetError
+          ? {
+              tone: 'error',
+              message: `Reset failed: ${resetError}`,
+              key: `reset-error:${resetError}`,
+            }
+          : fundResult
+            ? {
+                tone: 'success',
+                message: `Account funded with ${fundResult.startingBalance} XLM.`,
+                key: `fund-success:${fundResult.publicKey}:${fundResult.txHash ?? fundResult.startingBalance}`,
+              }
+            : resetResult
+              ? {
+                  tone: 'success',
+                  message: `Account reset. ${resetResult.message}`,
+                  key: `reset-success:${resetResult.publicKey}:${resetResult.txHash ?? resetResult.message}`,
+                }
+              : null;
 
-  const stellarExpertUrl = (txHash: string) => `https://stellar.expert/tx/${txHash}?network=testnet`;
+  const stellarExpertUrl = (txHash: string) =>
+    `https://stellar.expert/tx/${txHash}?network=testnet`;
+
+  // Derive a human-readable network label for the active connection.
+  const networkLabel =
+    network === 'mainnet' ? 'Mainnet' : network === 'quickstart' ? 'Quickstart (Local)' : 'Testnet';
 
   // Disable sandbox features on mainnet
   if (network === 'mainnet') {
@@ -303,7 +406,8 @@ export function SandboxTool() {
         <div className="flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
           <p className="text-xs text-red-700">
-            <strong>Sandbox features are disabled on mainnet.</strong> Switch to testnet to use the wallet sandbox.
+            <strong>Sandbox features are disabled on mainnet.</strong> Switch to testnet or
+            quickstart to use the wallet sandbox.
           </p>
         </div>
       </div>
@@ -312,18 +416,43 @@ export function SandboxTool() {
 
   return (
     <div className="space-y-6">
-      {/* Persistent warning banner */}
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
-        <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-        <p className="text-xs text-amber-700">
-          <strong>This sandbox is for Stellar testnet only. Never use generated keys for real funds.</strong>
-        </p>
+      <AsyncStatusAnnouncer status={actionStatus} />
+      <AsyncStatusAnnouncer status={inspectorStatus} />
+      <AsyncStatusAnnouncer status={paymentStatus} />
+      {/* Persistent safety warning + active network */}
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-start justify-between gap-2">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-700">
+            <strong>
+              Sandbox keys are for testing only. Never use generated keys for real funds.
+            </strong>
+          </p>
+        </div>
+        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-200/60 text-amber-800">
+          {networkLabel}
+        </span>
       </div>
+
+      {/* Network-switching lockout during in-flight operations */}
+      {inFlight && (
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-2.5 flex items-center gap-2">
+          <Loader2 className="h-3 w-3 text-blue-600 animate-spin shrink-0" />
+          <p className="text-xs text-blue-700">
+            Network switching is disabled while an operation is in progress.
+          </p>
+        </div>
+      )}
 
       {/* Generate Keypair Section */}
       <div className="rounded-lg border border-border p-4 space-y-4">
-        <h3 className="text-sm font-medium">Generate Keypair</h3>
-        
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Generate Keypair</h3>
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+            {networkLabel}
+          </span>
+        </div>
+
         <button
           type="button"
           onClick={handleGenerateKeypair}
@@ -348,7 +477,9 @@ export function SandboxTool() {
             {/* Public Key */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Public Key</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  Public Key
+                </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(keypair.publicKey, 'pub')}
@@ -370,17 +501,15 @@ export function SandboxTool() {
             {/* Secret Key */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Secret Key</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                  Secret Key
+                </span>
                 <button
                   type="button"
                   onClick={() => setRevealed(!revealed)}
                   className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
                 >
-                  {revealed ? (
-                    <EyeOff className="h-3 w-3" />
-                  ) : (
-                    <Eye className="h-3 w-3" />
-                  )}
+                  {revealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                   {revealed ? 'Hide' : 'Reveal'}
                 </button>
               </div>
@@ -406,30 +535,51 @@ export function SandboxTool() {
               </p>
             </div>
 
-            {/* Fund on Testnet */}
-            <button
-              type="button"
-              onClick={handleFund}
-              disabled={funding}
-              className="w-full px-3 py-2 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 flex items-center justify-center gap-1.5"
-            >
-              {funding ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Funding...
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="h-3 w-3" />
-                  Fund on Testnet
-                </>
-              )}
-            </button>
+            {/* Fund / Reset buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleFund}
+                disabled={funding || resetting}
+                className="px-3 py-2 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                {funding ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Funding…
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="h-3 w-3" />
+                    Fund via Friendbot
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={resetting || funding}
+                className="px-3 py-2 text-xs font-medium rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                {resetting ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Resetting…
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-3 w-3" />
+                    Reset Account
+                  </>
+                )}
+              </button>
+            </div>
 
             {fundResult && (
               <div className="rounded-md bg-green-500/10 border border-green-500/30 p-2">
                 <p className="text-xs text-green-700">
-                  <strong>Funded successfully!</strong> {fundResult.startingBalance}
+                  <strong>Funded successfully!</strong> {fundResult.startingBalance} XLM
                 </p>
                 {fundResult.txHash && (
                   <a
@@ -443,6 +593,30 @@ export function SandboxTool() {
                 )}
               </div>
             )}
+
+            {fundError && (
+              <div className="rounded-md bg-red-500/10 border border-red-500/30 p-2">
+                <p className="text-xs text-red-700">
+                  <strong>Funding failed:</strong> {fundError}
+                </p>
+              </div>
+            )}
+
+            {resetError && (
+              <div className="rounded-md bg-red-500/10 border border-red-500/30 p-2">
+                <p className="text-xs text-red-700">
+                  <strong>Reset failed:</strong> {resetError}
+                </p>
+              </div>
+            )}
+
+            {resetResult && !resetError && (
+              <div className="rounded-md bg-orange-500/10 border border-orange-500/30 p-2">
+                <p className="text-xs text-orange-700">
+                  <strong>Account reset.</strong> {resetResult.message}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -450,7 +624,7 @@ export function SandboxTool() {
       {/* Account Inspector */}
       <div className="rounded-lg border border-border p-4 space-y-4">
         <h3 className="text-sm font-medium">Account Inspector</h3>
-        
+
         <div className="flex gap-2">
           <input
             type="text"
@@ -490,7 +664,9 @@ export function SandboxTool() {
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
                 Sequence Number
               </span>
-              <p className="text-xs font-mono bg-muted/50 px-2 py-1.5 rounded">{inspector.account.sequenceNumber}</p>
+              <p className="text-xs font-mono bg-muted/50 px-2 py-1.5 rounded">
+                {inspector.account.sequenceNumber}
+              </p>
             </div>
 
             {/* Balances */}
@@ -511,7 +687,9 @@ export function SandboxTool() {
                           :{b.assetIssuer.slice(0, 8)}...
                         </span>
                       )}
-                      {b.limit && <span className="text-muted-foreground ml-1">(limit: {b.limit})</span>}
+                      {b.limit && (
+                        <span className="text-muted-foreground ml-1">(limit: {b.limit})</span>
+                      )}
                     </span>
                     <span>{parseFloat(b.balance).toFixed(7)}</span>
                   </div>
@@ -555,13 +733,31 @@ export function SandboxTool() {
                 Flags
               </span>
               <div className="flex gap-2 text-xs bg-muted/30 px-2 py-1.5 rounded">
-                <span className={inspector.account.flags.authRequired ? 'text-green-600' : 'text-muted-foreground'}>
+                <span
+                  className={
+                    inspector.account.flags.authRequired
+                      ? 'text-green-600'
+                      : 'text-muted-foreground'
+                  }
+                >
                   Auth Required: {inspector.account.flags.authRequired ? 'Yes' : 'No'}
                 </span>
-                <span className={inspector.account.flags.authRevocable ? 'text-green-600' : 'text-muted-foreground'}>
+                <span
+                  className={
+                    inspector.account.flags.authRevocable
+                      ? 'text-green-600'
+                      : 'text-muted-foreground'
+                  }
+                >
                   Auth Revocable: {inspector.account.flags.authRevocable ? 'Yes' : 'No'}
                 </span>
-                <span className={inspector.account.flags.authImmutable ? 'text-green-600' : 'text-muted-foreground'}>
+                <span
+                  className={
+                    inspector.account.flags.authImmutable
+                      ? 'text-green-600'
+                      : 'text-muted-foreground'
+                  }
+                >
                   Auth Immutable: {inspector.account.flags.authImmutable ? 'Yes' : 'No'}
                 </span>
               </div>
@@ -584,7 +780,7 @@ export function SandboxTool() {
       {/* Send Test Payment */}
       <div className="rounded-lg border border-border p-4 space-y-4">
         <h3 className="text-sm font-medium">Send Test Payment</h3>
-        
+
         <div className="space-y-3">
           <div>
             <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
@@ -627,8 +823,7 @@ export function SandboxTool() {
                   </a>
                 </p>
                 <p>
-                  Payment ID:{' '}
-                  <span className="font-mono">{destinationPreview.muxedId}</span>
+                  Payment ID: <span className="font-mono">{destinationPreview.muxedId}</span>
                 </p>
               </div>
             )}
@@ -716,11 +911,9 @@ export function SandboxTool() {
                 TX: {paymentResult.txHash.slice(0, 16)}...
               </p>
               <p className="text-xs text-green-600">
-                Fee: {paymentResult.feeCharged} stroops
+                Fee: {paymentResult.feeCharged ?? 'unknown'} stroops
               </p>
-              <p className="text-xs text-green-600">
-                Result: {paymentResult.resultCode}
-              </p>
+              <p className="text-xs text-green-600">Result: {paymentResult.resultCode}</p>
               {paymentResult.muxedId && (
                 <p className="text-xs text-green-600">
                   Muxed destination &middot; account{' '}
@@ -735,8 +928,7 @@ export function SandboxTool() {
                   >
                     {shorten(paymentResult.destinationAccount ?? '')}
                   </a>{' '}
-                  &middot; payment ID{' '}
-                  <span className="font-mono">{paymentResult.muxedId}</span>
+                  &middot; payment ID <span className="font-mono">{paymentResult.muxedId}</span>
                 </p>
               )}
               <a

@@ -8,6 +8,7 @@ import {
   isWalletAvailable,
   requestWalletAccess,
   signWithWallet,
+  signTransactionXdr,
   WalletError,
 } from '@/lib/stellar-signer';
 import { submitSignedTransaction, submitToHorizon } from '@/lib/composer-api';
@@ -157,6 +158,56 @@ describe('browser-wallet signing (Savitura/Savitools#198)', () => {
       code: 'UNSUPPORTED',
       message: expect.stringMatching(/not installed/i),
     });
+  });
+
+  it('rejects wallet signing on mainnet with testnet lock error', async () => {
+    const source = Keypair.random();
+    const xdr = buildTestnetTransaction(source.publicKey());
+
+    await expect(
+      signWithWallet(xdr, {
+        networkPassphrase: Networks.PUBLIC,
+        expectedSourceAccount: source.publicKey(),
+      }),
+    ).rejects.toThrow('Mainnet signing is disabled. SaviTools is locked to testnet.');
+  });
+
+  it('rejects secret-key signing on mainnet with testnet lock error', async () => {
+    const source = Keypair.random();
+    const xdr = buildTestnetTransaction(source.publicKey());
+
+    await expect(
+      signTransactionXdr(xdr, source.secret(), Networks.PUBLIC),
+    ).rejects.toThrow('Mainnet signing is disabled. SaviTools is locked to testnet.');
+  });
+
+  it('signs secret-key transactions with a custom profile passphrase (Savitura/Savitools#423)', async () => {
+    const source = Keypair.random();
+    const customPassphrase = 'Standalone Network ; February 2017';
+    const unsigned = new TransactionBuilder(new Account(source.publicKey(), '0'), {
+      fee: '100',
+      networkPassphrase: customPassphrase,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: Keypair.random().publicKey(),
+          asset: Asset.native(),
+          amount: '1',
+        }),
+      )
+      .setTimeout(30)
+      .build()
+      .toXDR();
+
+    const signedXdr = await signTransactionXdr(unsigned, source.secret(), customPassphrase);
+
+    // The signature must verify against the custom network's hash, not testnet's.
+    const signed = TransactionBuilder.fromXDR(signedXdr, customPassphrase);
+    expect(signed.signatures).toHaveLength(1);
+    const signature = signed.signatures[0].signature();
+    expect(source.verify(signed.hash(), signature)).toBe(true);
+    const asTestnet = TransactionBuilder.fromXDR(signedXdr, Networks.TESTNET);
+    expect(source.verify(asTestnet.hash(), signature)).toBe(false);
   });
 });
 

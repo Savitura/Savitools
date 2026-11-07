@@ -16,6 +16,7 @@ import * as os from 'os';
 import { execFile } from 'child_process';
 import { Queue, QueueEvents, Worker } from 'bullmq';
 import { assertPublicHostname } from '../../common/ssrf-guard';
+import { ConfigurationError } from '../../common/errors/configuration.error';
 import { AbiCatalogEntry, buildAbiCatalog, encodeAbiArgument } from './abi-catalog';
 import { AttachAbiDto, ABI_MAX_BYTES } from './dto/attach-abi.dto';
 import {
@@ -67,6 +68,21 @@ function parseRedisConnection(redisUrl: string): { host: string; port: number; u
   };
 }
 
+const MAINNET_NETWORK_NAMES = new Set(['mainnet', 'public', 'pubnet']);
+
+/**
+ * The contracts module signs with a shared server key, so it only runs against
+ * test networks (testnet, futurenet, local quickstart). Throws on the public
+ * network name or passphrase (Savitura/Savitools#425).
+ */
+export function assertTestNetworkOnly(network: string, networkPassphrase: string): void {
+  if (MAINNET_NETWORK_NAMES.has(network.trim().toLowerCase()) || networkPassphrase === Networks.PUBLIC) {
+    throw new ConfigurationError(
+      'Contract deploy/invoke is testnet-only: STELLAR_NETWORK / STELLAR_NETWORK_PASSPHRASE must not point at the public network, because DEPLOYER_SECRET_KEY is shared by all allowlisted users',
+    );
+  }
+}
+
 /** Attached-ABI catalog bounds — mirrors the wizard session TTL pattern. */
 export const ABI_CATALOG_MAX_ENTRIES = 200;
 export const ABI_CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -98,13 +114,19 @@ export class ContractsService {
       "testnet",
     );
 
-    const isProduction =
-      this.configService.get<string>("NODE_ENV") === "production" ||
-      network.toLowerCase() === "mainnet" ||
-      network.toLowerCase() === "public";
+    const networkPassphrase =
+      this.configService.get<string>("STELLAR_NETWORK_PASSPHRASE") ||
+      (network.toLowerCase() === "futurenet" ? Networks.FUTURENET : Networks.TESTNET);
+
+    // DEPLOYER_SECRET_KEY is one account shared by every allowlisted user, so it
+    // must never hold real XLM: refuse to start against the public network
+    // instead of letting a misconfigured env spend mainnet funds.
+    assertTestNetworkOnly(network, networkPassphrase);
+
+    const isProduction = this.configService.get<string>("NODE_ENV") === "production";
 
     if (isProduction && rpcUrl.startsWith("http://")) {
-      throw new Error(
+      throw new ConfigurationError(
         "Plaintext RPC (http) is not allowed for production signing",
       );
     }
@@ -123,11 +145,7 @@ export class ContractsService {
     );
     this.deployer = Keypair.fromSecret(secretKey);
 
-    this.networkPassphrase =
-      this.configService.get<string>("STELLAR_NETWORK_PASSPHRASE") ||
-      (network.toLowerCase() === "mainnet" || network.toLowerCase() === "public"
-        ? Networks.PUBLIC
-        : Networks.TESTNET);
+    this.networkPassphrase = networkPassphrase;
 
     const configuredLimit = this.configService.get<string>('MAX_WASM_FILE_SIZE');
     this.maxFileSize = configuredLimit ? parseInt(configuredLimit, 10) || 5 * 1024 * 1024 : 5 * 1024 * 1024;
@@ -323,13 +341,14 @@ export class ContractsService {
 
   private async execGitCommand(args: string[], cwd: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      execFile('git', args, { cwd, timeout: this.gitCloneTimeoutMs, stdio: 'ignore' }, (error) => {
+      const options = { cwd, timeout: this.gitCloneTimeoutMs, stdio: 'ignore' };
+      execFile('git', args, options, (error) => {
         if (error) {
           if (error.message.includes('ENOENT')) {
             reject(new BadRequestException('Git is not installed in this environment; Git-based WASM import is unavailable'));
             return;
           }
-          reject(error);
+          reject(new BadRequestException(`Git command failed: ${error.message}`));
           return;
         }
         resolve();
@@ -351,12 +370,12 @@ export class ContractsService {
 
       const fullArtifactPath = this.resolveArtifactInsideCheckout(tempDir, normalizedArtifactPath);
       return fs.readFileSync(fullArtifactPath);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof NotFoundException || err instanceof BadRequestException) throw err;
-      if (err?.code === 'ENOENT') {
+      if ((err as { code?: string })?.code === 'ENOENT') {
         throw new BadRequestException('Git is not installed in this environment; Git-based WASM import is unavailable');
       }
-      throw new BadRequestException(`Failed to fetch WASM from Git repository: ${err.message}`);
+      throw new BadRequestException(`Failed to fetch WASM from Git repository: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -472,14 +491,18 @@ export class ContractsService {
       this.pruneUrlCache();
 
       return { buffer: wasmBuffer, metadata };
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof BadRequestException) {
         throw err;
       }
-      if (err.name === 'AbortError' || err.code === 'ABORT_ERR') {
+      const errName = err instanceof Error ? err.name : '';
+      const errCode = (err as { code?: string } | null)?.code;
+      if (errName === 'AbortError' || errCode === 'ABORT_ERR') {
         throw new BadRequestException('WASM download timed out');
       }
-      throw new BadRequestException(`Failed to fetch WASM from URL: ${err.message}`);
+      throw new BadRequestException(
+        `Failed to fetch WASM from URL: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       clearTimeout(timeout);
     }
@@ -553,6 +576,27 @@ export class ContractsService {
       contractId,
       wasmHash: wasmHashBytes.toString("hex"),
       txHash: createTxHash,
+    };
+  }
+
+  async uploadWasmOnly(wasmBuffer: Buffer): Promise<{ wasmHash: string; size: number }> {
+    if (!wasmBuffer || wasmBuffer.length === 0) {
+      throw new BadRequestException('WASM file is empty');
+    }
+    if (wasmBuffer.length > this.maxFileSize) {
+      throw new BadRequestException(`WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`);
+    }
+
+    // Check init auth / format basic validation (WASM magic header)
+    if (wasmBuffer.length < 4 || wasmBuffer.readUInt32LE(0) !== 0x6d736100) {
+      throw new BadRequestException('Invalid WASM format: missing magic header');
+    }
+
+    const wasmHashBytes = hash(wasmBuffer);
+    await this.uploadWasm(wasmBuffer);
+    return {
+      wasmHash: wasmHashBytes.toString('hex'),
+      size: wasmBuffer.length,
     };
   }
 
@@ -661,7 +705,7 @@ export class ContractsService {
     salt: Buffer,
     constructorArgs: xdr.ScVal[],
   ): Promise<string> {
-    const account = await this.timeRpc("get_account", () =>
+    await this.timeRpc("get_account", () =>
       this.rpcServer.getAccount(this.deployer.publicKey()),
     );
     const address = new Address(this.deployer.publicKey());

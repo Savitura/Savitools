@@ -3,22 +3,23 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import {
+  buildPaginatedResult,
+  normalizePagination,
+  type PaginatedResult,
+} from '../../common/dto/paginated-response';
 import { CreateWorkspaceDTO } from './dto/create-workspace.dto';
 import { RenameWorkspaceDTO } from './dto/rename-workspace.dto';
 import { UpdateWorkspaceDTO } from './dto/update-workspace.dto';
 import { ComposerStateSchema } from './composer-state.schema';
+import { sanitizeWorkspaceData } from './workspace-sanitizer';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspaceTool } from './workspace-tool.enum';
 
 /** PostgreSQL `unique_violation`. */
 const UNIQUE_VIOLATION = '23505';
 
-export interface PaginatedWorkspaces {
-  items: Workspace[];
-  page: number;
-  limit: number;
-  total: number;
-}
+export type PaginatedWorkspaces = PaginatedResult<Workspace>;
 
 @Injectable()
 export class WorkspaceService {
@@ -102,17 +103,17 @@ export class WorkspaceService {
       where.tool = workspaceTool;
     }
 
-    const page = query?.page ?? 1;
-    const limit = query?.limit ?? 25;
+    const { page, limit } = normalizePagination(query);
 
     const [items, total] = await this.workspacesRepository.findAndCount({
       where,
-      order: { updatedAt: 'DESC' },
+      // Stable tiebreaker for rows updated in the same millisecond.
+      order: { updatedAt: 'DESC', id: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });
 
-    return { items, page, limit, total };
+    return buildPaginatedResult(items, total, { page, limit });
   }
 
   async createWorkspace(userId: string, dto: CreateWorkspaceDTO): Promise<Workspace> {
@@ -135,7 +136,11 @@ export class WorkspaceService {
     return this.findWorkspaceForUser(userId, id);
   }
 
-  async updateWorkspaceData(userId: string, id: string, dto: UpdateWorkspaceDTO): Promise<Workspace> {
+  async updateWorkspaceData(
+    userId: string,
+    id: string,
+    dto: UpdateWorkspaceDTO,
+  ): Promise<Workspace> {
     const workspace = await this.findWorkspaceForUser(userId, id);
     workspace.data = dto.data;
     return this.workspacesRepository.save(workspace);
@@ -170,12 +175,13 @@ export class WorkspaceService {
 
   async exportWorkspace(userId: string, id: string) {
     const workspace = await this.findWorkspaceForUser(userId, id);
+    const { sanitized } = sanitizeWorkspaceData(workspace.data as Record<string, unknown>);
 
     return {
       id: workspace.id,
       name: workspace.name,
       tool: workspace.tool,
-      data: workspace.data,
+      data: sanitized,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
     };
@@ -234,6 +240,8 @@ export class WorkspaceService {
       throw new NotFoundException('Shared workspace link has expired');
     }
 
+    const { sanitized } = sanitizeWorkspaceData(workspace.data as Record<string, unknown>);
+    workspace.data = sanitized;
     return workspace;
   }
 
@@ -280,8 +288,9 @@ export class WorkspaceService {
       return false;
     }
 
-    const code = (error as { code?: unknown; driverError?: { code?: unknown } }).code
-      ?? (error as { driverError?: { code?: unknown } }).driverError?.code;
+    const code =
+      (error as { code?: unknown; driverError?: { code?: unknown } }).code ??
+      (error as { driverError?: { code?: unknown } }).driverError?.code;
 
     return code === UNIQUE_VIOLATION;
   }

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import {
   DEFAULT_MAX_SSE_CONNECTIONS,
+  DEFAULT_MAX_WATCHES_PER_USER,
   MonitorRuntimeConfig,
 } from './monitor-runtime.config';
 
@@ -8,9 +9,7 @@ describe('MonitorRuntimeConfig', () => {
   function makeConfig(values: Record<string, string> = {}): MonitorRuntimeConfig {
     const configService = {
       get: jest.fn((key: string, fallback?: unknown) =>
-        Object.prototype.hasOwnProperty.call(values, key)
-          ? values[key]
-          : fallback,
+        Object.prototype.hasOwnProperty.call(values, key) ? values[key] : fallback,
       ),
     } as unknown as ConfigService;
     return new MonitorRuntimeConfig(configService);
@@ -22,6 +21,7 @@ describe('MonitorRuntimeConfig', () => {
     expect(runtime.producerEnabled).toBe(true);
     expect(runtime.consumerEnabled).toBe(true);
     expect(runtime.maxSseConnections).toBe(DEFAULT_MAX_SSE_CONNECTIONS);
+    expect(runtime.maxWatchesPerUser).toBe(DEFAULT_MAX_WATCHES_PER_USER);
     expect(runtime.leaderLeaseMs).toBe(30_000);
     expect(runtime.dispatchIntervalMs).toBe(30_000);
     expect(runtime.evaluationIntervalMs).toBe(60_000);
@@ -42,9 +42,7 @@ describe('MonitorRuntimeConfig', () => {
   });
 
   it('rejects an invalid MONITOR_ROLE at startup', () => {
-    expect(() => makeConfig({ MONITOR_ROLE: 'invalid' })).toThrow(
-      /MONITOR_ROLE must be one of/,
-    );
+    expect(() => makeConfig({ MONITOR_ROLE: 'invalid' })).toThrow(/MONITOR_ROLE must be one of/);
   });
 
   it('resolves MAX_SSE_CONNECTIONS from environment without inline fallbacks', () => {
@@ -61,6 +59,19 @@ describe('MonitorRuntimeConfig', () => {
     );
     expect(makeConfig({ MAX_SSE_CONNECTIONS: 'abc' }).maxSseConnections).toBe(
       DEFAULT_MAX_SSE_CONNECTIONS,
+    );
+  });
+
+  it('resolves MONITOR_MAX_WATCHES_PER_USER from environment', () => {
+    expect(makeConfig({ MONITOR_MAX_WATCHES_PER_USER: '5' }).maxWatchesPerUser).toBe(5);
+  });
+
+  it('falls back to the default when MONITOR_MAX_WATCHES_PER_USER is non-positive', () => {
+    expect(makeConfig({ MONITOR_MAX_WATCHES_PER_USER: '0' }).maxWatchesPerUser).toBe(
+      DEFAULT_MAX_WATCHES_PER_USER,
+    );
+    expect(makeConfig({ MONITOR_MAX_WATCHES_PER_USER: 'abc' }).maxWatchesPerUser).toBe(
+      DEFAULT_MAX_WATCHES_PER_USER,
     );
   });
 

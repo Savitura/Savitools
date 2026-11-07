@@ -24,6 +24,7 @@ import {
   SimulatorEmptyState,
   SimulatorNoPathsState,
 } from './state-display';
+import { AsyncStatusAnnouncer, type AsyncStatusAnnouncement } from '@/components/ui/live-region';
 
 function AssetPicker({
   label,
@@ -105,7 +106,7 @@ function HopChain({ path }: { path: SimulatedPath }) {
             className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-muted border border-border"
             title={asset.issuer ? `${asset.code}:${asset.issuer}` : asset.label}
           >
-            {asset.type === 'native' ? 'XLM' : asset.code ?? '?'}
+            {asset.type === 'native' ? 'XLM' : (asset.code ?? '?')}
           </span>
           {i < allAssets.length - 1 && (
             <ArrowRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -152,8 +153,10 @@ function PathCard({
   });
   if (path.source_asset.code) composerParams.set('source_asset_code', path.source_asset.code);
   if (path.source_asset.issuer) composerParams.set('source_asset_issuer', path.source_asset.issuer);
-  if (path.destination_asset.code) composerParams.set('destination_asset_code', path.destination_asset.code);
-  if (path.destination_asset.issuer) composerParams.set('destination_asset_issuer', path.destination_asset.issuer);
+  if (path.destination_asset.code)
+    composerParams.set('destination_asset_code', path.destination_asset.code);
+  if (path.destination_asset.issuer)
+    composerParams.set('destination_asset_issuer', path.destination_asset.issuer);
   if (path.path.length > 0) {
     composerParams.set('path_assets', JSON.stringify(path.path));
   }
@@ -219,16 +222,8 @@ function PathCard({
   );
 }
 
-function NoResultsState({
-  direction,
-  onRetry,
-}: {
-  direction: Direction;
-  onRetry: () => void;
-}) {
-  return (
-    <SimulatorNoPathsState direction={direction} onRetry={onRetry} />
-  );
+function NoResultsState({ direction, onRetry }: { direction: Direction; onRetry: () => void }) {
+  return <SimulatorNoPathsState direction={direction} onRetry={onRetry} />;
 }
 
 // ─── LP Quote Panel ───────────────────────────────────────────────────────
@@ -242,25 +237,61 @@ function NoResultsState({
  */
 function LpQuotePanel({ network }: { network: NetworkChoice }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [scenario, setScenario] = useState<PoolQuoteScenario>('deposit');
+  // The shareable link writes `scenario=withdrawal`, but earlier links (and the
+  // `?scenario=withdraw` spelling) are still in circulation, so both are read.
+  const [scenario, setScenario] = useState<PoolQuoteScenario>(
+    ['withdrawal', 'withdraw'].includes(searchParams.get('scenario') ?? '')
+      ? 'withdrawal'
+      : 'deposit',
+  );
 
   // pool identification
-  const [poolId, setPoolId] = useState('');
-  const [assetA, setAssetA] = useState('XLM');
-  const [assetB, setAssetB] = useState(`USDC:${EXAMPLE_USDC_ISSUER}`);
+  const [poolId, setPoolId] = useState(searchParams.get('poolId') ?? '');
+  const [assetA, setAssetA] = useState(searchParams.get('assetA') ?? 'XLM');
+  const [assetB, setAssetB] = useState(searchParams.get('assetB') ?? `USDC:${EXAMPLE_USDC_ISSUER}`);
 
   // deposit inputs
-  const [amountA, setAmountA] = useState('');
-  const [amountB, setAmountB] = useState('');
+  const [amountA, setAmountA] = useState(searchParams.get('amountA') ?? '');
+  const [amountB, setAmountB] = useState(searchParams.get('amountB') ?? '');
 
   // withdrawal inputs
-  const [shares, setShares] = useState('');
-  const [withdrawAmountA, setWithdrawAmountA] = useState('');
+  const [shares, setShares] = useState(searchParams.get('shares') ?? '');
+  const [withdrawAmountA, setWithdrawAmountA] = useState(searchParams.get('withdrawAmountA') ?? '');
 
   const [result, setResult] = useState<PoolQuoteResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', 'lp');
+    params.set('network', network);
+    params.set('scenario', scenario);
+    params.set('poolId', poolId);
+    params.set('assetA', assetA);
+    params.set('assetB', assetB);
+    params.set('amountA', amountA);
+    params.set('amountB', amountB);
+    params.set('shares', shares);
+    params.set('withdrawAmountA', withdrawAmountA);
+    const query = params.toString();
+    if (window.location.search !== `?${query}`) {
+      router.replace(`/simulator?${query}`, { scroll: false });
+    }
+  }, [
+    amountA,
+    amountB,
+    assetA,
+    assetB,
+    network,
+    poolId,
+    router,
+    scenario,
+    shares,
+    withdrawAmountA,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,7 +302,9 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
     const params: PoolQuoteParams = {
       scenario,
       network,
-      ...(poolId.trim() ? { poolId: poolId.trim() } : { assetA: assetA.trim(), assetB: assetB.trim() }),
+      ...(poolId.trim()
+        ? { poolId: poolId.trim() }
+        : { assetA: assetA.trim(), assetB: assetB.trim() }),
     };
 
     if (scenario === 'deposit') {
@@ -320,13 +353,27 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
     return !!(shares.trim() || withdrawAmountA.trim());
   };
 
+  const quoteStatus: AsyncStatusAnnouncement | null = loading
+    ? { tone: 'loading', message: 'Fetching liquidity pool quote…' }
+    : error
+      ? { tone: 'error', message: `Pool quote failed: ${error}`, key: `pool-error:${error}` }
+      : result
+        ? {
+            tone: 'success',
+            message: `Pool ${result.scenario} quote ready.`,
+            key: `pool-success:${result.poolId}:${result.scenario}`,
+          }
+        : null;
+
   return (
     <div className="space-y-5">
+      <AsyncStatusAnnouncer status={quoteStatus} />
       {/* Header banner — clearly labels this as LP, not order-book */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
         <Droplets className="h-4 w-4 text-emerald-500 flex-shrink-0" />
         <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          Liquidity Pool Quote — constant-product AMM arithmetic (distinct from order-book simulation)
+          Liquidity Pool Quote — constant-product AMM arithmetic (distinct from order-book
+          simulation)
         </p>
       </div>
 
@@ -339,7 +386,11 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
               <button
                 key={s}
                 type="button"
-                onClick={() => { setScenario(s); setResult(null); setError(''); }}
+                onClick={() => {
+                  setScenario(s);
+                  setResult(null);
+                  setError('');
+                }}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
                   scenario === s
                     ? 'bg-background shadow-sm'
@@ -387,27 +438,38 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
         {scenario === 'deposit' ? (
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">
-              Deposit amount <span className="font-normal">(provide one side; the other is computed)</span>
+              Deposit amount{' '}
+              <span className="font-normal">(provide one side; the other is computed)</span>
             </label>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Asset A</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Asset A
+                </label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={amountA}
-                  onChange={(e) => { setAmountA(e.target.value); if (e.target.value) setAmountB(''); }}
+                  onChange={(e) => {
+                    setAmountA(e.target.value);
+                    if (e.target.value) setAmountB('');
+                  }}
                   placeholder="e.g. 100.0000000"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/50"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Asset B</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Asset B
+                </label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={amountB}
-                  onChange={(e) => { setAmountB(e.target.value); if (e.target.value) setAmountA(''); }}
+                  onChange={(e) => {
+                    setAmountB(e.target.value);
+                    if (e.target.value) setAmountA('');
+                  }}
                   placeholder="e.g. 250.0000000"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/50"
                 />
@@ -421,23 +483,33 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
             </label>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">LP Shares to burn</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  LP Shares to burn
+                </label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={shares}
-                  onChange={(e) => { setShares(e.target.value); if (e.target.value) setWithdrawAmountA(''); }}
+                  onChange={(e) => {
+                    setShares(e.target.value);
+                    if (e.target.value) setWithdrawAmountA('');
+                  }}
                   placeholder="e.g. 50.0000000"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/50"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">Desired Asset A out</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Desired Asset A out
+                </label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={withdrawAmountA}
-                  onChange={(e) => { setWithdrawAmountA(e.target.value); if (e.target.value) setShares(''); }}
+                  onChange={(e) => {
+                    setWithdrawAmountA(e.target.value);
+                    if (e.target.value) setShares('');
+                  }}
                   placeholder="e.g. 80.0000000"
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/50"
                 />
@@ -451,7 +523,11 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
           disabled={loading || !isFormValid()}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition-colors"
         >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Droplets className="h-4 w-4" />}
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Droplets className="h-4 w-4" />
+          )}
           Get Pool Quote
         </button>
       </form>
@@ -475,7 +551,15 @@ function LpQuotePanel({ network }: { network: NetworkChoice }) {
   );
 }
 
-function LpStatRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+function LpStatRow({
+  label,
+  value,
+  mono = true,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div>
       <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">{label}</p>
@@ -497,9 +581,7 @@ function LpQuoteResultCard({
 
   const impactBps = parseInt(result.priceImpactBps, 10);
   const impactColor =
-    impactBps < 10 ? 'text-emerald-600' :
-    impactBps < 50 ? 'text-yellow-600' :
-    'text-red-600';
+    impactBps < 10 ? 'text-emerald-600' : impactBps < 50 ? 'text-yellow-600' : 'text-red-600';
 
   return (
     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-4">
@@ -511,7 +593,10 @@ function LpQuoteResultCard({
             {isDeposit ? 'Deposit Quote' : 'Withdrawal Quote'}
           </span>
         </div>
-        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[200px]" title={result.poolId}>
+        <span
+          className="text-[10px] font-mono text-muted-foreground truncate max-w-[200px]"
+          title={result.poolId}
+        >
           Pool: {result.poolId.slice(0, 8)}…{result.poolId.slice(-6)}
         </span>
       </div>
@@ -519,21 +604,31 @@ function LpQuoteResultCard({
       {/* Pool reserves */}
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="rounded-md bg-background/60 p-2.5">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Asset A reserve</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
+            Asset A reserve
+          </p>
           <p className="font-mono font-medium">{result.assetA.reserve}</p>
-          <p className="text-[10px] text-muted-foreground font-mono truncate">{result.assetA.asset}</p>
+          <p className="text-[10px] text-muted-foreground font-mono truncate">
+            {result.assetA.asset}
+          </p>
         </div>
         <div className="rounded-md bg-background/60 p-2.5">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Asset B reserve</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
+            Asset B reserve
+          </p>
           <p className="font-mono font-medium">{result.assetB.reserve}</p>
-          <p className="text-[10px] text-muted-foreground font-mono truncate">{result.assetB.asset}</p>
+          <p className="text-[10px] text-muted-foreground font-mono truncate">
+            {result.assetB.asset}
+          </p>
         </div>
       </div>
 
       {/* Scenario-specific outputs */}
       {isDeposit && deposit && (
         <div className="space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Deposit estimate</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Deposit estimate
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <LpStatRow label="Asset A in" value={deposit.depositA} />
             <LpStatRow label="Asset B in" value={deposit.depositB} />
@@ -545,7 +640,9 @@ function LpQuoteResultCard({
 
       {!isDeposit && withdrawal && (
         <div className="space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Withdrawal estimate</p>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Withdrawal estimate
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <LpStatRow label="Shares burned" value={withdrawal.sharesToBurn} />
             <LpStatRow label="Asset A out" value={withdrawal.reserveAOut} />
@@ -562,7 +659,9 @@ function LpQuoteResultCard({
         <LpStatRow label="Spot A/B" value={result.spotPriceAperB} />
         <LpStatRow label="Spot B/A" value={result.spotPriceBperA} />
         <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Price impact</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">
+            Price impact
+          </p>
           <p className={`text-xs font-medium font-mono ${impactColor}`}>
             {(impactBps / 100).toFixed(2)}% ({impactBps} bps)
           </p>
@@ -577,7 +676,9 @@ function LpQuoteResultCard({
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
         >
           <ExternalLink className="h-3 w-3" />
-          {isDeposit ? 'Build liquidityPoolDeposit in Composer' : 'Build liquidityPoolWithdraw in Composer'}
+          {isDeposit
+            ? 'Build liquidityPoolDeposit in Composer'
+            : 'Build liquidityPoolWithdraw in Composer'}
         </button>
         <p className="mt-1.5 text-[10px] text-muted-foreground">
           Pre-fills pool ID, amounts, and price bounds from this quote.
@@ -606,18 +707,16 @@ export function SimulatorTool() {
   );
 
   const [srcType, setSrcType] = useState<AssetType>(
-    searchParams.get('src_type') as AssetType ?? 'native',
+    (searchParams.get('src_type') as AssetType) ?? 'native',
   );
   const [srcCode, setSrcCode] = useState(searchParams.get('src_code') ?? '');
   const [srcIssuer, setSrcIssuer] = useState(searchParams.get('src_issuer') ?? '');
 
   const [dstType, setDstType] = useState<AssetType>(
-    searchParams.get('dst_type') as AssetType ?? 'credit_alphanum4',
+    (searchParams.get('dst_type') as AssetType) ?? 'credit_alphanum4',
   );
   const [dstCode, setDstCode] = useState(searchParams.get('dst_code') ?? 'USDC');
-  const [dstIssuer, setDstIssuer] = useState(
-    searchParams.get('dst_issuer') ?? EXAMPLE_USDC_ISSUER,
-  );
+  const [dstIssuer, setDstIssuer] = useState(searchParams.get('dst_issuer') ?? EXAMPLE_USDC_ISSUER);
 
   const [amount, setAmount] = useState(searchParams.get('amount') ?? '10');
 
@@ -663,6 +762,41 @@ export function SimulatorTool() {
     }
   }, [searchParams, loadExample]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', activeTab);
+    params.set('network', network);
+    params.set('direction', direction);
+    params.set('src_type', srcType);
+    params.set('dst_type', dstType);
+    params.set('amount', amount);
+    if (srcCode) params.set('src_code', srcCode);
+    else params.delete('src_code');
+    if (srcIssuer) params.set('src_issuer', srcIssuer);
+    else params.delete('src_issuer');
+    if (dstCode) params.set('dst_code', dstCode);
+    else params.delete('dst_code');
+    if (dstIssuer) params.set('dst_issuer', dstIssuer);
+    else params.delete('dst_issuer');
+    params.delete('example');
+    const query = params.toString();
+    if (window.location.search !== `?${query}`) {
+      router.replace(`/simulator?${query}`, { scroll: false });
+    }
+  }, [
+    activeTab,
+    amount,
+    direction,
+    dstCode,
+    dstIssuer,
+    dstType,
+    network,
+    router,
+    srcCode,
+    srcIssuer,
+    srcType,
+  ]);
+
   const markStepComplete = () => {
     import('@/lib/onboarding').then((m) => m.markStepComplete('simulate'));
   };
@@ -705,8 +839,10 @@ export function SimulatorTool() {
     });
     if (path.source_asset.code) params.set('source_asset_code', path.source_asset.code);
     if (path.source_asset.issuer) params.set('source_asset_issuer', path.source_asset.issuer);
-    if (path.destination_asset.code) params.set('destination_asset_code', path.destination_asset.code);
-    if (path.destination_asset.issuer) params.set('destination_asset_issuer', path.destination_asset.issuer);
+    if (path.destination_asset.code)
+      params.set('destination_asset_code', path.destination_asset.code);
+    if (path.destination_asset.issuer)
+      params.set('destination_asset_issuer', path.destination_asset.issuer);
     if (path.path.length > 0) params.set('path_assets', JSON.stringify(path.path));
     router.push(`/composer?${params.toString()}`);
   };
@@ -716,8 +852,24 @@ export function SimulatorTool() {
     handleFindPaths();
   };
 
+  const pathsStatus: AsyncStatusAnnouncement | null = loading
+    ? { tone: 'loading', message: 'Finding payment paths…' }
+    : error
+      ? { tone: 'error', message: `Path search failed: ${error}`, key: `paths-error:${error}` }
+      : hasSearched
+        ? {
+            tone: 'success',
+            message:
+              paths.length > 0
+                ? `${paths.length} payment route${paths.length === 1 ? '' : 's'} found.`
+                : 'No payment paths found for this asset pair.',
+            key: `paths-success:${direction}:${network}:${amount}:${paths.length}:${paths[0]?.destination_amount ?? ''}`,
+          }
+        : null;
+
   return (
     <div className="space-y-6">
+      <AsyncStatusAnnouncer status={pathsStatus} />
       {/* Top-level tab: Path Payments vs LP Pool Quote */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex bg-secondary p-1 rounded-lg">
@@ -780,138 +932,134 @@ export function SimulatorTool() {
       {/* Path Payments tab */}
       {activeTab === 'paths' && (
         <>
-      {/* Direction toggle row */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex bg-secondary p-1 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setDirection('strict_send')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              direction === 'strict_send'
-                ? 'bg-background shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Send exactly
-          </button>
-          <button
-            type="button"
-            onClick={() => setDirection('strict_receive')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              direction === 'strict_receive'
-                ? 'bg-background shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Receive exactly
-          </button>
-        </div>
-      </div>
-
-      {/* Asset pickers + amount */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex flex-wrap gap-4">
-          <AssetPicker
-            label="Source asset"
-            assetType={srcType}
-            assetCode={srcCode}
-            assetIssuer={srcIssuer}
-            onTypeChange={setSrcType}
-            onCodeChange={setSrcCode}
-            onIssuerChange={setSrcIssuer}
-          />
-
-          <div className="flex items-end pb-0.5">
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          {/* Direction toggle row */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex bg-secondary p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setDirection('strict_send')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  direction === 'strict_send'
+                    ? 'bg-background shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Send exactly
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection('strict_receive')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  direction === 'strict_receive'
+                    ? 'bg-background shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Receive exactly
+              </button>
+            </div>
           </div>
 
-          <AssetPicker
-            label="Destination asset"
-            assetType={dstType}
-            assetCode={dstCode}
-            assetIssuer={dstIssuer}
-            onTypeChange={setDstType}
-            onCodeChange={setDstCode}
-            onIssuerChange={setDstIssuer}
-          />
-        </div>
+          {/* Asset pickers + amount */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="flex flex-wrap gap-4">
+              <AssetPicker
+                label="Source asset"
+                assetType={srcType}
+                assetCode={srcCode}
+                assetIssuer={srcIssuer}
+                onTypeChange={setSrcType}
+                onCodeChange={setSrcCode}
+                onIssuerChange={setSrcIssuer}
+              />
 
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[160px] max-w-[240px] space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Amount</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="10"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
-            />
-          </div>
+              <div className="flex items-end pb-0.5">
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
 
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={loading || !amount.trim()}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground disabled:opacity-40 hover:opacity-90 transition-opacity"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              Find Paths
-            </button>
-            <button
-              type="button"
-              onClick={loadExample}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors"
-            >
-              Try XLM → USDC
-            </button>
-          </div>
-        </div>
-      </form>
+              <AssetPicker
+                label="Destination asset"
+                assetType={dstType}
+                assetCode={dstCode}
+                assetIssuer={dstIssuer}
+                onTypeChange={setDstType}
+                onCodeChange={setDstCode}
+                onIssuerChange={setDstIssuer}
+              />
+            </div>
 
-      {/* Error */}
-      {error && (
-        <ErrorState
-          title="Error finding paths"
-          message={error}
-          onRetry={handleFindPaths}
-          retryLabel="Retry search"
-          details={error}
-        />
-      )}
-
-      {/* Results */}
-      {loading ? (
-        <SimulatorPathSkeleton />
-      ) : hasSearched && !error ? (
-        <div className="space-y-3">
-          {paths.length === 0 ? (
-            <NoResultsState direction={direction} onRetry={handleFindPaths} />
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {paths.length} route{paths.length !== 1 ? 's' : ''} found
-              </p>
-              {paths.map((path, i) => (
-                <PathCard
-                  key={i}
-                  path={path}
-                  direction={direction}
-                  network={network}
-                  onSelect={handleUseInComposer}
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[160px] max-w-[240px] space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Amount</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="10"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
                 />
-              ))}
-            </>
-          )}
-        </div>
-      ) : null}
+              </div>
 
-      {/* Empty state */}
-      {!hasSearched && !loading && !error && (
-        <SimulatorEmptyState onExample={loadExample} />
-      )}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={loading || !amount.trim()}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground disabled:opacity-40 hover:opacity-90 transition-opacity"
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Find Paths
+                </button>
+                <button
+                  type="button"
+                  onClick={loadExample}
+                  className="px-4 py-2 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors"
+                >
+                  Try XLM → USDC
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {/* Error */}
+          {error && (
+            <ErrorState
+              title="Error finding paths"
+              message={error}
+              onRetry={handleFindPaths}
+              retryLabel="Retry search"
+              details={error}
+            />
+          )}
+
+          {/* Results */}
+          {loading ? (
+            <SimulatorPathSkeleton />
+          ) : hasSearched && !error ? (
+            <div className="space-y-3">
+              {paths.length === 0 ? (
+                <NoResultsState direction={direction} onRetry={handleFindPaths} />
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {paths.length} route{paths.length !== 1 ? 's' : ''} found
+                  </p>
+                  {paths.map((path, i) => (
+                    <PathCard
+                      key={i}
+                      path={path}
+                      direction={direction}
+                      network={network}
+                      onSelect={handleUseInComposer}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {/* Empty state */}
+          {!hasSearched && !loading && !error && <SimulatorEmptyState onExample={loadExample} />}
         </>
       )}
     </div>

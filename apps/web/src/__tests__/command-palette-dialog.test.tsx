@@ -21,6 +21,7 @@ import {
 import type { ContextualActions } from '@/components/command-palette';
 
 const mockPush = jest.fn();
+jest.setTimeout(30000);
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({

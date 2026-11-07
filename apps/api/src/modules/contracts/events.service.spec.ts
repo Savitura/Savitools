@@ -1,11 +1,7 @@
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Address, Contract, nativeToScVal, rpc, xdr } from '@stellar/stellar-sdk';
-import {
-  SIGNATURE_HEADER,
-  TIMESTAMP_HEADER,
-  signBody,
-} from '../webhook/signature';
+import { SIGNATURE_HEADER, TIMESTAMP_HEADER, signBody } from '../webhook/signature';
 
 const lookupMock = jest.fn();
 jest.mock('dns/promises', () => ({
@@ -29,8 +25,7 @@ const SECRET = 'shhh-this-is-a-secret';
 const KAT_SECRET = 'whsec_test-secret-123';
 const KAT_BODY = JSON.stringify({ id: 'evt-1', value: 1 });
 const KAT_TIMESTAMP = 1_700_000_000;
-const KAT_SIGNATURE =
-  'sha256=12fe4dba685452576f41ccde070a2c5f2e213fee2a66ad5b38ce628c2de9953b';
+const KAT_SIGNATURE = 'sha256=12fe4dba685452576f41ccde070a2c5f2e213fee2a66ad5b38ce628c2de9953b';
 
 function eventRecord(overrides: Partial<rpc.Api.EventResponse> = {}): rpc.Api.EventResponse {
   return {
@@ -117,7 +112,10 @@ describe('EventsService', () => {
                 val: nativeToScVal(2n ** 90n, { type: 'u128' }),
               }),
             ]),
-            topic: [nativeToScVal('transfer', { type: 'symbol' }), new Address(CONTRACT_ID).toScVal()],
+            topic: [
+              nativeToScVal('transfer', { type: 'symbol' }),
+              new Address(CONTRACT_ID).toScVal(),
+            ],
           }),
         ]),
       );
@@ -261,17 +259,28 @@ describe('EventsService', () => {
 
     it('drops events that fail a criterion', async () => {
       const { events } = await service.queryEvents({ contractId: CONTRACT_ID, startLedger: 1 });
-      expect(service.filterEvents(events, [{ kind: 'topic_contains', value: 'burn' }]).count).toBe(0);
+      expect(service.filterEvents(events, [{ kind: 'topic_contains', value: 'burn' }]).count).toBe(
+        0,
+      );
+    });
+
+    it('rejects semantically invalid criteria before filtering', () => {
+      expect(() => service.filterEvents([], [{ kind: 'ledger_range', from: 20, to: 10 }])).toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('replayEvents', () => {
-    const events = [{ id: 'evt-1', value: 1 }, { id: 'evt-2', value: 2 }];
+    const events = [
+      { id: 'evt-1', value: 1 },
+      { id: 'evt-2', value: 2 },
+    ];
 
     it('rejects a malformed URL', async () => {
-      await expect(
-        service.replayEvents({ webhookUrl: 'not a url', events }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.replayEvents({ webhookUrl: 'not a url', events })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('refuses a destination resolving to a private address', async () => {
@@ -358,23 +367,34 @@ describe('EventsService', () => {
       });
     });
 
-    it('signs with WEBHOOK_SIGNING_SECRET when no per-request secret is given', async () => {
+    it('generates a throwaway secret and never signs with WEBHOOK_SIGNING_SECRET when no secret is given', async () => {
       (configService.get as jest.Mock).mockImplementation((key: string) =>
         key === 'WEBHOOK_SIGNING_SECRET' ? 'env-signing-secret' : undefined,
       );
       const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
       global.fetch = fetchMock;
 
-      await service.replayEvents({
+      const summary = await service.replayEvents({
         webhookUrl: 'https://example.com/hook',
         events: [events[0]],
       });
+
+      expect(summary.secret).toBeDefined();
+      expect(summary.secret).not.toBe('env-signing-secret');
+      expect(summary.secret.length).toBeGreaterThanOrEqual(16);
 
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
       const body = init.body as string;
 
       expect(headers[SIGNATURE_HEADER]).toBe(
+        signBody({
+          secret: summary.secret,
+          body,
+          timestamp: Number(headers[TIMESTAMP_HEADER]),
+        }).signature,
+      );
+      expect(headers[SIGNATURE_HEADER]).not.toBe(
         signBody({
           secret: 'env-signing-secret',
           body,
@@ -383,19 +403,20 @@ describe('EventsService', () => {
       );
     });
 
-    it('prefers the per-request secret over WEBHOOK_SIGNING_SECRET', async () => {
+    it('prefers the per-request secret over WEBHOOK_SIGNING_SECRET and returns it', async () => {
       (configService.get as jest.Mock).mockImplementation((key: string) =>
         key === 'WEBHOOK_SIGNING_SECRET' ? 'env-signing-secret' : undefined,
       );
       const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
       global.fetch = fetchMock;
 
-      await service.replayEvents({
+      const summary = await service.replayEvents({
         webhookUrl: 'https://example.com/hook',
         secret: SECRET,
         events: [events[0]],
       });
 
+      expect(summary.secret).toBe(SECRET);
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       const headers = init.headers as Record<string, string>;
       const body = init.body as string;
@@ -407,16 +428,13 @@ describe('EventsService', () => {
           timestamp: Number(headers[TIMESTAMP_HEADER]),
         }).signature,
       );
-    });
-
-    it('omits the signature header when no secret is supplied', async () => {
-      const fetchMock = jest.fn().mockResolvedValue(textResponse(200));
-      global.fetch = fetchMock;
-
-      await service.replayEvents({ webhookUrl: 'https://example.com/hook', events: [events[0]] });
-
-      const init = fetchMock.mock.calls[0][1] as RequestInit;
-      expect(init.headers as Record<string, string>).not.toHaveProperty('X-SaviTools-Signature');
+      expect(headers[SIGNATURE_HEADER]).not.toBe(
+        signBody({
+          secret: 'env-signing-secret',
+          body,
+          timestamp: Number(headers[TIMESTAMP_HEADER]),
+        }).signature,
+      );
     });
 
     it('matches the known answer for a pinned clock', async () => {
@@ -474,7 +492,11 @@ describe('EventsService', () => {
 
       expect(summary.delivered).toBe(1);
       expect(summary.failed).toBe(1);
-      expect(summary.results[1]).toMatchObject({ ok: false, error: 'Network error', statusCode: null });
+      expect(summary.results[1]).toMatchObject({
+        ok: false,
+        error: 'Network error',
+        statusCode: null,
+      });
     });
 
     it('counts a non-2xx response as failed but still reports its status', async () => {
@@ -513,9 +535,11 @@ describe('EventsService', () => {
         .mockResolvedValueOnce([{ address: '93.184.216.34' }])
         .mockResolvedValueOnce([{ address: '127.0.0.1' }]);
 
-      global.fetch = jest.fn().mockResolvedValue(
-        new Response(null, { status: 302, headers: { location: 'http://localhost/hook' } }),
-      );
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          new Response(null, { status: 302, headers: { location: 'http://localhost/hook' } }),
+        );
 
       const summary = await service.replayEvents({
         webhookUrl: 'https://example.com/hook',

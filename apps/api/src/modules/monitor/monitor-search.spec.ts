@@ -5,6 +5,7 @@ import { WatchEvent } from './entities/watch-event.entity';
 import { Watch } from './entities/watch.entity';
 import { MonitorQueueService } from './monitor-queue.service';
 import { MonitorService } from './monitor.service';
+import { MonitorRuntimeConfig } from './monitor-runtime.config';
 import { StreamManager } from './stream-manager.service';
 import { WatchRegistry } from './watch-registry.service';
 import { EXPORT_CHUNK_SIZE, EXPORT_MAX_ROWS, SearchEventsQueryDto } from './dto/search-events.dto';
@@ -72,6 +73,7 @@ function makeService(watchEvents: WatchEvent[]) {
       {} as StreamManager,
       {} as MonitorQueueService,
       {} as any,
+      { maxWatchesPerUser: 25 } as MonitorRuntimeConfig,
     ),
     builder,
   };
@@ -168,9 +170,7 @@ describe('MonitorService search & CSV export', () => {
   });
 
   it('respects a smaller explicit limit', async () => {
-    const events = Array.from({ length: 3 }, (_, i) =>
-      makeEvent({ id: `event-${i}` }),
-    );
+    const events = Array.from({ length: 3 }, (_, i) => makeEvent({ id: `event-${i}` }));
     const { service } = makeService(events);
     const rows: unknown[][] = [];
     await service.streamSearchEventsCsv(

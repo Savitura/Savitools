@@ -37,6 +37,26 @@ export const STELLAR_DESTINATION_PATTERN = /^(G[A-Z2-7]{55}|M[A-Z2-7]{68})$/;
 export const STELLAR_DESTINATION_MESSAGE =
   'destination must be a Stellar G… account or M… muxed account';
 
+/** Encode a canonical M… address without allowing lossy JavaScript numbers. */
+export function encodeMuxedDestination(account: string, muxedId: string | bigint): string {
+  if (!StrKey.isValidEd25519PublicKey(account)) {
+    throw new BadRequestException('Invalid base account public key');
+  }
+  let id: bigint;
+  try {
+    id = typeof muxedId === 'bigint' ? muxedId : BigInt(muxedId);
+  } catch {
+    throw new BadRequestException('Muxed account id must be an unsigned 64-bit integer');
+  }
+  if (id < 0n || id > 18446744073709551615n) {
+    throw new BadRequestException('Muxed account id must be an unsigned 64-bit integer');
+  }
+  const payload = Buffer.alloc(40);
+  StrKey.decodeEd25519PublicKey(account).copy(payload, 0);
+  payload.writeBigUInt64BE(id, 32);
+  return StrKey.encodeMed25519PublicKey(payload);
+}
+
 /**
  * Validate and decode a payment destination.
  *
@@ -65,9 +85,7 @@ export function parseDestination(destination: string): ParsedDestination {
     // rather than stripping the leading "M" so the checksum is recomputed
     // rather than assumed.
     const raw = StrKey.decodeMed25519PublicKey(address);
-    const account = StrKey.encodeEd25519PublicKey(
-      raw.subarray(0, ED25519_KEY_BYTES),
-    );
+    const account = StrKey.encodeEd25519PublicKey(raw.subarray(0, ED25519_KEY_BYTES));
     const muxedId = raw
       .subarray(ED25519_KEY_BYTES, ED25519_KEY_BYTES + MUXED_ID_BYTES)
       .readBigUInt64BE(0)
@@ -80,9 +98,7 @@ export function parseDestination(destination: string): ParsedDestination {
   // alphabet) is worth its own message: "invalid public key" reads like the
   // caller used the wrong field, when the real problem is the muxed payload.
   if (address.startsWith('M')) {
-    throw new BadRequestException(
-      `Invalid muxed destination address: ${address}`,
-    );
+    throw new BadRequestException(`Invalid muxed destination address: ${address}`);
   }
 
   throw new BadRequestException(`Invalid destination public key: ${address}`);

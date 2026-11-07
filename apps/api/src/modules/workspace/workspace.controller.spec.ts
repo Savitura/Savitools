@@ -69,16 +69,28 @@ describe('WorkspaceController', () => {
         'composer',
         expect.objectContaining({ page: 2, limit: 10 }),
       );
-      expect(result).toEqual({
-        workspaces: [
-          { id: 'ws-1', name: 'plan', tool: WorkspaceTool.COMPOSER, createdAt, updatedAt },
-        ],
+      const summary = {
+        id: 'ws-1',
+        name: 'plan',
+        tool: WorkspaceTool.COMPOSER,
+        createdAt,
+        updatedAt,
+      };
+      expect(result).toMatchObject({
+        items: [summary],
+        workspaces: [summary],
         page: 2,
         limit: 10,
         total: 21,
+        totalPages: 3,
+        hasNextPage: true,
+        hasPreviousPage: true,
+        nextPage: 3,
+        previousPage: 1,
       });
       // `data` is deliberately not part of a list summary.
       expect(result.workspaces[0]).not.toHaveProperty('data');
+      expect(result.items[0]).not.toHaveProperty('data');
     });
 
     it('defaults to the shared pagination when no query is supplied', async () => {
@@ -86,7 +98,15 @@ describe('WorkspaceController', () => {
 
       await expect(
         controller.listWorkspaces({ id: 'user-1' }, undefined, new PaginationQueryDto()),
-      ).resolves.toEqual({ workspaces: [], page: 1, limit: 25, total: 0 });
+      ).resolves.toMatchObject({
+        items: [],
+        workspaces: [],
+        page: 1,
+        limit: 25,
+        total: 0,
+        totalPages: 0,
+        nextPage: null,
+      });
     });
   });
 

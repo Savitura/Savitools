@@ -352,7 +352,11 @@ interface EmptyStateProps {
   className?: string;
 }
 
-function EmptyState({
+/**
+ * Base empty state. Exported so a tool with a message that is specific to its
+ * own flow can render one without the per-tool wrappers below.
+ */
+export function EmptyState({
   title,
   message,
   icon,

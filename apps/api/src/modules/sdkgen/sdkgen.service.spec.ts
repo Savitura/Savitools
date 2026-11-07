@@ -121,7 +121,13 @@ describe('SDK generators', () => {
       generator: new PythonGenerator(),
       credential: 'API_KEY',
       escaped: "a\\'b",
-      methods: ['requests.get', 'requests.post', 'requests.put', 'requests.patch', 'requests.delete'],
+      methods: [
+        'requests.get',
+        'requests.post',
+        'requests.put',
+        'requests.patch',
+        'requests.delete',
+      ],
       query: 'params={"include": "details"}',
       responseType: 'class GetItemsIdResponse(TypedDict',
       responseField: 'id: str',
@@ -146,23 +152,29 @@ describe('SDK generators', () => {
     },
   ];
 
-  it.each(cases)('generates escaped $name source for every HTTP method', ({ generator, credential, escaped, methods }) => {
-    const output = generator.generate({ spec: escapingSpec });
-    expect(output).toContain(credential);
-    for (const method of methods) expect(output).toContain(method);
-    expect(output).toContain(escaped);
-  });
+  it.each(cases)(
+    'generates escaped $name source for every HTTP method',
+    ({ generator, credential, escaped, methods }) => {
+      const output = generator.generate({ spec: escapingSpec });
+      expect(output).toContain(credential);
+      for (const method of methods) expect(output).toContain(method);
+      expect(output).toContain(escaped);
+    },
+  );
 
   it.each(cases)('includes query parameters in $name output', ({ generator, query }) => {
     expect(generator.generate({ spec: fullSpec })).toContain(query);
   });
 
-  it.each(cases)('infers response types in $name output', ({ generator, responseType, responseField, arrayResponse }) => {
-    const output = generator.generate({ spec: fullSpec });
-    expect(output).toContain(responseType);
-    expect(output).toContain(responseField);
-    expect(output).toContain(arrayResponse);
-  });
+  it.each(cases)(
+    'infers response types in $name output',
+    ({ generator, responseType, responseField, arrayResponse }) => {
+      const output = generator.generate({ spec: fullSpec });
+      expect(output).toContain(responseType);
+      expect(output).toContain(responseField);
+      expect(output).toContain(arrayResponse);
+    },
+  );
 
   it('never emits a hardcoded TODO fallback', () => {
     for (const { generator } of cases) {
@@ -198,15 +210,12 @@ describe('SdkgenService', () => {
     );
   });
 
-  it.each(['typescript', 'python', 'go', 'curl', 'javascript'])(
-    'generates %s code',
-    (language) => {
-      const service = new SdkgenService();
-      expect(
-        service.generate({ spec: 'fluxa', language, endpoint: '/test' }),
-      ).toEqual(expect.any(String));
-    },
-  );
+  it.each(['typescript', 'python', 'go', 'curl', 'javascript'])('generates %s code', (language) => {
+    const service = new SdkgenService();
+    expect(service.generate({ spec: 'fluxa', language, endpoint: '/test' })).toEqual(
+      expect.any(String),
+    );
+  });
 
   it('throws for unknown spec and unsupported language', () => {
     const service = new SdkgenService();
@@ -217,8 +226,40 @@ describe('SdkgenService', () => {
         endpoint: '/test',
       }),
     ).toThrow('Spec unknown not found');
-    expect(() =>
-      service.generate({ spec: 'fluxa', language: 'rust', endpoint: '/test' }),
-    ).toThrow('Language rust is not supported');
+    expect(() => service.generate({ spec: 'fluxa', language: 'rust', endpoint: '/test' })).toThrow(
+      'Language rust is not supported',
+    );
+  });
+
+  it('reports which specs it loaded', () => {
+    const service = new SdkgenService();
+
+    expect(service.loadedSpecs()).toEqual(['fluxa', 'crowdpay']);
+  });
+
+  it('refuses to boot when a bundled spec cannot be read', () => {
+    readFileSync.mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory, open ...');
+    });
+
+    expect(() => new SdkgenService()).toThrow(/Failed to load OpenAPI spec "fluxa"/);
+  });
+
+  it('respects configured base URL from ConfigService (#405, #428)', () => {
+    const mockConfig = {
+      get: jest.fn((key: string) => {
+        if (key === 'FLUXA_API_URL') return 'https://fluxa.custom.io';
+        return undefined;
+      }),
+    } as any;
+
+    const service = new SdkgenService(mockConfig);
+    const code = service.generate({
+      spec: 'fluxa',
+      language: 'typescript',
+      endpoint: '/test',
+    });
+
+    expect(code).toContain('https://fluxa.custom.io/test');
   });
 });

@@ -41,6 +41,9 @@ describe('parseSpecTtlMs (Savitura/Savitools#247)', () => {
 });
 
 describe('prunePlaygroundHistory (Savitura/Savitools#247)', () => {
+  // Building a pg-mem schema per test is slow under a loaded worker pool.
+  jest.setTimeout(30_000);
+
   let database: IMemoryDb;
   let dataSource: DataSource;
   let repository: Repository<PlaygroundHistory>;
@@ -102,20 +105,22 @@ describe('prunePlaygroundHistory (Savitura/Savitools#247)', () => {
   }
 
   async function seed(ownerId: string, count: number): Promise<void> {
-    for (let i = 0; i < count; i += 1) {
-      await repository.insert({
-        userId: ownerId,
-        provider: ApiKeyProvider.CUSTOM,
-        method: 'GET',
-        path: `/p/${i}`,
-        query: null,
-        requestHeaders: null,
-        responseStatus: 200,
-        responseHeaders: {},
-        latencyMs: i,
-        createdAt: new Date(BASE_MS + i * 1000),
-      });
-    }
+    // One multi-row insert instead of `count` round trips: pg-mem is slow
+    // enough that the per-row version could exceed Jest's default timeout
+    // when the whole suite runs in parallel.
+    const rows = Array.from({ length: count }, (_, i) => ({
+      userId: ownerId,
+      provider: ApiKeyProvider.CUSTOM,
+      method: 'GET',
+      path: `/p/${i}`,
+      query: null,
+      requestHeaders: null,
+      responseStatus: 200,
+      responseHeaders: {},
+      latencyMs: i,
+      createdAt: new Date(BASE_MS + i * 1000),
+    }));
+    await repository.insert(rows);
   }
 
   async function timestamps(ownerId: string): Promise<number[]> {

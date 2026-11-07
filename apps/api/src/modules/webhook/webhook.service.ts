@@ -1,6 +1,19 @@
-import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SendWebhookDto } from './dto/send-webhook.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import {
+  buildPaginatedResult,
+  normalizePagination,
+  type PaginatedResult,
+} from '../../common/dto/paginated-response';
 import { WEBHOOK_TEMPLATES, WebhookTemplate } from './webhook-templates';
 import { assertSafeWebhookDestination, MAX_WEBHOOK_REDIRECTS } from '../../common/ssrf-guard';
 import {
@@ -14,6 +27,7 @@ import {
   signingStatus,
 } from './signature';
 import * as crypto from 'crypto';
+import { redactHeaders as redactWebhookHeaders } from '../../common/redaction';
 
 export interface WebhookSignatureInfo {
   /** Exact value sent in TIMESTAMP_HEADER: integer Unix seconds. */
@@ -22,6 +36,15 @@ export interface WebhookSignatureInfo {
   body: string;
   /** Exact value sent in SIGNATURE_HEADER, e.g. `sha256=<hex>`. */
   signature: string;
+}
+
+export interface PayloadDiff {
+  /** Changes detected between this retry and the previous attempt */
+  added?: Record<string, unknown>;
+  modified?: Record<string, { from: unknown; to: unknown }>;
+  removed?: Record<string, unknown>;
+  /** ID of the previous attempt this diff is relative to */
+  previousAttemptId?: string;
 }
 
 export interface WebhookHistoryEntry {
@@ -54,6 +77,11 @@ export interface WebhookHistoryEntry {
    * strips those headers and re-signs under the current format.
    */
   legacySignature?: boolean;
+  /**
+   * Payload diff between this retry and the previous attempt. Present only
+   * when repeatIndex > 1 and the payload changed between attempts.
+   */
+  payloadDiff?: PayloadDiff;
 }
 
 export const OUTBOUND_TIMEOUT_MS = 10_000;
@@ -63,24 +91,14 @@ export const MAX_HISTORY_PER_USER = 50;
 export const MAX_HISTORY_USERS = 1_000;
 export const REDACTED = '[REDACTED]';
 
-const SECRET_HEADER_PATTERN =
-  /authorization|cookie|signature|secret|token|key|password|credential/i;
-
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const redacted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    redacted[key] = SECRET_HEADER_PATTERN.test(key) ? REDACTED : value;
-  }
-  return redacted;
+  return redactWebhookHeaders(headers);
 }
 
 const RECORDED_SIGNATURE_HEADER_NAMES = new Set(
-  [
-    LEGACY_SIGNATURE_HEADER,
-    LEGACY_ISO_TIMESTAMP_HEADER,
-    SIGNATURE_HEADER,
-    TIMESTAMP_HEADER,
-  ].map((name) => name.toLowerCase()),
+  [LEGACY_SIGNATURE_HEADER, LEGACY_ISO_TIMESTAMP_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER].map(
+    (name) => name.toLowerCase(),
+  ),
 );
 
 /**
@@ -91,9 +109,7 @@ const RECORDED_SIGNATURE_HEADER_NAMES = new Set(
  * decides its own signing state from scratch, so the request never carries a
  * timestamp that disagrees with the signature beside it.
  */
-function stripRecordedSignatureHeaders(
-  headers: Record<string, string>,
-): Record<string, string> {
+function stripRecordedSignatureHeaders(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers).filter(
       ([name]) => !RECORDED_SIGNATURE_HEADER_NAMES.has(name.toLowerCase()),
@@ -144,6 +160,7 @@ async function readBodyWithLimit(
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
   private historyByUser = new Map<string, WebhookHistoryEntry[]>();
+  private templatesByUser = new Map<string, WebhookTemplate[]>();
   private templates: WebhookTemplate[] = [...WEBHOOK_TEMPLATES];
 
   constructor(@Optional() private readonly configService?: ConfigService) {}
@@ -164,18 +181,31 @@ export class WebhookService {
     return signingStatus({ enabled: this.resolveSecret() !== undefined });
   }
 
-  getTemplates(): WebhookTemplate[] {
-    return this.templates;
+  /**
+   * Returns webhook templates for the user. Note: templates are stored in-memory
+   * and will be lost on service restart or when running across multiple replicas.
+   */
+  getTemplates(userId?: string): WebhookTemplate[] {
+    if (!userId) {
+      return this.templates;
+    }
+    let userTemplates = this.templatesByUser.get(userId);
+    if (!userTemplates) {
+      userTemplates = [...WEBHOOK_TEMPLATES];
+      this.templatesByUser.set(userId, userTemplates);
+    }
+    return userTemplates;
   }
 
-  saveTemplate(template: WebhookTemplate): WebhookTemplate {
-    const existingIndex = this.templates.findIndex(
+  saveTemplate(template: WebhookTemplate, userId?: string): WebhookTemplate {
+    const list = userId ? this.getTemplates(userId) : this.templates;
+    const existingIndex = list.findIndex(
       (t) => t.provider === template.provider && t.eventType === template.eventType,
     );
     if (existingIndex >= 0) {
-      this.templates[existingIndex] = template;
+      list[existingIndex] = template;
     } else {
-      this.templates.push(template);
+      list.push(template);
     }
     return template;
   }
@@ -205,7 +235,12 @@ export class WebhookService {
     initialUrl: string,
     headers: Record<string, string>,
     body?: string,
-  ): Promise<{ status: number | null; headers: Record<string, string>; body: string; truncated: boolean }> {
+  ): Promise<{
+    status: number | null;
+    headers: Record<string, string>;
+    body: string;
+    truncated: boolean;
+  }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), OUTBOUND_TIMEOUT_MS);
 
@@ -243,15 +278,81 @@ export class WebhookService {
       response.headers.forEach((val, key) => {
         responseHeaders[key] = val;
       });
-      const { text, truncated } = await readBodyWithLimit(
-        response.body,
-        MAX_RESPONSE_BODY_BYTES,
-      );
+      const { text, truncated } = await readBodyWithLimit(response.body, MAX_RESPONSE_BODY_BYTES);
 
       return { status: response.status, headers: responseHeaders, body: text, truncated };
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /**
+   * Computes the diff between two payloads, detecting added, modified, and removed fields.
+   * Performs deep comparison for nested objects.
+   */
+  private computePayloadDiff(
+    previous: Record<string, unknown>,
+    current: Record<string, unknown>,
+  ): PayloadDiff | undefined {
+    const added: Record<string, unknown> = {};
+    const modified: Record<string, { from: unknown; to: unknown }> = {};
+    const removed: Record<string, unknown> = {};
+
+    // Find added and modified fields
+    for (const [key, currentValue] of Object.entries(current)) {
+      if (!(key in previous)) {
+        added[key] = currentValue;
+      } else {
+        const previousValue = previous[key];
+        if (!this.deepEqual(previousValue, currentValue)) {
+          modified[key] = { from: previousValue, to: currentValue };
+        }
+      }
+    }
+
+    // Find removed fields
+    for (const [key, previousValue] of Object.entries(previous)) {
+      if (!(key in current)) {
+        removed[key] = previousValue;
+      }
+    }
+
+    // Return undefined if no changes detected
+    if (Object.keys(added).length === 0 && 
+        Object.keys(modified).length === 0 && 
+        Object.keys(removed).length === 0) {
+      return undefined;
+    }
+
+    const diff: PayloadDiff = {};
+    if (Object.keys(added).length > 0) diff.added = added;
+    if (Object.keys(modified).length > 0) diff.modified = modified;
+    if (Object.keys(removed).length > 0) diff.removed = removed;
+
+    return diff;
+  }
+
+  /**
+   * Deep equality check for comparing payload values.
+   */
+  private deepEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== typeof b) return false;
+
+    if (typeof a === 'object' && typeof b === 'object') {
+      const aObj = a as Record<string, unknown>;
+      const bObj = b as Record<string, unknown>;
+      
+      const aKeys = Object.keys(aObj);
+      const bKeys = Object.keys(bObj);
+      
+      if (aKeys.length !== bKeys.length) return false;
+      
+      return aKeys.every(key => key in bObj && this.deepEqual(aObj[key], bObj[key]));
+    }
+
+    return false;
   }
 
   async sendWebhook(
@@ -266,8 +367,11 @@ export class WebhookService {
     if (dto.payload) {
       payload = dto.payload;
     } else {
-      const template = this.templates.find((t) => t.eventType === dto.eventType);
-      payload = template ? (template.samplePayload as Record<string, unknown>) : { event: dto.eventType, timestamp: new Date().toISOString() };
+      const userTemplates = this.getTemplates(userId);
+      const template = userTemplates.find((t) => t.eventType === dto.eventType);
+      payload = template
+        ? (template.samplePayload as Record<string, unknown>)
+        : { event: dto.eventType, timestamp: new Date().toISOString() };
     }
 
     const body = JSON.stringify(payload);
@@ -282,6 +386,8 @@ export class WebhookService {
     const secret = this.resolveSecret(dto.secret);
 
     const results: WebhookHistoryEntry[] = [];
+    let previousPayload: Record<string, unknown> | undefined;
+    let previousEntryId: string | undefined;
 
     for (let i = 0; i < repeatCount; i++) {
       if (i > 0 && repeatIntervalMs > 0) {
@@ -306,7 +412,11 @@ export class WebhookService {
         const signedBody = sentBody ?? '';
         const signed = signatureHeaders({ secret, body: signedBody });
         Object.assign(headers, signed);
-        signatureInfo = { timestamp: signed[TIMESTAMP_HEADER], body: signedBody, signature: signed[SIGNATURE_HEADER] };
+        signatureInfo = {
+          timestamp: signed[TIMESTAMP_HEADER],
+          body: signedBody,
+          signature: signed[SIGNATURE_HEADER],
+        };
       }
 
       let responseStatus: number | null = null;
@@ -315,12 +425,7 @@ export class WebhookService {
       let errorMessage: string | undefined;
 
       try {
-        const outcome = await this.performRequest(
-          method,
-          dto.endpointUrl,
-          headers,
-          sentBody,
-        );
+        const outcome = await this.performRequest(method, dto.endpointUrl, headers, sentBody);
         responseStatus = outcome.status;
         Object.assign(responseHeaders, outcome.headers);
         responseBody = outcome.body;
@@ -342,6 +447,15 @@ export class WebhookService {
 
       const latencyMs = Date.now() - startTime;
 
+      // Compute payload diff for retries
+      let payloadDiff: PayloadDiff | undefined;
+      if (i > 0 && previousPayload) {
+        payloadDiff = this.computePayloadDiff(previousPayload, payload);
+        if (payloadDiff) {
+          payloadDiff.previousAttemptId = previousEntryId;
+        }
+      }
+
       const entry: WebhookHistoryEntry = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
@@ -357,17 +471,47 @@ export class WebhookService {
         error: errorMessage,
         repeatIndex: repeatCount > 1 ? i + 1 : undefined,
         signature: signatureInfo,
+        payloadDiff,
       };
 
       this.recordHistory(userId, entry);
       results.push(entry);
+
+      // Track payload for next iteration's diff
+      previousPayload = payload;
+      previousEntryId = entry.id;
     }
 
     return repeatCount > 1 ? results : results[0];
   }
 
-  getHistory(userId: string): WebhookHistoryEntry[] {
-    return this.annotateLegacyEntries(this.historyByUser.get(userId) ?? []);
+  /**
+   * Returns recent webhook execution history. Note: history is kept in-memory
+   * per replica and does not survive restarts or sync across replicas.
+   *
+   * Called without a query it keeps its historical array shape; the HTTP layer
+   * always passes the shared pagination DTO and receives the common envelope.
+   */
+  getHistory(userId: string): WebhookHistoryEntry[];
+  getHistory(userId: string, query: PaginationQueryDto): PaginatedResult<WebhookHistoryEntry>;
+  getHistory(
+    userId: string,
+    query?: PaginationQueryDto,
+  ): WebhookHistoryEntry[] | PaginatedResult<WebhookHistoryEntry> {
+    const entries = this.annotateLegacyEntries(this.historyByUser.get(userId) ?? []);
+    if (!query) return entries;
+
+    const { page, limit } = normalizePagination(query);
+    // Deterministic newest-first ordering, with the id as a tiebreaker so an
+    // entry cannot change page when two deliveries share a timestamp.
+    const ordered = [...entries].sort(
+      (a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id),
+    );
+    const start = (page - 1) * limit;
+    return buildPaginatedResult(ordered.slice(start, start + limit), ordered.length, {
+      page,
+      limit,
+    });
   }
 
   /**
