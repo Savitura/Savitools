@@ -6,6 +6,8 @@
  *   quotes are doubled.
  * - `CSV_BOM` is prepended to exports so Excel opens the file with correct
  *   UTF-8 encoding instead of showing mojibake.
+ * - `neutralizeCsvFormula` is for columns that echo untrusted user input back
+ *   into a spreadsheet (CSV/formula injection, OWASP "CSV Injection").
  */
 
 export const CSV_BOM = '\uFEFF';
@@ -31,4 +33,16 @@ export function toCsvRow(fields: unknown[]): string {
 
 export function toCsv(rows: unknown[][]): string {
   return rows.map(toCsvRow).join('\n') + '\n';
+}
+
+/** Leading characters that make Excel/Sheets/LibreOffice evaluate a cell as a formula. */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
+ * Prefix a value with a single quote when a spreadsheet would otherwise run it
+ * as a formula (`=HYPERLINK(...)`, `+cmd|...`, `@SUM(...)`). Only apply this to
+ * columns that carry caller-supplied text: it intentionally changes the value.
+ */
+export function neutralizeCsvFormula(value: string): string {
+  return FORMULA_TRIGGER.test(value) ? `'${value}` : value;
 }
