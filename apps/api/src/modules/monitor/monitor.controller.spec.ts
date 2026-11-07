@@ -12,6 +12,7 @@ import { MonitorDigestService } from './monitor-digest.service';
 import { StreamManager } from './stream-manager.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SearchEventsQueryDto } from './dto/search-events.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { ExportEventsQueryDto } from './dto/export-events.dto';
 import type { FastifyReply } from 'fastify';
 
@@ -119,9 +120,7 @@ describe('MonitorController SSE and Metrics', () => {
 
     // The controller throws instead of writing the response itself; the global
     // ApiExceptionFilter turns this into the single shared error envelope.
-    await expect(controller.stream(reply3)).rejects.toThrow(
-      ServiceUnavailableException,
-    );
+    await expect(controller.stream(reply3)).rejects.toThrow(ServiceUnavailableException);
     expect(reply3.status).not.toHaveBeenCalled();
     expect(reply3.send).not.toHaveBeenCalled();
   });
@@ -155,10 +154,8 @@ describe('MonitorController SSE and Metrics', () => {
   it.each(['getMetrics', 'stream'] as const)(
     'requires a JWT for %s, like the rest of the controller (#295)',
     (handler) => {
-      const guards = Reflect.getMetadata(
-        GUARDS_METADATA,
-        MonitorController.prototype[handler],
-      ) as unknown[] | undefined;
+      const guards = Reflect.getMetadata(GUARDS_METADATA, MonitorController.prototype[handler]) as
+        unknown[] | undefined;
 
       expect(guards).toContain(JwtAuthGuard);
     },
@@ -179,11 +176,9 @@ describe('MonitorController SSE and Metrics', () => {
         },
         request: {
           raw: {
-            on: jest.fn(
-              (event: string, fn: (...args: unknown[]) => void) => {
-                peerListeners[event] = fn;
-              },
-            ),
+            on: jest.fn((event: string, fn: (...args: unknown[]) => void) => {
+              peerListeners[event] = fn;
+            }),
           },
         },
         status: jest.fn().mockReturnThis(),
@@ -361,9 +356,7 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
     const bad = { from: 'not-a-date', page: 1, limit: 25 } as SearchEventsQueryDto;
 
     expect.assertions(2);
-    await expect(controller.searchEvents(user, bad)).rejects.toThrow(
-      'Invalid ISO date for "from"',
-    );
+    await expect(controller.searchEvents(user, bad)).rejects.toThrow('Invalid ISO date for "from"');
     await expect(
       controller.exportSearchEventsCsv(
         user,
@@ -403,10 +396,7 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
     await controller.exportSearchEventsCsv(user, query, reply);
 
     const headerCalls = (reply.raw.setHeader as jest.Mock).mock.calls;
-    expect(headerCalls).toContainEqual([
-      'Content-Type',
-      'text/csv; charset=utf-8',
-    ]);
+    expect(headerCalls).toContainEqual(['Content-Type', 'text/csv; charset=utf-8']);
     expect(headerCalls).toContainEqual([
       'Content-Disposition',
       'attachment; filename="monitor-search.csv"',
@@ -433,7 +423,18 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
         // The service itself scopes the query to `userId` (covered in
         // monitor-search.spec.ts); here we assert the controller forwards the
         // authenticated caller, never a client-supplied id.
-        await onRow(['payment', '2026-08-31T12:00:00.000Z', '1', 'XLM', 'GFROM', 'GTO', 'h', '1', 'watch-1', '{}']);
+        await onRow([
+          'payment',
+          '2026-08-31T12:00:00.000Z',
+          '1',
+          'XLM',
+          'GFROM',
+          'GTO',
+          'h',
+          '1',
+          'watch-1',
+          '{}',
+        ]);
         await onEnd(1);
         return userId;
       },
@@ -446,6 +447,32 @@ describe('MonitorController search & CSV export (Savitura/Savitools#195)', () =>
       query,
       expect.any(Function),
       expect.any(Function),
+    );
+  });
+
+  it('forwards the shared pagination DTO and returns its envelope', async () => {
+    const envelope = {
+      items: [],
+      page: 2,
+      limit: 10,
+      total: 11,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPreviousPage: true,
+      nextPage: null,
+      previousPage: 1,
+    };
+    mockMonitorService.listWatches.mockResolvedValue(envelope);
+
+    await expect(
+      controller.listWatches(
+        { id: 'user-1', email: 'user@example.com' },
+        Object.assign(new PaginationQueryDto(), { page: 2, limit: 10 }),
+      ),
+    ).resolves.toEqual(envelope);
+    expect(mockMonitorService.listWatches).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ page: 2, limit: 10 }),
     );
   });
 

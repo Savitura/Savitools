@@ -396,32 +396,27 @@ curl "http://localhost:3001/api/v1/wallet/balances?publicKey=GBZR7WLLV5OZVUQ4WAW
 
 #### POST `/wallet/payment`
 
-Send a payment from a sandbox wallet (requires JWT authentication and rate limiting).
+Submit a payment the client already built and signed (requires JWT authentication and rate limiting). The source secret never leaves the client.
 
 **Request:**
 ```bash
 curl -X POST http://localhost:3001/api/v1/wallet/payment \
   -H "Content-Type: application/json" \
   -d '{
-    "sourceSecret": "SBUQ54DRQG5Q3QLQHJEZ5ODSLGE...",
-    "destination": "GBZR7WLLV5OZVUQ4WAWCKVCOVWGZFZVHG5GMRFYVZJZ2AFSGHFKDQ4C",
-    "asset": "XLM",
-    "amount": "5.00"
+    "signedXdr": "AAAAAgAAAAB..."
   }'
 ```
 
 **Response (200):**
 ```json
 {
-  "transactionHash": "6c1e1f6fe...",
   "success": true,
-  "amount": "5.0000000",
-  "destination": "GBZR7..."
+  "txHash": "6c1e1f6fe..."
 }
 ```
 
 **Errors:**
-- `400`: Invalid parameters or insufficient balance
+- `400`: Invalid signed XDR, unsigned envelope, or Horizon rejected the transaction
 
 ---
 

@@ -1,0 +1,6 @@
+{
+  "greeting": "Hola, {nombre}!",
+  "items": "{count, plural, =0 {Sin elementos} one {# elemento}}",
+  "selection": "{kind, select, image {Imagen} video {Vídeo} other {Archivo}}",
+  "nested": "{count, plural, one {Tiene # elemento} other {{nombre} tiene # elementos}}"
+}

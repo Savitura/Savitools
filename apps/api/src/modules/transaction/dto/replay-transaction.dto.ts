@@ -1,6 +1,6 @@
 import { IsIn, IsOptional, IsString, IsArray, ValidateNested, Equals } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class TimeBoundsDto {
   @ApiProperty({ example: 1700000000 })
@@ -50,11 +50,7 @@ export class ReplayTransactionDto {
   @Type(() => TransactionModificationsDto)
   modifications?: TransactionModificationsDto;
 
-  @ApiPropertyOptional({
-    description:
-      'Deprecated: server-side submission is no longer supported. Sign the returned unsigned XDR in the browser and submit it via the Composer sign/submit flow instead.',
-    deprecated: true,
-  })
+  @ApiHideProperty()
   @IsOptional()
   @Equals(undefined, {
     message:
@@ -62,11 +58,7 @@ export class ReplayTransactionDto {
   })
   submit?: never;
 
-  @ApiPropertyOptional({
-    description:
-      'Deprecated: secret keys must never be sent to the server. Sign the returned unsigned XDR in the browser instead.',
-    deprecated: true,
-  })
+  @ApiHideProperty()
   @IsOptional()
   @Equals(undefined, {
     message:

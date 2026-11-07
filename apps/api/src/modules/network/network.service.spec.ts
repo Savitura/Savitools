@@ -314,6 +314,59 @@ describe('NetworkService', () => {
       });
     });
   });
+  describe('profile import/export versioning', () => {
+    it('exports the current schema version and omits owner metadata', async () => {
+      jest.spyOn(service, 'getNetworkProfile').mockResolvedValue({
+        id: 'np-1',
+        ownerId: 'user-1',
+        name: 'testnet',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+        friendbotUrl: null,
+        isDefault: true,
+      } as any);
+
+      await expect(service.exportNetworkProfile('user-1', 'np-1')).resolves.toEqual({
+        schemaVersion: 1,
+        name: 'testnet',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+        friendbotUrl: undefined,
+        isDefault: true,
+      });
+    });
+
+    it('migrates a legacy import that omits the version and name', async () => {
+      const create = jest
+        .spyOn(service, 'createNetworkProfile')
+        .mockResolvedValue({ id: 'np-2' } as any);
+
+      await service.importNetworkProfile('user-1', {
+        horizonUrl: 'https://horizon-testnet.stellar.org/',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+      });
+
+      expect(create).toHaveBeenCalledWith('user-1', {
+        name: 'Imported Profile',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        networkPassphrase: 'Test SDF Network ; September 2015',
+      });
+    });
+
+    it('rejects an unsupported schema version with an actionable message', async () => {
+      const create = jest.spyOn(service, 'createNetworkProfile');
+
+      await expect(
+        service.importNetworkProfile('user-1', {
+          schemaVersion: 2,
+          horizonUrl: 'https://horizon-testnet.stellar.org',
+          networkPassphrase: 'Test SDF Network ; September 2015',
+        }),
+      ).rejects.toThrow(/schema version 2 is not supported/);
+      expect(create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('pruneRetention', () => {
     it('deletes samples older than 90 days', async () => {
       await service.pruneRetention(new Date('2026-08-31T12:00:00.000Z'));

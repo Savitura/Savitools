@@ -1,9 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   Account,
+  Asset,
+  BASE_FEE,
   Keypair,
   MuxedAccount,
   Networks,
+  Operation,
   StrKey,
   Transaction,
   TransactionBuilder,
@@ -591,6 +594,76 @@ describe('StellarTestnetService', () => {
           amount: '10',
         }),
       ).rejects.toThrow('Payment failed: tx_bad_seq');
+    });
+  });
+
+  describe('submitSignedTransaction', () => {
+    function signedPaymentXdr(source: Keypair, destination: string): string {
+      const transaction = new TransactionBuilder(
+        new Account(source.publicKey(), '0'),
+        { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
+      )
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: '10',
+          }),
+        )
+        .setTimeout(30)
+        .build();
+      transaction.sign(source);
+      return transaction.toEnvelope().toXDR('base64');
+    }
+
+    it("submits a signed envelope and returns Horizon's result", async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const submitted = { hash: 'tx-hash-signed' };
+      const submit = jest
+        .spyOn(service.server, 'submitTransaction')
+        .mockResolvedValueOnce(submitted as never);
+
+      await expect(
+        service.submitSignedTransaction(signedPaymentXdr(source, destination)),
+      ).resolves.toBe(submitted);
+
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a malformed XDR without submitting', async () => {
+      const submit = jest.spyOn(service.server, 'submitTransaction');
+
+      await expect(service.submitSignedTransaction('not-base64')).rejects.toThrow(
+        'Invalid signed transaction XDR',
+      );
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unsigned envelope without submitting', async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const unsigned = new TransactionBuilder(
+        new Account(source.publicKey(), '0'),
+        { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
+      )
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: '10',
+          }),
+        )
+        .setTimeout(30)
+        .build()
+        .toEnvelope()
+        .toXDR('base64');
+      const submit = jest.spyOn(service.server, 'submitTransaction');
+
+      await expect(service.submitSignedTransaction(unsigned)).rejects.toThrow(
+        'at least one signature',
+      );
+      expect(submit).not.toHaveBeenCalled();
     });
   });
 });

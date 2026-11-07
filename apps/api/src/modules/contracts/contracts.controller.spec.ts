@@ -7,6 +7,7 @@ import { ContractsController } from './contracts.controller';
 import { ContractsService } from './contracts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ContractAuthorizationGuard } from './guards/contract-authorization.guard';
+import { ContractQuotaService } from './contract-quota.service';
 
 const JWT_SECRET = 'test-secret';
 const ALLOWED_EMAIL = 'admin@example.com';
@@ -15,6 +16,10 @@ const OTHER_EMAIL = 'nobody@example.com';
 describe('ContractsController', () => {
   let app: NestFastifyApplication;
   let jwtService: JwtService;
+  const configValues: Record<string, string> = {
+    JWT_SECRET,
+    CONTRACT_ADMIN_EMAILS: ALLOWED_EMAIL,
+  };
   let contractsService: jest.Mocked<
     Pick<
       ContractsService,
@@ -60,10 +65,6 @@ describe('ContractsController', () => {
       getMaxWasmFileSize: jest.fn().mockReturnValue(5 * 1024 * 1024),
     };
 
-    const configValues: Record<string, string> = {
-      JWT_SECRET,
-      CONTRACT_ADMIN_EMAILS: ALLOWED_EMAIL,
-    };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [
@@ -76,6 +77,7 @@ describe('ContractsController', () => {
         { provide: ContractsService, useValue: contractsService },
        JwtAuthGuard,
        ContractAuthorizationGuard,
+        ContractQuotaService,
         {
           provide: ConfigService,
           useValue: {
@@ -388,6 +390,56 @@ describe('ContractsController', () => {
 
       expect(response.statusCode).toBe(201);
       expect(contractsService.invoke).toHaveBeenCalledWith('C123', 'transfer', []);
+    });
+
+    it('returns 429 once the per-user daily invoke quota is used up', async () => {
+      configValues.CONTRACT_DAILY_INVOKE_QUOTA = '1';
+      contractsService.invoke.mockClear();
+      const invokeAs = (sub: string) =>
+        app.getHttpAdapter().getInstance().inject({
+          method: 'POST',
+          url: '/contracts/C123/invoke',
+          headers: {
+            authorization: `Bearer ${jwtService.sign({ sub, email: ALLOWED_EMAIL }, { secret: JWT_SECRET })}`,
+          },
+          payload: { functionName: 'transfer', args: [] },
+        });
+
+      try {
+        expect((await invokeAs('quota-user')).statusCode).toBe(201);
+        const limited = await invokeAs('quota-user');
+        expect(limited.statusCode).toBe(429);
+        expect(limited.json().message).toMatch(/quota/i);
+        expect(contractsService.invoke).toHaveBeenCalledTimes(1);
+
+        // The quota is per user: another allowlisted user is unaffected.
+        expect((await invokeAs('other-quota-user')).statusCode).toBe(201);
+      } finally {
+        delete configValues.CONTRACT_DAILY_INVOKE_QUOTA;
+      }
+    });
+  });
+
+  describe('deploy quota', () => {
+    it('returns 429 and does not deploy once the daily deploy quota is used up', async () => {
+      configValues.CONTRACT_DAILY_DEPLOY_QUOTA = '0';
+      contractsService.deploy.mockClear();
+      try {
+        const response = await app.getHttpAdapter().getInstance().inject({
+          method: 'POST',
+          url: '/contracts/deploy',
+          headers: {
+            authorization: `Bearer ${tokenFor(ALLOWED_EMAIL)}`,
+            'content-type': 'application/json',
+          },
+          payload: { wasm_url: 'https://example.com/contract.wasm' },
+        });
+
+        expect(response.statusCode).toBe(429);
+        expect(contractsService.deploy).not.toHaveBeenCalled();
+      } finally {
+        delete configValues.CONTRACT_DAILY_DEPLOY_QUOTA;
+      }
     });
   });
 });

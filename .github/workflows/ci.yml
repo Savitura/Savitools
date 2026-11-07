@@ -58,6 +58,10 @@ jobs:
       - run: npm ci
       - run: npx turbo build
 
+      - run: npm run sbom
+        env:
+          CYCLONEDX_COMPONENTS: 'projects,@savitools/api,@savitools/web'
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -137,6 +141,29 @@ jobs:
 
       - name: Web route contract (wrappers, hygiene and smoke flows)
         run: npm test --workspace @savitools/web -- api-contract
+
+  openapi-contract:
+    name: OpenAPI Contract (routes + fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Boots every controller with mocked dependencies, generates the Swagger
+      # document in memory, and fails when a route or its documented
+      # success/validation response is missing. No Postgres, Redis or Stellar.
+      - name: Generate and validate the OpenAPI contract
+        run: npm run test:openapi
+
+      # Verifies bundled external SDK generator specs (Fluxa, CrowdPay) match upstream (#428)
+      - name: Verify bundled external SDK generator specs are current
+        run: npm run specs:check
 
   docker-build:
     name: Docker Build & Smoke (API)

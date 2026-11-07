@@ -1,5 +1,7 @@
 import { IsString, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 import { STELLAR_DESTINATION_MESSAGE, STELLAR_DESTINATION_PATTERN } from '../../stellar/address';
 
 export class SendPaymentDto {
@@ -10,21 +12,14 @@ export class SendPaymentDto {
   })
   sourceSecret: string;
 
+export class SendPaymentDto {
   @ApiProperty({
     example: 'GB...',
     description: 'Destination account: a G… account or an M… muxed account (payment ID)',
   })
   @IsString()
-  @Matches(STELLAR_DESTINATION_PATTERN, {
-    message: STELLAR_DESTINATION_MESSAGE,
+  @Matches(BASE64_PATTERN, {
+    message: 'signedXdr must be a base64-encoded signed transaction envelope',
   })
-  destination: string;
-
-  @ApiProperty({ example: 'XLM', description: 'Asset to send (XLM or CODE:ISSUER)' })
-  @IsString()
-  asset: string;
-
-  @ApiProperty({ example: '10', description: 'Amount to send' })
-  @IsString()
-  amount: string;
+  signedXdr: string;
 }

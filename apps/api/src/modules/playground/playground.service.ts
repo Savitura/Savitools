@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   BadGatewayException,
   BadRequestException,
@@ -18,7 +20,11 @@ import { ApiKey, ApiKeyProvider } from './entities/api-key.entity';
 import { PlaygroundHistory } from './entities/playground-history.entity';
 import { ProxyRequestDto } from './dto/proxy-request.dto';
 import { AuthService } from '../auth/auth.service';
-import { assertRelativePath, assertSafeDestination, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guard';
+import {
+  assertRelativePath,
+  assertSafeDestination,
+  MAX_SAFE_REDIRECTS,
+} from '../../common/ssrf-guard';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';
 
 interface CachedSpec {
@@ -175,6 +181,11 @@ export class PlaygroundService {
 
     const baseUrl = this.getProviderBaseUrl(provider);
     if (!baseUrl) {
+      const bundled = this.loadBundledSpec(provider);
+      if (bundled) {
+        this.specCache.set(provider, { spec: bundled, fetchedAt: Date.now() });
+        return bundled;
+      }
       throw new BadRequestException(`${provider} API URL is not configured`);
     }
 
@@ -189,7 +200,14 @@ export class PlaygroundService {
           this.logger.warn(`Failed to refresh ${provider} spec, serving stale cache`);
           return cached.spec;
         }
-        throw new BadGatewayException(`Failed to fetch ${provider} OpenAPI spec: ${response.status}`);
+        const bundled = this.loadBundledSpec(provider);
+        if (bundled) {
+          this.specCache.set(provider, { spec: bundled, fetchedAt: Date.now() });
+          return bundled;
+        }
+        throw new BadGatewayException(
+          `Failed to fetch ${provider} OpenAPI spec: ${response.status}`,
+        );
       }
 
       const spec = (await response.json()) as Record<string, unknown>;
@@ -200,8 +218,51 @@ export class PlaygroundService {
         this.logger.warn(`Error refreshing ${provider} spec, serving stale cache: ${error}`);
         return cached.spec;
       }
+      const bundled = this.loadBundledSpec(provider);
+      if (bundled) {
+        this.specCache.set(provider, { spec: bundled, fetchedAt: Date.now() });
+        return bundled;
+      }
       throw new BadGatewayException(`Failed to fetch ${provider} OpenAPI spec`);
     }
+  }
+
+  private loadBundledSpec(provider: ApiKeyProvider): Record<string, unknown> | null {
+    try {
+      const specName = provider.toLowerCase();
+      const candidates = [
+        path.join(__dirname, '..', 'sdkgen', 'specs', `${specName}.json`),
+        path.join(__dirname, 'modules', 'sdkgen', 'specs', `${specName}.json`),
+        path.join(
+          process.cwd(),
+          'apps',
+          'api',
+          'src',
+          'modules',
+          'sdkgen',
+          'specs',
+          `${specName}.json`,
+        ),
+        path.join(
+          process.cwd(),
+          'apps',
+          'api',
+          'dist',
+          'modules',
+          'sdkgen',
+          'specs',
+          `${specName}.json`,
+        ),
+      ];
+      for (const specPath of candidates) {
+        if (fs.existsSync(specPath)) {
+          return JSON.parse(fs.readFileSync(specPath, 'utf8'));
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to load bundled spec for ${provider}: ${error}`);
+    }
+    return null;
   }
 
   async proxyRequest(userId: string, dto: ProxyRequestDto): Promise<ProxyResult> {
@@ -300,9 +361,10 @@ export class PlaygroundService {
           ...headers,
           Authorization: `Bearer ${apiKey}`,
         },
-        body: dto.body && dto.method !== 'GET' && dto.method !== 'HEAD'
-          ? JSON.stringify(dto.body)
-          : undefined,
+        body:
+          dto.body && dto.method !== 'GET' && dto.method !== 'HEAD'
+            ? JSON.stringify(dto.body)
+            : undefined,
         signal: AbortSignal.timeout(30_000),
         redirect: 'manual' as const,
       };
@@ -310,7 +372,10 @@ export class PlaygroundService {
       response = await fetch(target.toString(), requestInit);
 
       let hops = 0;
-      while ([301, 302, 303, 307, 308].includes(response.status) && response.headers.has('location')) {
+      while (
+        [301, 302, 303, 307, 308].includes(response.status) &&
+        response.headers.has('location')
+      ) {
         if (++hops > MAX_SAFE_REDIRECTS) {
           throw new BadGatewayException(`Too many redirects from ${dto.provider}`);
         }
@@ -368,7 +433,11 @@ export class PlaygroundService {
     };
   }
 
-  private async recordHistory(userId: string, dto: ProxyRequestDto, result: ProxyResult): Promise<void> {
+  private async recordHistory(
+    userId: string,
+    dto: ProxyRequestDto,
+    result: ProxyResult,
+  ): Promise<void> {
     try {
       const scrubHeaders = (headers: Record<string, string> | null | undefined) => {
         if (!headers) return null;
@@ -443,7 +512,10 @@ export class PlaygroundService {
     return diffValues(entryA.responseBody, entryB.responseBody, '$');
   }
 
-  async saveKey(userId: string, dto: SaveApiKeyDto): Promise<{ id: string; label: string; provider: ApiKeyProvider }> {
+  async saveKey(
+    userId: string,
+    dto: SaveApiKeyDto,
+  ): Promise<{ id: string; label: string; provider: ApiKeyProvider }> {
     const existing = await this.apiKeysRepository.findOne({
       where: { userId, provider: dto.provider, label: dto.label },
     });
@@ -478,7 +550,15 @@ export class PlaygroundService {
     return { id: saved.id, label: saved.label, provider: saved.provider };
   }
 
-  async listKeys(userId: string): Promise<Array<{ id: string; label: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }>> {
+  async listKeys(userId: string): Promise<
+    Array<{
+      id: string;
+      label: string;
+      provider: ApiKeyProvider;
+      maskedKey: string;
+      createdAt: Date;
+    }>
+  > {
     const keys = await this.apiKeysRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -502,8 +582,18 @@ export class PlaygroundService {
 
     // Return only fulfilled results, filtering out rejected ones
     return results
-      .filter((result): result is PromiseFulfilledResult<{ id: string; label: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
-      .map(result => result.value);
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<{
+          id: string;
+          label: string;
+          provider: ApiKeyProvider;
+          maskedKey: string;
+          createdAt: Date;
+        }> => result.status === 'fulfilled',
+      )
+      .map((result) => result.value);
   }
 
   async deleteKey(id: string, userId: string): Promise<void> {
@@ -512,15 +602,21 @@ export class PlaygroundService {
       throw new NotFoundException('API key not found');
     }
     if (key.userId !== userId) {
-      throw new ForbiddenException('Cannot delete another user\'s API key');
+      throw new ForbiddenException("Cannot delete another user's API key");
     }
     await this.apiKeysRepository.remove(key);
   }
 
   async importProvider(
     userId: string,
-    dto: { name: string; openApiJson: unknown; origin: string; apiKey: string }
-  ): Promise<{ id: string; name: string; provider: ApiKeyProvider; maskedKey: string; createdAt: Date }> {
+    dto: { name: string; openApiJson: unknown; origin: string; apiKey: string },
+  ): Promise<{
+    id: string;
+    name: string;
+    provider: ApiKeyProvider;
+    maskedKey: string;
+    createdAt: Date;
+  }> {
     // Validate the OpenAPI document
     const spec = dto.openApiJson as Record<string, unknown>;
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
@@ -561,15 +657,17 @@ export class PlaygroundService {
     };
   }
 
-  async listProviders(userId: string): Promise<Array<{
-    id: string;
-    name: string;
-    provider: ApiKeyProvider;
-    origin: string | null;
-    hasSpec: boolean;
-    maskedKey: string;
-    createdAt: Date;
-  }>> {
+  async listProviders(userId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      provider: ApiKeyProvider;
+      origin: string | null;
+      hasSpec: boolean;
+      maskedKey: string;
+      createdAt: Date;
+    }>
+  > {
     const keys = await this.apiKeysRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -593,21 +691,33 @@ export class PlaygroundService {
 
     // Return only fulfilled results
     return results
-      .filter((result): result is PromiseFulfilledResult<{ id: string; name: string; provider: ApiKeyProvider; origin: string | null; hasSpec: boolean; maskedKey: string; createdAt: Date }> => result.status === 'fulfilled')
-      .map(result => result.value);
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<{
+          id: string;
+          name: string;
+          provider: ApiKeyProvider;
+          origin: string | null;
+          hasSpec: boolean;
+          maskedKey: string;
+          createdAt: Date;
+        }> => result.status === 'fulfilled',
+      )
+      .map((result) => result.value);
   }
 
   async renameProvider(
     id: string,
     userId: string,
-    dto: { name: string }
+    dto: { name: string },
   ): Promise<{ id: string; name: string; provider: ApiKeyProvider }> {
     const key = await this.apiKeysRepository.findOne({ where: { id } });
     if (!key) {
       throw new NotFoundException('API key not found');
     }
     if (key.userId !== userId) {
-      throw new ForbiddenException('Cannot rename another user\'s API key');
+      throw new ForbiddenException("Cannot rename another user's API key");
     }
     key.label = dto.name;
     const saved = await this.apiKeysRepository.save(key);
@@ -620,7 +730,7 @@ export class PlaygroundService {
       throw new NotFoundException('API key not found');
     }
     if (key.userId !== userId) {
-      throw new ForbiddenException('Cannot delete another user\'s API key');
+      throw new ForbiddenException("Cannot delete another user's API key");
     }
     await this.apiKeysRepository.remove(key);
   }
@@ -635,7 +745,7 @@ export class PlaygroundService {
       throw new NotFoundException('API key not found');
     }
     if (key.userId !== userId) {
-      throw new ForbiddenException('Cannot update another user\'s API key');
+      throw new ForbiddenException("Cannot update another user's API key");
     }
 
     if (dto.label !== undefined) {
@@ -669,7 +779,10 @@ export class PlaygroundService {
     });
   }
 
-  private getProviderBaseUrl(provider: ApiKeyProvider, key?: { providerOrigin: string | null }): string | null {
+  private getProviderBaseUrl(
+    provider: ApiKeyProvider,
+    key?: { providerOrigin: string | null },
+  ): string | null {
     if (provider === ApiKeyProvider.CUSTOM) {
       return key?.providerOrigin ?? null;
     }
@@ -677,7 +790,9 @@ export class PlaygroundService {
       case ApiKeyProvider.FLUXA:
         return this.configService.get<string>('FLUXA_API_URL') ?? null;
       case ApiKeyProvider.CROWDPAY:
-        return this.configService.get<string>('CROWDPAY_API_URL') ?? 'https://crowdpay.up.railway.app';
+        return (
+          this.configService.get<string>('CROWDPAY_API_URL') ?? 'https://crowdpay.up.railway.app'
+        );
     }
   }
 
@@ -785,7 +900,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
     const bKeys = Object.keys(b);
     return (
       aKeys.length === bKeys.length &&
-      aKeys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]))
+      aKeys.every(
+        (key) => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]),
+      )
     );
   }
 

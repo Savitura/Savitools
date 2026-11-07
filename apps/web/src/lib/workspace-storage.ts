@@ -1,11 +1,7 @@
 'client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  getWorkspace,
-  saveWorkspace,
-  WorkspaceTool,
-} from './api';
+import { getWorkspace, saveWorkspace, WorkspaceTool } from './api';
 import {
   listComposerWorkspaces,
   createComposerWorkspace,
@@ -19,40 +15,52 @@ import {
   shareComposerWorkspace,
 } from './composer-api';
 import { useAuth } from './auth-context';
+import { parseWorkspaceFile, serializeWorkspaceFile } from './workspace-format';
+import {
+  BROWSER_STORAGE_KEYS,
+  safeGetItem,
+  safeSetItem,
+  safeRemoveItem,
+  isQuotaExceededError,
+  isStorageAvailable,
+  getStorageUsageSummary,
+  clearGuestStorage,
+} from './browser-storage';
+
+export {
+  BROWSER_STORAGE_KEYS,
+  isQuotaExceededError,
+  isStorageAvailable,
+  getStorageUsageSummary,
+  clearGuestStorage,
+};
+
+export {
+  WORKSPACE_FORMAT_VERSION,
+  WorkspaceFormatError,
+  migrateWorkspaceFile,
+  parseWorkspaceFile,
+  serializeWorkspaceFile,
+} from './workspace-format';
+export type { WorkspaceFile } from './workspace-format';
 
 function guestStorageKey(tool: WorkspaceTool): string {
-  return `savitools:guest:${tool}`;
+  return `${BROWSER_STORAGE_KEYS.GUEST_WORKSPACE_PREFIX}${tool}`;
 }
 
 export function readGuestWorkspace<T>(tool: WorkspaceTool, fallback: T): T {
-  if (typeof window === 'undefined') {
-    return fallback;
-  }
-
-  const raw = window.localStorage.getItem(guestStorageKey(tool));
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+  return safeGetItem<T>(guestStorageKey(tool), fallback);
 }
 
-export function writeGuestWorkspace<T>(tool: WorkspaceTool, data: T): void {
-  if (typeof window === 'undefined') {
-    return;
+export function writeGuestWorkspace<T>(tool: WorkspaceTool, data: T): boolean {
+  const result = safeSetItem(guestStorageKey(tool), data);
+  if (!result.success) {
+    console.warn(`[storage] Failed to write guest workspace for ${tool}:`, result.error);
   }
-
-  window.localStorage.setItem(guestStorageKey(tool), JSON.stringify(data));
+  return result.success;
 }
 
-export function useWorkspaceState<T>(
-  tool: WorkspaceTool,
-  defaultValue: T,
-) {
+export function useWorkspaceState<T>(tool: WorkspaceTool, defaultValue: T) {
   const { user, loading } = useAuth();
   const [data, setData] = useState<T>(defaultValue);
   const [ready, setReady] = useState(false);
@@ -128,49 +136,32 @@ export interface WorkspaceShareLink {
 }
 
 function guestWorkspaceListKey(tool: WorkspaceTool): string {
-  return `savitools:guest:workspaces:${tool}`;
+  return `${BROWSER_STORAGE_KEYS.GUEST_WORKSPACE_LIST_PREFIX}${tool}`;
 }
 
 function guestWorkspaceDataKey(tool: WorkspaceTool, id: string): string {
-  return `savitools:guest:workspace:${tool}:${id}`;
+  return `${BROWSER_STORAGE_KEYS.GUEST_WORKSPACE_DATA_PREFIX}${tool}:${id}`;
 }
 
 function readGuestWorkspaceList(tool: WorkspaceTool): WorkspaceSummary[] {
-  if (typeof window === 'undefined') return [];
-  const raw = window.localStorage.getItem(guestWorkspaceListKey(tool));
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  const parsed = safeGetItem<WorkspaceSummary[]>(guestWorkspaceListKey(tool), []);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
-function writeGuestWorkspaceList(tool: WorkspaceTool, workspaces: WorkspaceSummary[]): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(guestWorkspaceListKey(tool), JSON.stringify(workspaces));
+function writeGuestWorkspaceList(tool: WorkspaceTool, workspaces: WorkspaceSummary[]): boolean {
+  return safeSetItem(guestWorkspaceListKey(tool), workspaces).success;
 }
 
 function readGuestWorkspaceData(tool: WorkspaceTool, id: string): WorkspaceState | null {
-  if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(guestWorkspaceDataKey(tool, id));
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as WorkspaceState;
-  } catch {
-    return null;
-  }
+  return safeGetItem<WorkspaceState | null>(guestWorkspaceDataKey(tool, id), null);
 }
 
-function writeGuestWorkspaceData(tool: WorkspaceTool, id: string, state: WorkspaceState): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(guestWorkspaceDataKey(tool, id), JSON.stringify(state));
+function writeGuestWorkspaceData(tool: WorkspaceTool, id: string, state: WorkspaceState): boolean {
+  return safeSetItem(guestWorkspaceDataKey(tool, id), state).success;
 }
 
 function removeGuestWorkspaceData(tool: WorkspaceTool, id: string): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(guestWorkspaceDataKey(tool, id));
+  safeRemoveItem(guestWorkspaceDataKey(tool, id));
 }
 
 function generateId(): string {
@@ -180,34 +171,18 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-export function validateWorkspaceJSON(json: string): { name?: string; composerState: Record<string, unknown>; operations: unknown[] } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new Error('Invalid JSON file');
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) {
-    throw new Error('Workspace JSON must be an object');
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (obj.composerState === undefined || obj.composerState === null || typeof obj.composerState !== 'object') {
-    throw new Error('Missing or invalid "composerState"');
-  }
-
-  if (!Array.isArray(obj.operations)) {
-    throw new Error('Missing or invalid "operations" array');
-  }
-
-  const name = typeof obj.name === 'string' ? obj.name : undefined;
-
+export function validateWorkspaceJSON(json: string): {
+  formatVersion: number;
+  name?: string;
+  composerState: Record<string, unknown>;
+  operations: unknown[];
+} {
+  const parsed = parseWorkspaceFile(json);
   return {
-    name,
-    composerState: obj.composerState as Record<string, unknown>,
-    operations: obj.operations as unknown[],
+    formatVersion: parsed.formatVersion,
+    name: parsed.name,
+    composerState: parsed.composerState,
+    operations: parsed.operations,
   };
 }
 
@@ -281,7 +256,10 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
           const updated = { ...existing, updatedAt: new Date().toISOString() };
           writeGuestWorkspaceData(tool, existing.id, state);
           setWorkspaces((prev) => prev.map((w) => (w.id === existing.id ? updated : w)));
-          writeGuestWorkspaceList(tool, workspaces.map((w) => (w.id === existing.id ? updated : w)));
+          writeGuestWorkspaceList(
+            tool,
+            workspaces.map((w) => (w.id === existing.id ? updated : w)),
+          );
           return updated;
         } else {
           const id = generateId();
@@ -382,7 +360,7 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
     async (id: string): Promise<string> => {
       if (isAuthenticated) {
         const response = await exportComposerWorkspace(id);
-        return JSON.stringify({
+        return serializeWorkspaceFile({
           id: response.id,
           name: response.name,
           updatedAt: response.updatedAt,
@@ -393,7 +371,12 @@ export function useWorkspaceManager(tool: WorkspaceTool) {
         const data = readGuestWorkspaceData(tool, id);
         if (!data) throw new Error('Workspace not found');
         const ws = workspaces.find((w) => w.id === id);
-        return JSON.stringify({ ...data, id, name: ws?.name, updatedAt: ws?.updatedAt });
+        return serializeWorkspaceFile({
+          ...data,
+          id,
+          name: ws?.name,
+          updatedAt: ws?.updatedAt,
+        });
       }
     },
     [isAuthenticated, tool, workspaces],

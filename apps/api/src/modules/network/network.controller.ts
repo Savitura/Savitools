@@ -15,6 +15,7 @@ import { ApiCookieAuth, ApiOperation, ApiQuery, ApiTags, ApiResponse } from '@ne
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateNetworkProfileDto } from './dto/create-network-profile.dto';
+import { ImportNetworkProfileDto } from './dto/import-network-profile.dto';
 import { UpdateNetworkProfileDto } from './dto/update-network-profile.dto';
 import { VerifyNetworkPassphraseDto } from './dto/verify-network-passphrase.dto';
 import { NetworkService } from './network.service';
@@ -26,7 +27,12 @@ export class NetworkController {
 
   @Get('status')
   @ApiOperation({ summary: 'Get current Stellar network status and fees' })
-  @ApiQuery({ name: 'network', required: false, enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
+  @ApiQuery({
+    name: 'network',
+    required: false,
+    enum: ['mainnet', 'testnet'],
+    description: 'Network to query (default: mainnet)',
+  })
   @ApiResponse({ status: 200, description: 'Network status retrieved' })
   async getStatus(@Query('network') network: string = 'mainnet') {
     const net = network === 'testnet' ? 'testnet' : 'mainnet';
@@ -35,10 +41,20 @@ export class NetworkController {
 
   @Get('status/history')
   @ApiOperation({ summary: 'Get network status history and uptime metrics' })
-  @ApiQuery({ name: 'network', required: false, enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
-  @ApiQuery({ name: 'from', required: false, description: 'ISO date lower bound (default: 60 minutes before to)' })
+  @ApiQuery({
+    name: 'network',
+    required: false,
+    enum: ['mainnet', 'testnet'],
+    description: 'Network to query (default: mainnet)',
+  })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'ISO date lower bound (default: 60 minutes before to)',
+  })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date upper bound (default: now)' })
   @ApiResponse({ status: 200, description: 'Network status history retrieved' })
+  @ApiResponse({ status: 400, description: 'Invalid network or ISO date range' })
   async getHistory(
     @Query('network') network: string = 'mainnet',
     @Query('from') from?: string,
@@ -103,7 +119,10 @@ export class NetworkController {
   @ApiResponse({ status: 200, description: 'Verification result' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
   verifyPassphrase(@Body() body: VerifyNetworkPassphraseDto) {
-    return this.networkService.verifyNetworkPassphrase(body.horizonUrl, body.expectedPassphrase ?? '');
+    return this.networkService.verifyNetworkPassphrase(
+      body.horizonUrl,
+      body.expectedPassphrase ?? '',
+    );
   }
 
   @Put('profiles/:id/default')
@@ -133,7 +152,7 @@ export class NetworkController {
   @ApiOperation({ summary: 'Import a network profile from JSON' })
   @ApiResponse({ status: 201, description: 'Profile imported' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  importProfile(@CurrentUser() user: { id: string }, @Body() body: CreateNetworkProfileDto) {
+  importProfile(@CurrentUser() user: { id: string }, @Body() body: ImportNetworkProfileDto) {
     return this.networkService.importNetworkProfile(user.id, body);
   }
 }

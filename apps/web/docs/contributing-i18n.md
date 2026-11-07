@@ -39,7 +39,7 @@ import { useTranslations } from 'next-intl';
 
 function MyComponent() {
   const t = useTranslations('myFeature');
-  
+
   return (
     <div>
       <h1>{t('title')}</h1>
@@ -74,6 +74,11 @@ Run the translation check to ensure all locales are in sync:
 ```bash
 npm run check-translations
 ```
+
+The check compares keys and ICU message structure. It reports the locale, the key,
+and a concise reason when interpolation variables, argument types, offsets, or
+plural/select branches differ between locales. `apps/web/scripts/__fixtures__/translations`
+holds passing and failing catalogues that are exercised by the Jest suite.
 
 ## Message Format Features
 
@@ -122,7 +127,7 @@ For simple formatting, use the `t.rich()` function:
 const t = useTranslations();
 
 return t.rich('agreement', {
-  terms: (chunks) => <Link href="/terms">{chunks}</Link>
+  terms: (chunks) => <Link href="/terms">{chunks}</Link>,
 });
 ```
 
@@ -135,7 +140,7 @@ import { useFormatters } from '@/lib/formatters';
 
 function MyComponent() {
   const { formatDate, formatNumber, formatRelativeTime } = useFormatters();
-  
+
   return (
     <div>
       <p>Amount: {formatNumber(1234.56)}</p>
@@ -155,7 +160,7 @@ import { useErrorMessages } from '@/lib/error-messages';
 
 function MyComponent() {
   const { translateError } = useErrorMessages();
-  
+
   const handleError = (error: any) => {
     const message = translateError(error);
     setErrorMessage(message);
@@ -181,7 +186,7 @@ Create a new message file `messages/fr.json` with all keys translated:
 {
   "navigation": {
     "home": "Accueil",
-    "composer": "Compositeur",
+    "composer": "Compositeur"
     // ... all other keys
   }
 }
@@ -225,7 +230,7 @@ The middleware will automatically handle the new locale based on the `locales` a
   "composer": {
     "operationTypes": {
       "payment": "Payment",
-      "createAccount": "Create Account"  // Not "createAcct"
+      "createAccount": "Create Account" // Not "createAcct"
     }
   }
 }
@@ -286,7 +291,7 @@ const renderWithLocale = (component, locale = 'en', messages = {}) => {
   return render(
     <NextIntlClientProvider messages={messages} locale={locale}>
       {component}
-    </NextIntlClientProvider>
+    </NextIntlClientProvider>,
   );
 };
 
@@ -309,6 +314,8 @@ test('renders in Spanish', () => {
 ### Common Issues
 
 **Missing translation keys**: Run `npm run check-translations` to identify missing keys.
+
+**Mismatched message structure**: The same check reports the locale and key when a translation is missing or adds an interpolation variable, changes an argument type or plural offset, or uses a different set of plural/select branches. Fix the locale message to mirror the source structure.
 
 **Locale routing not working**: Check that the locale is added to `src/i18n.ts` and middleware configuration.
 

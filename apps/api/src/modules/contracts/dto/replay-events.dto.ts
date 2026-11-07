@@ -22,9 +22,10 @@ export class ReplayEventsDto {
 
   @ApiPropertyOptional({
     description:
-      'HMAC-SHA256 secret, defaulting to WEBHOOK_SIGNING_SECRET. When set, each POST carries ' +
-      'X-SaviTools-Signature: sha256=<hex> and X-SaviTools-Timestamp: <unix seconds>, where the ' +
-      'hex is HMAC-SHA256 over the UTF-8 bytes of `<timestamp>.<body>`.',
+      'Per-request HMAC-SHA256 secret. When omitted, a throwaway secret is generated and returned ' +
+      "in the summary. Replay never signs with the platform's global WEBHOOK_SIGNING_SECRET. When set, " +
+      'each POST carries X-SaviTools-Signature: sha256=<hex> and X-SaviTools-Timestamp: <unix seconds>, ' +
+      'where the hex is HMAC-SHA256 over the UTF-8 bytes of `<timestamp>.<body>`.',
   })
   @IsOptional()
   @IsString()

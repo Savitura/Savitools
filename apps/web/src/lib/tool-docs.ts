@@ -572,7 +572,7 @@ export const toolDocs: ToolDocs[] = [
     ],
     prerequisites: [
       'A compiled Soroban .wasm file.',
-      'The API server’s deployer account funded on testnet (DEPLOYER_SECRET_KEY configured).',
+      'The API server’s deployer account funded on testnet (DEPLOYER_SECRET_KEY configured). This account is shared: every allowlisted user deploys and invokes from it, within a per-user daily quota.',
       'Constructor arguments (if any) as a JSON array.',
     ],
     setup: [

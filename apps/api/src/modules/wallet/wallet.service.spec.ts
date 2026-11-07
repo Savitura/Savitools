@@ -1,6 +1,28 @@
 import { WalletService } from './wallet.service';
 import { BadRequestException } from '@nestjs/common';
-import { Keypair } from '@stellar/stellar-sdk';
+import {
+  Account,
+  Asset,
+  BASE_FEE,
+  Keypair,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
+
+function buildSignedPaymentXdr(source: Keypair, destination: string): string {
+  const transaction = new TransactionBuilder(
+    new Account(source.publicKey(), '0'),
+    { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
+  )
+    .addOperation(
+      Operation.payment({ destination, asset: Asset.native(), amount: '10' }),
+    )
+    .setTimeout(30)
+    .build();
+  transaction.sign(source);
+  return transaction.toEnvelope().toXDR('base64');
+}
 
 describe('WalletService', () => {
   let service: WalletService;
@@ -83,37 +105,47 @@ describe('WalletService', () => {
     });
   });
 
-  describe('sendPayment input validation', () => {
-    it('throws on invalid secret key', async () => {
-      await expect(
-        service.sendPayment('INVALID', 'GDESTINATION', 'XLM', '10'),
-      ).rejects.toThrow('Invalid source secret key');
+  describe('sendPayment', () => {
+    it('rejects a malformed signed XDR before touching the network', async () => {
+      await expect(service.sendPayment('INVALID')).rejects.toThrow(
+        'Invalid signed transaction XDR',
+      );
     });
 
-    it('throws on short destination key', async () => {
-      const kp = Keypair.random();
+    it('rejects an unsigned transaction envelope', async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const unsigned = new TransactionBuilder(
+        new Account(source.publicKey(), '0'),
+        { fee: BASE_FEE, networkPassphrase: Networks.TESTNET },
+      )
+        .addOperation(
+          Operation.payment({ destination, asset: Asset.native(), amount: '10' }),
+        )
+        .setTimeout(30)
+        .build()
+        .toEnvelope()
+        .toXDR('base64');
 
-      await expect(
-        service.sendPayment(kp.secret(), 'short', 'XLM', '10'),
-      ).rejects.toThrow('Invalid destination public key');
+      await expect(service.sendPayment(unsigned)).rejects.toThrow(
+        'at least one signature',
+      );
     });
 
-    it('throws on zero amount', async () => {
-      const kp = Keypair.random();
-      const dest = Keypair.random().publicKey();
+    it("submits a client-signed payment and returns Horizon's hash", async () => {
+      const source = Keypair.random();
+      const destination = Keypair.random().publicKey();
+      const signedXdr = buildSignedPaymentXdr(source, destination);
 
-      await expect(
-        service.sendPayment(kp.secret(), dest, 'XLM', '0'),
-      ).rejects.toThrow('Amount must be a positive number');
-    });
+      const submit = jest
+        .spyOn((service as any).stellar, 'submitSignedTransaction')
+        .mockResolvedValue({ hash: 'tx-hash-1' });
 
-    it('throws on invalid asset format', async () => {
-      const kp = Keypair.random();
-      const dest = Keypair.random().publicKey();
-
-      await expect(
-        service.sendPayment(kp.secret(), dest, 'INVALID_FORMAT', '10'),
-      ).rejects.toThrow('Invalid asset format');
+      await expect(service.sendPayment(signedXdr)).resolves.toEqual({
+        success: true,
+        txHash: 'tx-hash-1',
+      });
+      expect(submit).toHaveBeenCalledTimes(1);
     });
   });
 });

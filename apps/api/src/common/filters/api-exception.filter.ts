@@ -17,10 +17,24 @@ export interface ApiErrorEnvelope {
   statusCode: number;
   message: string | string[];
   error: string;
+  code?: string;
   path: string;
   timestamp: string;
   requestId: string | null;
+  /** Opaque details safe for client consumption (no secrets, PII, or raw XDR). */
+  details?: Record<string, unknown>;
 }
+
+/** The single success shape every returning HTTP response uses. */
+export interface ApiSuccessEnvelope<T = unknown> {
+  statusCode: number;
+  data: T;
+  requestId: string | null;
+  timestamp: string;
+}
+
+/** Union of success and error envelopes for contract testing. */
+export type ApiEnvelope<T = unknown> = ApiSuccessEnvelope<T> | ApiErrorEnvelope;
 
 /**
  * One error envelope for the whole API.
@@ -67,9 +81,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message: detail.message,
       error: detail.error,
+      code: detail.code,
       path: request.url ?? '',
       timestamp: new Date().toISOString(),
       requestId,
+      ...(detail.details && { details: detail.details }),
     };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
@@ -86,7 +102,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
   private describe(
     exception: unknown,
     status: number,
-  ): { message: string | string[]; error: string } {
+  ): { message: string | string[]; error: string; code?: string; details?: Record<string, unknown> } {
     if (!(exception instanceof HttpException)) {
       return {
         message: 'Internal server error',
@@ -109,7 +125,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
         ? record.error
         : this.statusText(status);
 
-    return { message, error };
+    const code = record.code as string | undefined;
+    const details = record.details as Record<string, unknown> | undefined;
+
+    return { message, error, code, details };
   }
 
   /**

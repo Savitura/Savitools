@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GenerateSdkDto } from './dto/generate-sdk.dto';
@@ -30,7 +31,10 @@ export class SdkgenService {
     curl: new CurlGenerator(),
   };
 
-  constructor() {
+  constructor(
+    @Optional()
+    private readonly configService?: ConfigService,
+  ) {
     for (const specName of REQUIRED_SPECS) {
       this.loadSpec(specName);
     }
@@ -66,8 +70,8 @@ export class SdkgenService {
   }
 
   generate(dto: GenerateSdkDto): string {
-    const spec = this.specsCache[dto.spec];
-    if (!spec) {
+    const rawSpec = this.specsCache[dto.spec];
+    if (!rawSpec) {
       throw new NotFoundException(`Spec ${dto.spec} not found`);
     }
 
@@ -76,6 +80,26 @@ export class SdkgenService {
       throw new NotFoundException(`Language ${dto.language} is not supported`);
     }
 
+    const spec = this.applyConfiguredBaseUrl(dto.spec, rawSpec);
     return generator.generate({ spec, endpoint: dto.endpoint });
+  }
+
+  private applyConfiguredBaseUrl(specName: string, spec: OpenApiSpec): OpenApiSpec {
+    let overrideUrl: string | undefined;
+    if (specName === 'crowdpay') {
+      overrideUrl =
+        this.configService?.get<string>('CROWDPAY_API_URL') || process.env.CROWDPAY_API_URL;
+    } else if (specName === 'fluxa') {
+      overrideUrl = this.configService?.get<string>('FLUXA_API_URL') || process.env.FLUXA_API_URL;
+    }
+
+    if (!overrideUrl) {
+      return spec;
+    }
+
+    return {
+      ...spec,
+      servers: [{ url: overrideUrl.replace(/\/$/, '') }],
+    };
   }
 }
