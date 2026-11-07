@@ -6,6 +6,7 @@ import { TransactionSequenceService } from './transaction-sequence.service';
 import { BuildTransactionDto } from './dto/build-transaction.dto';
 import { FeeBumpDto } from './dto/fee-bump.dto';
 import { SimulateTransactionDto } from './dto/simulate-transaction.dto';
+import { SimulateWithDiffDto } from './dto/simulate-with-diff.dto';
 import { BenchmarkTransactionDto } from './dto/benchmark-transaction.dto';
 import { RunTransactionSequenceDto } from './dto/transaction-sequence.dto';
 
@@ -47,6 +48,14 @@ export class ComposerController {
   @ApiResponse({ status: 200, description: 'Simulation completed' })
   async simulateTransaction(@Body() dto: SimulateTransactionDto) {
     return this.composerService.simulateTransaction(dto);
+  }
+
+  @Post('simulate-with-diff')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Simulate a transaction and return a state diff of account changes' })
+  @ApiResponse({ status: 200, description: 'Simulation with diff completed' })
+  async simulateWithDiff(@Body() dto: SimulateWithDiffDto) {
+    return this.composerService.simulateWithDiff(dto);
   }
 
   @Post('benchmark')

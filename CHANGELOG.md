@@ -13,6 +13,11 @@ All notable changes to SaviTools are documented in this file.
   masked in both responses. New shared `neutralizeCsvFormula` helper in `common/csv.ts`
   guards echoed input against spreadsheet formula injection. Additive only; no existing
   route changed.
+### Security
+
+- **Workspace export sanitization** (#524): Prevent exported and shared workspaces
+  from containing secrets (Stellar secret seeds, private credentials, bearer/JWT tokens)
+  or signed transactions and signature payloads.
 
 ### Fixed
 

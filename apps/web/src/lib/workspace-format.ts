@@ -117,14 +117,124 @@ export function parseWorkspaceFile(json: string): WorkspaceFile {
 }
 
 /**
+ * Secret key prefixes and patterns for Stellar and generic credentials.
+ */
+export const STELLAR_SECRET_SEED_REGEX = /^S[A-Z2-7]{55}$/;
+export const STELLAR_SECRET_SEED_ANYWHERE_REGEX = /S[A-Z2-7]{55}/g;
+
+export const JWT_REGEX = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+export const BEARER_REGEX = /^Bearer\s+[A-Za-z0-9_.-]+/i;
+
+export const SENSITIVE_KEY_SUBSTRINGS = [
+  'secret',
+  'private',
+  'seed',
+  'password',
+  'token',
+  'jwt',
+  'authorization',
+  'credential',
+  'cookie',
+  'apikey',
+  'api_key',
+  'signingkey',
+  'signing_key',
+  'privatekey',
+  'private_key',
+  'secretkey',
+  'secret_key',
+];
+
+export const SIGNATURE_KEY_SUBSTRINGS = [
+  'signedtransaction',
+  'signed_transaction',
+  'signedxdr',
+  'signed_xdr',
+  'signedenvelope',
+  'signed_envelope',
+  'signatures',
+  'signature',
+];
+
+export function isSensitiveKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return SENSITIVE_KEY_SUBSTRINGS.some((sub) => lower.includes(sub));
+}
+
+export function isSignatureKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (lower.includes('unsigned')) {
+    return false;
+  }
+  return SIGNATURE_KEY_SUBSTRINGS.some((sub) => lower.includes(sub));
+}
+
+/**
+ * Sanitizes workspace payload (e.g. composerState, operations) before export or storage,
+ * stripping secret keys, private seeds, bearer/JWT tokens, signatures, and signed transactions.
+ */
+export function sanitizeWorkspacePayload<T>(value: T, keyName?: string): T {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (keyName && (isSensitiveKey(keyName) || isSignatureKey(keyName))) {
+    return undefined as unknown as T;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (STELLAR_SECRET_SEED_REGEX.test(trimmed)) {
+      return undefined as unknown as T;
+    }
+    if (JWT_REGEX.test(trimmed) || BEARER_REGEX.test(trimmed)) {
+      return undefined as unknown as T;
+    }
+    if (/S[A-Z2-7]{55}/.test(value)) {
+      return value.replace(/S[A-Z2-7]{55}/g, '[REDACTED]') as unknown as T;
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeWorkspacePayload(item))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  if (typeof value === 'object') {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (isSensitiveKey(k) || isSignatureKey(k)) {
+        continue;
+      }
+      const cleanedVal = sanitizeWorkspacePayload(v, k);
+      if (cleanedVal !== undefined) {
+        cleaned[k] = cleanedVal;
+      }
+    }
+    return cleaned as unknown as T;
+  }
+
+  return value;
+}
+
+/**
  * Serialise an export at the current format version. Callers can pass legacy
- * metadata, but the emitted file always advertises `WORKSPACE_FORMAT_VERSION`.
+ * metadata, but the emitted file always advertises `WORKSPACE_FORMAT_VERSION`
+ * and is guaranteed to be sanitized of secrets and signed transactions.
  */
 export function serializeWorkspaceFile(file: WorkspaceFileInput, space: number = 2): string {
+  const composerState = (sanitizeWorkspacePayload(file.composerState) ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const operations = (sanitizeWorkspacePayload(file.operations) ?? []) as unknown[];
+
   const output: WorkspaceFile = {
     formatVersion: WORKSPACE_FORMAT_VERSION,
-    composerState: file.composerState,
-    operations: file.operations,
+    composerState,
+    operations,
   };
 
   if (file.id !== undefined) output.id = file.id;

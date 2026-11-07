@@ -38,6 +38,15 @@ export interface WebhookSignatureInfo {
   signature: string;
 }
 
+export interface PayloadDiff {
+  /** Changes detected between this retry and the previous attempt */
+  added?: Record<string, unknown>;
+  modified?: Record<string, { from: unknown; to: unknown }>;
+  removed?: Record<string, unknown>;
+  /** ID of the previous attempt this diff is relative to */
+  previousAttemptId?: string;
+}
+
 export interface WebhookHistoryEntry {
   id: string;
   timestamp: number;
@@ -68,6 +77,11 @@ export interface WebhookHistoryEntry {
    * strips those headers and re-signs under the current format.
    */
   legacySignature?: boolean;
+  /**
+   * Payload diff between this retry and the previous attempt. Present only
+   * when repeatIndex > 1 and the payload changed between attempts.
+   */
+  payloadDiff?: PayloadDiff;
 }
 
 export const OUTBOUND_TIMEOUT_MS = 10_000;
@@ -272,6 +286,75 @@ export class WebhookService {
     }
   }
 
+  /**
+   * Computes the diff between two payloads, detecting added, modified, and removed fields.
+   * Performs deep comparison for nested objects.
+   */
+  private computePayloadDiff(
+    previous: Record<string, unknown>,
+    current: Record<string, unknown>,
+  ): PayloadDiff | undefined {
+    const added: Record<string, unknown> = {};
+    const modified: Record<string, { from: unknown; to: unknown }> = {};
+    const removed: Record<string, unknown> = {};
+
+    // Find added and modified fields
+    for (const [key, currentValue] of Object.entries(current)) {
+      if (!(key in previous)) {
+        added[key] = currentValue;
+      } else {
+        const previousValue = previous[key];
+        if (!this.deepEqual(previousValue, currentValue)) {
+          modified[key] = { from: previousValue, to: currentValue };
+        }
+      }
+    }
+
+    // Find removed fields
+    for (const [key, previousValue] of Object.entries(previous)) {
+      if (!(key in current)) {
+        removed[key] = previousValue;
+      }
+    }
+
+    // Return undefined if no changes detected
+    if (Object.keys(added).length === 0 && 
+        Object.keys(modified).length === 0 && 
+        Object.keys(removed).length === 0) {
+      return undefined;
+    }
+
+    const diff: PayloadDiff = {};
+    if (Object.keys(added).length > 0) diff.added = added;
+    if (Object.keys(modified).length > 0) diff.modified = modified;
+    if (Object.keys(removed).length > 0) diff.removed = removed;
+
+    return diff;
+  }
+
+  /**
+   * Deep equality check for comparing payload values.
+   */
+  private deepEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== typeof b) return false;
+
+    if (typeof a === 'object' && typeof b === 'object') {
+      const aObj = a as Record<string, unknown>;
+      const bObj = b as Record<string, unknown>;
+      
+      const aKeys = Object.keys(aObj);
+      const bKeys = Object.keys(bObj);
+      
+      if (aKeys.length !== bKeys.length) return false;
+      
+      return aKeys.every(key => key in bObj && this.deepEqual(aObj[key], bObj[key]));
+    }
+
+    return false;
+  }
+
   async sendWebhook(
     userId: string,
     dto: SendWebhookDto,
@@ -303,6 +386,8 @@ export class WebhookService {
     const secret = this.resolveSecret(dto.secret);
 
     const results: WebhookHistoryEntry[] = [];
+    let previousPayload: Record<string, unknown> | undefined;
+    let previousEntryId: string | undefined;
 
     for (let i = 0; i < repeatCount; i++) {
       if (i > 0 && repeatIntervalMs > 0) {
@@ -362,6 +447,15 @@ export class WebhookService {
 
       const latencyMs = Date.now() - startTime;
 
+      // Compute payload diff for retries
+      let payloadDiff: PayloadDiff | undefined;
+      if (i > 0 && previousPayload) {
+        payloadDiff = this.computePayloadDiff(previousPayload, payload);
+        if (payloadDiff) {
+          payloadDiff.previousAttemptId = previousEntryId;
+        }
+      }
+
       const entry: WebhookHistoryEntry = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
@@ -377,10 +471,15 @@ export class WebhookService {
         error: errorMessage,
         repeatIndex: repeatCount > 1 ? i + 1 : undefined,
         signature: signatureInfo,
+        payloadDiff,
       };
 
       this.recordHistory(userId, entry);
       results.push(entry);
+
+      // Track payload for next iteration's diff
+      previousPayload = payload;
+      previousEntryId = entry.id;
     }
 
     return repeatCount > 1 ? results : results[0];

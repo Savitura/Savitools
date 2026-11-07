@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import type { PlaygroundProvider } from '@/lib/api';
+import { resolvePlaygroundBaseUrl } from '@/lib/playground-origins';
 
 interface ApiSelectorProps {
   selected: PlaygroundProvider;
@@ -9,10 +10,33 @@ interface ApiSelectorProps {
   className?: string;
 }
 
-const providers: Array<{ id: PlaygroundProvider; label: string; description: string }> = [
-  { id: 'fluxa', label: 'Fluxa', description: 'Payment infrastructure API (Sandbox / mock — not hosted publicly yet)' },
-  { id: 'crowdpay', label: 'CrowdPay', description: 'Crowdfunding platform API (Live at crowdpay.up.railway.app)' },
+type SelectableProvider = 'fluxa' | 'crowdpay';
+
+const providers: Array<{ id: SelectableProvider; label: string }> = [
+  { id: 'fluxa', label: 'Fluxa' },
+  { id: 'crowdpay', label: 'CrowdPay' },
 ];
+
+function hostLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
+}
+
+/**
+ * The host shown next to a provider comes from the same resolver the cURL
+ * sample uses, so a deployment that overrides NEXT_PUBLIC_CROWDPAY_API_URL
+ * never ends up labelling the button with the hosted default.
+ */
+function describeProvider(id: SelectableProvider): string {
+  if (id === 'fluxa') {
+    return 'Payment infrastructure API (Sandbox / mock — not hosted publicly yet)';
+  }
+
+  return `Crowdfunding platform API (Live at ${hostLabel(resolvePlaygroundBaseUrl('crowdpay'))})`;
+}
 
 export function ApiSelector({ selected, onSelect, className }: ApiSelectorProps) {
   return (
@@ -30,7 +54,7 @@ export function ApiSelector({ selected, onSelect, className }: ApiSelectorProps)
           )}
         >
           <p className="text-sm font-medium">{provider.label}</p>
-          <p className="text-xs mt-0.5 opacity-70">{provider.description}</p>
+          <p className="text-xs mt-0.5 opacity-70">{describeProvider(provider.id)}</p>
         </button>
       ))}
     </div>

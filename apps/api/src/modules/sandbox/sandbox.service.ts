@@ -35,9 +35,9 @@ export interface SandboxFundResponse {
   network: string;
 }
 
-export interface SandboxResetResponse {
+export interface SandboxTopUpResponse {
   publicKey: string;
-  reset: boolean;
+  toppedUp: boolean;
   network: string;
   startingBalance: string;
   txHash: string | null;
@@ -107,14 +107,14 @@ export class SandboxService {
     return this.fundedResult(publicKey, reply.hash, '10,000 XLM', endpoints.network);
   }
 
-  async resetAccount(
+  async topUpAccount(
     publicKey: string,
     network: string = 'testnet',
     overrides?: any,
-  ): Promise<SandboxResetResponse> {
+  ): Promise<SandboxTopUpResponse> {
     const endpoints = resolveStellarEndpoints(network, overrides);
 
-    // Call friendbot to ensure account has funds / reset state
+    // Friendbot funds eligible accounts; it does not reset existing account state.
     let txHash: string | null = null;
     try {
       const reply = await this.stellar.requestFriendbotFunding(publicKey, endpoints.network, overrides);
@@ -130,11 +130,13 @@ export class SandboxService {
 
     return {
       publicKey,
-      reset: true,
+      toppedUp: txHash !== null,
       network: endpoints.network,
       startingBalance: balance,
       txHash,
-      message: `Account ${publicKey} on ${endpoints.network} has been reset to its starting state.`,
+      message: txHash !== null
+        ? `Account ${publicKey} on ${endpoints.network} has been topped up.`
+        : `Account ${publicKey} on ${endpoints.network} was not topped up; Friendbot may not fund an already-funded account.`,
     };
   }
 
