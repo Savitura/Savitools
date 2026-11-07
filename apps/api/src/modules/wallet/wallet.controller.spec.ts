@@ -285,6 +285,10 @@ describe('WalletController validation and auth guards', () => {
     it('accepts a base64 signed XDR', async () => {
       const dto = plainToInstance(SendPaymentDto, {
         signedXdr: 'AAAAAgAAAAA=',
+        sourceSecret: 'SCXB2UEUJLXSQPDWCIPRSXLKCGCK6AXHLHCXGAA4QM3JPU53QIB4UVHU',
+        destination: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
+        asset: 'XLM',
+        amount: '10',
       });
       const errors = await validate(dto);
       expect(errors.length).toBe(0);
@@ -293,6 +297,10 @@ describe('WalletController validation and auth guards', () => {
     it('rejects a non-base64 signed XDR', async () => {
       const dto = plainToInstance(SendPaymentDto, {
         signedXdr: 'NOT A SIGNED XDR',
+        sourceSecret: 'NOTASECRET',
+        destination: 'GBT2VWRZ7BWVTUHCH25F3ROXEZF4YBRQPZTE3OA7T6N4I75Z2DO7TRAK',
+        asset: 'XLM',
+        amount: '10',
       });
       const errors = await validate(dto);
       expect(errors.length).toBeGreaterThan(0);
