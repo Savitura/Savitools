@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  Inject,
-  forwardRef,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import {
   Account,
   Asset,
@@ -23,6 +17,12 @@ import {
 } from '@stellar/stellar-sdk';
 import { BuildTransactionDto, OperationDto } from './dto/build-transaction.dto';
 import { SimulateTransactionDto } from './dto/simulate-transaction.dto';
+import {
+  SimulateWithDiffDto,
+  SimulationWithDiffResult,
+  OperationEffect,
+  StateDiff,
+} from './dto/simulate-with-diff.dto';
 import { BenchmarkTransactionDto } from './dto/benchmark-transaction.dto';
 import { FeeBumpDto } from './dto/fee-bump.dto';
 import { ContractsService } from '../contracts/contracts.service';
@@ -37,9 +37,27 @@ export const OPERATION_MANIFEST = [
     label: 'Payment',
     description: 'Send an asset to another account',
     fields: [
-      { name: 'destination', label: 'Destination', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'XLM / USDC' },
-      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: false, placeholder: 'G… (omit for XLM)' },
+      {
+        name: 'destination',
+        label: 'Destination',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'asset.code',
+        label: 'Asset Code',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM / USDC',
+      },
+      {
+        name: 'asset.issuer',
+        label: 'Asset Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G… (omit for XLM)',
+      },
       { name: 'amount', label: 'Amount', type: 'number', required: true, placeholder: '10' },
     ],
   },
@@ -48,8 +66,20 @@ export const OPERATION_MANIFEST = [
     label: 'Create Account',
     description: 'Fund a brand-new Stellar account',
     fields: [
-      { name: 'destination', label: 'Destination', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'startingBalance', label: 'Starting Balance (XLM)', type: 'number', required: true, placeholder: '1' },
+      {
+        name: 'destination',
+        label: 'Destination',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'startingBalance',
+        label: 'Starting Balance (XLM)',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
     ],
   },
   {
@@ -57,9 +87,27 @@ export const OPERATION_MANIFEST = [
     label: 'Change Trust',
     description: 'Add or remove a trustline for an asset',
     fields: [
-      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'limit', label: 'Limit', type: 'number', required: false, placeholder: 'Max (omit) or 0 to remove' },
+      {
+        name: 'asset.code',
+        label: 'Asset Code',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'asset.issuer',
+        label: 'Asset Issuer',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'limit',
+        label: 'Limit',
+        type: 'number',
+        required: false,
+        placeholder: 'Max (omit) or 0 to remove',
+      },
     ],
   },
   {
@@ -67,14 +115,62 @@ export const OPERATION_MANIFEST = [
     label: 'Manage Sell Offer',
     description: 'Create, update or delete a sell offer on the DEX',
     fields: [
-      { name: 'selling.code', label: 'Selling Asset', type: 'text', required: true, placeholder: 'XLM' },
-      { name: 'selling.issuer', label: 'Selling Issuer', type: 'text', required: false, placeholder: 'G… (omit for XLM)' },
-      { name: 'buying.code', label: 'Buying Asset', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'buying.issuer', label: 'Buying Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'amount', label: 'Amount to Sell', type: 'number', required: true, placeholder: '100' },
-      { name: 'price.n', label: 'Price Numerator', type: 'number', required: true, placeholder: '1' },
-      { name: 'price.d', label: 'Price Denominator', type: 'number', required: true, placeholder: '1' },
-      { name: 'offerId', label: 'Offer ID (0 = new)', type: 'number', required: false, placeholder: '0' },
+      {
+        name: 'selling.code',
+        label: 'Selling Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM',
+      },
+      {
+        name: 'selling.issuer',
+        label: 'Selling Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G… (omit for XLM)',
+      },
+      {
+        name: 'buying.code',
+        label: 'Buying Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'buying.issuer',
+        label: 'Buying Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'amount',
+        label: 'Amount to Sell',
+        type: 'number',
+        required: true,
+        placeholder: '100',
+      },
+      {
+        name: 'price.n',
+        label: 'Price Numerator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'price.d',
+        label: 'Price Denominator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'offerId',
+        label: 'Offer ID (0 = new)',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
     ],
   },
   {
@@ -82,14 +178,62 @@ export const OPERATION_MANIFEST = [
     label: 'Manage Buy Offer',
     description: 'Create, update or delete a buy offer on the DEX',
     fields: [
-      { name: 'selling.code', label: 'Selling Asset', type: 'text', required: true, placeholder: 'XLM' },
-      { name: 'selling.issuer', label: 'Selling Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'buying.code', label: 'Buying Asset', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'buying.issuer', label: 'Buying Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'buyAmount', label: 'Amount to Buy', type: 'number', required: true, placeholder: '100' },
-      { name: 'price.n', label: 'Price Numerator', type: 'number', required: true, placeholder: '1' },
-      { name: 'price.d', label: 'Price Denominator', type: 'number', required: true, placeholder: '1' },
-      { name: 'offerId', label: 'Offer ID (0 = new)', type: 'number', required: false, placeholder: '0' },
+      {
+        name: 'selling.code',
+        label: 'Selling Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM',
+      },
+      {
+        name: 'selling.issuer',
+        label: 'Selling Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'buying.code',
+        label: 'Buying Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'buying.issuer',
+        label: 'Buying Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'buyAmount',
+        label: 'Amount to Buy',
+        type: 'number',
+        required: true,
+        placeholder: '100',
+      },
+      {
+        name: 'price.n',
+        label: 'Price Numerator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'price.d',
+        label: 'Price Denominator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'offerId',
+        label: 'Offer ID (0 = new)',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
     ],
   },
   {
@@ -97,13 +241,49 @@ export const OPERATION_MANIFEST = [
     label: 'Passive Sell Offer',
     description: 'Sell offer that does not cross existing offers',
     fields: [
-      { name: 'selling.code', label: 'Selling Asset', type: 'text', required: true, placeholder: 'XLM' },
-      { name: 'selling.issuer', label: 'Selling Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'buying.code', label: 'Buying Asset', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'buying.issuer', label: 'Buying Issuer', type: 'text', required: false, placeholder: 'G…' },
+      {
+        name: 'selling.code',
+        label: 'Selling Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM',
+      },
+      {
+        name: 'selling.issuer',
+        label: 'Selling Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'buying.code',
+        label: 'Buying Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'buying.issuer',
+        label: 'Buying Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
       { name: 'amount', label: 'Amount', type: 'number', required: true, placeholder: '100' },
-      { name: 'price.n', label: 'Price Numerator', type: 'number', required: true, placeholder: '1' },
-      { name: 'price.d', label: 'Price Denominator', type: 'number', required: true, placeholder: '1' },
+      {
+        name: 'price.n',
+        label: 'Price Numerator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'price.d',
+        label: 'Price Denominator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
     ],
   },
   {
@@ -111,14 +291,62 @@ export const OPERATION_MANIFEST = [
     label: 'Set Options',
     description: 'Configure account flags, thresholds, home domain',
     fields: [
-      { name: 'inflationDest', label: 'Inflation Destination', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'homeDomain', label: 'Home Domain', type: 'text', required: false, placeholder: 'example.com' },
-      { name: 'masterWeight', label: 'Master Weight', type: 'number', required: false, placeholder: '1' },
-      { name: 'lowThreshold', label: 'Low Threshold', type: 'number', required: false, placeholder: '0' },
-      { name: 'medThreshold', label: 'Med Threshold', type: 'number', required: false, placeholder: '0' },
-      { name: 'highThreshold', label: 'High Threshold', type: 'number', required: false, placeholder: '0' },
-      { name: 'setFlags', label: 'Set Flags (bitmask)', type: 'number', required: false, placeholder: '0' },
-      { name: 'clearFlags', label: 'Clear Flags (bitmask)', type: 'number', required: false, placeholder: '0' },
+      {
+        name: 'inflationDest',
+        label: 'Inflation Destination',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'homeDomain',
+        label: 'Home Domain',
+        type: 'text',
+        required: false,
+        placeholder: 'example.com',
+      },
+      {
+        name: 'masterWeight',
+        label: 'Master Weight',
+        type: 'number',
+        required: false,
+        placeholder: '1',
+      },
+      {
+        name: 'lowThreshold',
+        label: 'Low Threshold',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
+      {
+        name: 'medThreshold',
+        label: 'Med Threshold',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
+      {
+        name: 'highThreshold',
+        label: 'High Threshold',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
+      {
+        name: 'setFlags',
+        label: 'Set Flags (bitmask)',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
+      {
+        name: 'clearFlags',
+        label: 'Clear Flags (bitmask)',
+        type: 'number',
+        required: false,
+        placeholder: '0',
+      },
     ],
   },
   {
@@ -135,8 +363,20 @@ export const OPERATION_MANIFEST = [
     description: 'Authorize a trustor to hold your issued asset',
     fields: [
       { name: 'trustor', label: 'Trustor', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'assetCode', label: 'Asset Code', type: 'text', required: true, placeholder: 'MYTOKEN' },
-      { name: 'authorize', label: 'Authorize', type: 'boolean', required: true, placeholder: 'true / false' },
+      {
+        name: 'assetCode',
+        label: 'Asset Code',
+        type: 'text',
+        required: true,
+        placeholder: 'MYTOKEN',
+      },
+      {
+        name: 'authorize',
+        label: 'Authorize',
+        type: 'boolean',
+        required: true,
+        placeholder: 'true / false',
+      },
     ],
   },
   {
@@ -146,11 +386,41 @@ export const OPERATION_MANIFEST = [
     description: 'Authorize, deauthorize or enable clawback for a single trustline',
     fields: [
       { name: 'trustor', label: 'Trustor', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'flags.authorized', label: 'Authorized', type: 'boolean', required: false, placeholder: 'true / false' },
-      { name: 'flags.authorizedToMaintainLiabilities', label: 'Authorized To Maintain Liabilities', type: 'boolean', required: false, placeholder: 'true / false' },
-      { name: 'flags.clawbackEnabled', label: 'Clawback Enabled', type: 'boolean', required: false, placeholder: 'true / false' },
+      {
+        name: 'asset.code',
+        label: 'Asset Code',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'asset.issuer',
+        label: 'Asset Issuer',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'flags.authorized',
+        label: 'Authorized',
+        type: 'boolean',
+        required: false,
+        placeholder: 'true / false',
+      },
+      {
+        name: 'flags.authorizedToMaintainLiabilities',
+        label: 'Authorized To Maintain Liabilities',
+        type: 'boolean',
+        required: false,
+        placeholder: 'true / false',
+      },
+      {
+        name: 'flags.clawbackEnabled',
+        label: 'Clawback Enabled',
+        type: 'boolean',
+        required: false,
+        placeholder: 'true / false',
+      },
     ],
   },
   {
@@ -159,8 +429,20 @@ export const OPERATION_MANIFEST = [
     description: 'Claw an issued asset back from a trustline holder',
     fields: [
       { name: 'from', label: 'From', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'asset.code', label: 'Asset Code', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'asset.issuer', label: 'Asset Issuer', type: 'text', required: true, placeholder: 'G…' },
+      {
+        name: 'asset.code',
+        label: 'Asset Code',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'asset.issuer',
+        label: 'Asset Issuer',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
       { name: 'amount', label: 'Amount', type: 'number', required: true, placeholder: '10' },
     ],
   },
@@ -169,14 +451,56 @@ export const OPERATION_MANIFEST = [
     label: 'Path Payment (Strict Send)',
     description: 'Send exact amount; recipient gets at least destMin',
     fields: [
-      { name: 'sendAsset.code', label: 'Send Asset', type: 'text', required: true, placeholder: 'XLM' },
-      { name: 'sendAsset.issuer', label: 'Send Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'sendAmount', label: 'Send Amount', type: 'number', required: true, placeholder: '10' },
-      { name: 'destination', label: 'Destination', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'destAsset.code', label: 'Dest Asset', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'destAsset.issuer', label: 'Dest Issuer', type: 'text', required: false, placeholder: 'G…' },
+      {
+        name: 'sendAsset.code',
+        label: 'Send Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM',
+      },
+      {
+        name: 'sendAsset.issuer',
+        label: 'Send Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'sendAmount',
+        label: 'Send Amount',
+        type: 'number',
+        required: true,
+        placeholder: '10',
+      },
+      {
+        name: 'destination',
+        label: 'Destination',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'destAsset.code',
+        label: 'Dest Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'destAsset.issuer',
+        label: 'Dest Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
       { name: 'destMin', label: 'Dest Min', type: 'number', required: true, placeholder: '9.5' },
-      { name: 'path', label: 'Path Assets (JSON array)', type: 'text', required: false, placeholder: '[]' },
+      {
+        name: 'path',
+        label: 'Path Assets (JSON array)',
+        type: 'text',
+        required: false,
+        placeholder: '[]',
+      },
     ],
   },
   {
@@ -184,14 +508,56 @@ export const OPERATION_MANIFEST = [
     label: 'Path Payment (Strict Receive)',
     description: 'Recipient gets exact amount; send at most sendMax',
     fields: [
-      { name: 'sendAsset.code', label: 'Send Asset', type: 'text', required: true, placeholder: 'XLM' },
-      { name: 'sendAsset.issuer', label: 'Send Issuer', type: 'text', required: false, placeholder: 'G…' },
+      {
+        name: 'sendAsset.code',
+        label: 'Send Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'XLM',
+      },
+      {
+        name: 'sendAsset.issuer',
+        label: 'Send Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
       { name: 'sendMax', label: 'Send Max', type: 'number', required: true, placeholder: '11' },
-      { name: 'destination', label: 'Destination', type: 'text', required: true, placeholder: 'G…' },
-      { name: 'destAsset.code', label: 'Dest Asset', type: 'text', required: true, placeholder: 'USDC' },
-      { name: 'destAsset.issuer', label: 'Dest Issuer', type: 'text', required: false, placeholder: 'G…' },
-      { name: 'destAmount', label: 'Dest Amount', type: 'number', required: true, placeholder: '10' },
-      { name: 'path', label: 'Path Assets (JSON array)', type: 'text', required: false, placeholder: '[]' },
+      {
+        name: 'destination',
+        label: 'Destination',
+        type: 'text',
+        required: true,
+        placeholder: 'G…',
+      },
+      {
+        name: 'destAsset.code',
+        label: 'Dest Asset',
+        type: 'text',
+        required: true,
+        placeholder: 'USDC',
+      },
+      {
+        name: 'destAsset.issuer',
+        label: 'Dest Issuer',
+        type: 'text',
+        required: false,
+        placeholder: 'G…',
+      },
+      {
+        name: 'destAmount',
+        label: 'Dest Amount',
+        type: 'number',
+        required: true,
+        placeholder: '10',
+      },
+      {
+        name: 'path',
+        label: 'Path Assets (JSON array)',
+        type: 'text',
+        required: false,
+        placeholder: '[]',
+      },
     ],
   },
   {
@@ -199,8 +565,20 @@ export const OPERATION_MANIFEST = [
     label: 'Manage Data',
     description: 'Set, modify or delete a data entry on your account',
     fields: [
-      { name: 'name', label: 'Data Name (up to 64 bytes)', type: 'text', required: true, placeholder: 'my-key' },
-      { name: 'value', label: 'Data Value (up to 64 bytes, empty to delete)', type: 'text', required: false, placeholder: 'my-value' },
+      {
+        name: 'name',
+        label: 'Data Name (up to 64 bytes)',
+        type: 'text',
+        required: true,
+        placeholder: 'my-key',
+      },
+      {
+        name: 'value',
+        label: 'Data Value (up to 64 bytes, empty to delete)',
+        type: 'text',
+        required: false,
+        placeholder: 'my-value',
+      },
     ],
   },
   {
@@ -208,24 +586,91 @@ export const OPERATION_MANIFEST = [
     label: 'Liquidity Pool Deposit',
     description: 'Deposit both pool assets using the pool ID’s canonical Asset A/B order',
     fields: [
-      { name: 'liquidityPoolId', label: 'Liquidity Pool ID', type: 'text', required: true, placeholder: '64-character hexadecimal pool ID' },
-      { name: 'maxAmountA', label: 'Maximum Asset A (pool order)', type: 'number', required: true, placeholder: '10' },
-      { name: 'maxAmountB', label: 'Maximum Asset B (pool order)', type: 'number', required: true, placeholder: '20' },
-      { name: 'minPrice.n', label: 'Minimum Price Numerator (B per A)', type: 'number', required: true, placeholder: '1' },
-      { name: 'minPrice.d', label: 'Minimum Price Denominator', type: 'number', required: true, placeholder: '2' },
-      { name: 'maxPrice.n', label: 'Maximum Price Numerator (B per A)', type: 'number', required: true, placeholder: '2' },
-      { name: 'maxPrice.d', label: 'Maximum Price Denominator', type: 'number', required: true, placeholder: '1' },
+      {
+        name: 'liquidityPoolId',
+        label: 'Liquidity Pool ID',
+        type: 'text',
+        required: true,
+        placeholder: '64-character hexadecimal pool ID',
+      },
+      {
+        name: 'maxAmountA',
+        label: 'Maximum Asset A (pool order)',
+        type: 'number',
+        required: true,
+        placeholder: '10',
+      },
+      {
+        name: 'maxAmountB',
+        label: 'Maximum Asset B (pool order)',
+        type: 'number',
+        required: true,
+        placeholder: '20',
+      },
+      {
+        name: 'minPrice.n',
+        label: 'Minimum Price Numerator (B per A)',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'minPrice.d',
+        label: 'Minimum Price Denominator',
+        type: 'number',
+        required: true,
+        placeholder: '2',
+      },
+      {
+        name: 'maxPrice.n',
+        label: 'Maximum Price Numerator (B per A)',
+        type: 'number',
+        required: true,
+        placeholder: '2',
+      },
+      {
+        name: 'maxPrice.d',
+        label: 'Maximum Price Denominator',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
     ],
   },
   {
     type: 'liquidity_pool_withdraw',
     label: 'Liquidity Pool Withdraw',
-    description: 'Withdraw pool shares for both assets using the pool ID’s canonical Asset A/B order',
+    description:
+      'Withdraw pool shares for both assets using the pool ID’s canonical Asset A/B order',
     fields: [
-      { name: 'liquidityPoolId', label: 'Liquidity Pool ID', type: 'text', required: true, placeholder: '64-character hexadecimal pool ID' },
-      { name: 'amount', label: 'Pool Share Amount', type: 'number', required: true, placeholder: '1' },
-      { name: 'minAmountA', label: 'Minimum Received Asset A (pool order)', type: 'number', required: true, placeholder: '0' },
-      { name: 'minAmountB', label: 'Minimum Received Asset B (pool order)', type: 'number', required: true, placeholder: '0' },
+      {
+        name: 'liquidityPoolId',
+        label: 'Liquidity Pool ID',
+        type: 'text',
+        required: true,
+        placeholder: '64-character hexadecimal pool ID',
+      },
+      {
+        name: 'amount',
+        label: 'Pool Share Amount',
+        type: 'number',
+        required: true,
+        placeholder: '1',
+      },
+      {
+        name: 'minAmountA',
+        label: 'Minimum Received Asset A (pool order)',
+        type: 'number',
+        required: true,
+        placeholder: '0',
+      },
+      {
+        name: 'minAmountB',
+        label: 'Minimum Received Asset B (pool order)',
+        type: 'number',
+        required: true,
+        placeholder: '0',
+      },
     ],
   },
   {
@@ -237,11 +682,41 @@ export const OPERATION_MANIFEST = [
       requiresSimulation: true,
     },
     fields: [
-      { name: 'contractId', label: 'Contract ID', type: 'text', required: true, placeholder: 'C...' },
-      { name: 'functionName', label: 'Function Name', type: 'text', required: true, placeholder: 'transfer' },
-      { name: 'arguments', label: 'Arguments', type: 'scval-array', required: false, placeholder: '[]' },
-      { name: 'useAbi', label: 'Use ABI Validation', type: 'boolean', required: false, placeholder: 'true' },
-      { name: 'rawMode', label: 'Raw Arguments Mode', type: 'boolean', required: false, placeholder: 'false' },
+      {
+        name: 'contractId',
+        label: 'Contract ID',
+        type: 'text',
+        required: true,
+        placeholder: 'C...',
+      },
+      {
+        name: 'functionName',
+        label: 'Function Name',
+        type: 'text',
+        required: true,
+        placeholder: 'transfer',
+      },
+      {
+        name: 'arguments',
+        label: 'Arguments',
+        type: 'scval-array',
+        required: false,
+        placeholder: '[]',
+      },
+      {
+        name: 'useAbi',
+        label: 'Use ABI Validation',
+        type: 'boolean',
+        required: false,
+        placeholder: 'true',
+      },
+      {
+        name: 'rawMode',
+        label: 'Raw Arguments Mode',
+        type: 'boolean',
+        required: false,
+        placeholder: 'false',
+      },
     ],
   },
 ];
@@ -343,12 +818,17 @@ function validatePriceRatio(field: string, value: any): { n: number; d: number }
   const n = BigInt(numerator);
   const d = BigInt(denominator);
   if (n <= 0n || d <= 0n || n > 2147483647n || d > 2147483647n) {
-    throw new BadRequestException(`${field} numerator and denominator must be positive 32-bit integers`);
+    throw new BadRequestException(
+      `${field} numerator and denominator must be positive 32-bit integers`,
+    );
   }
   return { n: Number(n), d: Number(d) };
 }
 
-function validateLiquidityPoolPriceBounds(dto: any): { minPrice: { n: number; d: number }; maxPrice: { n: number; d: number } } {
+function validateLiquidityPoolPriceBounds(dto: any): {
+  minPrice: { n: number; d: number };
+  maxPrice: { n: number; d: number };
+} {
   const minPrice = validatePriceRatio('minPrice', dto.minPrice);
   const maxPrice = validatePriceRatio('maxPrice', dto.maxPrice);
   if (BigInt(minPrice.n) * BigInt(maxPrice.d) > BigInt(maxPrice.n) * BigInt(minPrice.d)) {
@@ -389,7 +869,7 @@ export class ComposerService {
 
   constructor(
     @Inject(forwardRef(() => ContractsService))
-    private readonly contractsService?: ContractsService
+    private readonly contractsService?: ContractsService,
   ) {}
 
   getOperations() {
@@ -445,10 +925,7 @@ export class ComposerService {
     return network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
   }
 
-  async loadSequenceNumber(
-    sourceAccount: string,
-    network: 'testnet' | 'mainnet',
-  ): Promise<string> {
+  async loadSequenceNumber(sourceAccount: string, network: 'testnet' | 'mainnet'): Promise<string> {
     const cacheKey = `${network}:${sourceAccount}`;
     const now = Date.now();
     const cached = this.sequenceCache.get(cacheKey);
@@ -550,25 +1027,17 @@ export class ComposerService {
 
       const envelopeType = envelope.switch().name;
       if (envelopeType === 'envelopeTypeTxFeeBump') {
-        throw new BadRequestException(
-          'Inner envelope is already a fee-bump transaction',
-        );
+        throw new BadRequestException('Inner envelope is already a fee-bump transaction');
       }
       if (envelopeType !== 'envelopeTypeTx' && envelopeType !== 'envelopeTypeTxV0') {
-        throw new BadRequestException(
-          'Inner envelope must be a classic transaction',
-        );
+        throw new BadRequestException('Inner envelope must be a classic transaction');
       }
       if (envelopeType === 'envelopeTypeTx' && Number(envelope.v1().tx().ext().switch()) !== 0) {
-        throw new BadRequestException(
-          'Soroban transactions cannot be fee-bumped',
-        );
+        throw new BadRequestException('Soroban transactions cannot be fee-bumped');
       }
 
       if (!StrKey.isValidEd25519PublicKey(dto.feeSource)) {
-        throw new BadRequestException(
-          `Invalid fee source account: ${dto.feeSource}`,
-        );
+        throw new BadRequestException(`Invalid fee source account: ${dto.feeSource}`);
       }
 
       let inner: Transaction;
@@ -633,9 +1102,7 @@ export class ComposerService {
     }
   }
 
-  async simulateTransaction(
-    dto: SimulateTransactionDto,
-  ): Promise<SimulationResult> {
+  async simulateTransaction(dto: SimulateTransactionDto): Promise<SimulationResult> {
     try {
       const cacheKey = `${dto.network || 'testnet'}:${dto.xdr}`;
       const now = Date.now();
@@ -652,10 +1119,7 @@ export class ComposerService {
 
       let tx: Transaction;
       try {
-        tx = new Transaction(
-          dto.xdr,
-          this.networkPassphrase(dto.network || 'testnet'),
-        );
+        tx = new Transaction(dto.xdr, this.networkPassphrase(dto.network || 'testnet'));
       } catch {
         throw new BadRequestException('Invalid XDR');
       }
@@ -700,10 +1164,7 @@ export class ComposerService {
 
   async sendTransaction(dto: SimulateTransactionDto) {
     try {
-      const tx = new Transaction(
-        dto.xdr,
-        this.networkPassphrase(dto.network || 'testnet'),
-      );
+      const tx = new Transaction(dto.xdr, this.networkPassphrase(dto.network || 'testnet'));
       const server = this.getHorizonServer(dto.network);
 
       const response = await server.submitTransaction(tx);
@@ -729,12 +1190,10 @@ export class ComposerService {
           };
         };
       };
-      const resultCodes =
-        errObj?.response?.data?.extras?.result_codes || null;
+      const resultCodes = errObj?.response?.data?.extras?.result_codes || null;
       const operationResults = resultCodes?.operations || null;
       const txCode =
-        resultCodes?.transaction ||
-        (err instanceof Error ? err.message : 'Transaction failed');
+        resultCodes?.transaction || (err instanceof Error ? err.message : 'Transaction failed');
 
       return {
         success: false,
@@ -745,6 +1204,275 @@ export class ComposerService {
         ledger: null,
       };
     }
+  }
+
+  /**
+   * Simulate transaction with detailed state diff showing before/after changes
+   */
+  async simulateWithDiff(dto: SimulateWithDiffDto): Promise<SimulationWithDiffResult> {
+    // First run the standard simulation
+    const baseSimulation = await this.simulateTransaction({
+      xdr: dto.xdr,
+      network: dto.network,
+    });
+
+    if (!dto.includeDiff) {
+      return {
+        ...baseSimulation,
+        effects: [],
+        stateDiff: [],
+        summary: {
+          accountsAffected: 0,
+          balanceChanges: 0,
+          trustlineChanges: 0,
+          signerChanges: 0,
+          dataChanges: 0,
+        },
+      } as SimulationWithDiffResult;
+    }
+
+    try {
+      const tx = new Transaction(dto.xdr, this.networkPassphrase(dto.network || 'testnet'));
+
+      const effects = this.extractOperationEffects(tx);
+      const stateDiff = this.buildStateDiff(tx);
+      const summary = this.buildSummary(stateDiff);
+
+      return {
+        ...baseSimulation,
+        effects,
+        stateDiff,
+        summary,
+      } as SimulationWithDiffResult;
+    } catch (err: unknown) {
+      // If diff extraction fails, return base simulation
+      this.logger.warn(
+        `Failed to extract diff: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return {
+        ...baseSimulation,
+        effects: [],
+        stateDiff: [],
+      } as SimulationWithDiffResult;
+    }
+  }
+
+  /**
+   * Extract operation effects from transaction
+   */
+  private extractOperationEffects(tx: Transaction): OperationEffect[] {
+    const effects: OperationEffect[] = [];
+
+    tx.operations.forEach((op) => {
+      switch (op.type) {
+        case 'payment':
+          effects.push({
+            type: 'payment',
+            description: `Transfer ${op.amount} ${op.asset.isNative() ? 'XLM' : op.asset.code} to ${op.destination}`,
+            account: op.destination,
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            amount: op.amount,
+          });
+          break;
+
+        case 'createAccount':
+          effects.push({
+            type: 'create_account',
+            description: `Create account ${op.destination} with ${op.startingBalance} XLM`,
+            account: op.destination,
+            amount: op.startingBalance,
+          });
+          break;
+
+        case 'changeTrust':
+          if (op.line && 'getCode' in op.line) {
+            effects.push({
+              type: 'change_trust',
+              description: `${op.limit === '0' ? 'Remove' : 'Add/modify'} trustline for ${op.line.getCode()}`,
+              account: tx.source,
+              asset: `${op.line.getCode()}:${op.line.getIssuer()}`,
+              amount: op.limit,
+            });
+          }
+          break;
+
+        case 'manageData':
+          effects.push({
+            type: 'manage_data',
+            description: `${op.value === null ? 'Remove' : 'Set'} data entry "${op.name}"`,
+            account: tx.source,
+            data: { key: op.name, value: op.value },
+          });
+          break;
+
+        case 'setOptions':
+          if (op.signer) {
+            effects.push({
+              type: 'set_signer',
+              description: `${op.signer.weight === 0 ? 'Remove' : 'Add/modify'} signer`,
+              account: tx.source,
+              data: { signer: op.signer },
+            });
+          }
+          if (
+            op.lowThreshold !== undefined ||
+            op.medThreshold !== undefined ||
+            op.highThreshold !== undefined
+          ) {
+            effects.push({
+              type: 'set_thresholds',
+              description: 'Modify account thresholds',
+              account: tx.source,
+              data: {
+                low: op.lowThreshold,
+                med: op.medThreshold,
+                high: op.highThreshold,
+              },
+            });
+          }
+          break;
+
+        case 'accountMerge':
+          effects.push({
+            type: 'account_merge',
+            description: `Merge account into ${op.destination}`,
+            account: tx.source,
+            data: { destination: op.destination },
+          });
+          break;
+
+        default:
+          effects.push({
+            type: op.type,
+            description: `Perform ${op.type} operation`,
+            account: tx.source,
+          });
+      }
+    });
+
+    return effects;
+  }
+
+  /**
+   * Build state diff showing before/after changes per account
+   */
+  private buildStateDiff(tx: Transaction): StateDiff[] {
+    const accountDiffs = new Map<string, StateDiff>();
+
+    const getOrCreateDiff = (account: string): StateDiff => {
+      if (!accountDiffs.has(account)) {
+        accountDiffs.set(account, {
+          account,
+          balanceChanges: [],
+          trustlineChanges: [],
+          signerChanges: [],
+          dataEntryChanges: [],
+        });
+      }
+      return accountDiffs.get(account)!;
+    };
+
+    tx.operations.forEach((op) => {
+      const source = op.source || tx.source;
+
+      switch (op.type) {
+        case 'payment': {
+          const sourceDiff = getOrCreateDiff(source);
+          const destDiff = getOrCreateDiff(op.destination);
+
+          sourceDiff.balanceChanges.push({
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            before: null,
+            after: 'TBD',
+            change: `-${op.amount}`,
+          });
+
+          destDiff.balanceChanges.push({
+            asset: op.asset.isNative() ? 'native:XLM' : `${op.asset.code}:${op.asset.issuer}`,
+            before: null,
+            after: 'TBD',
+            change: `+${op.amount}`,
+          });
+          break;
+        }
+
+        case 'createAccount': {
+          const newAccountDiff = getOrCreateDiff(op.destination);
+          newAccountDiff.balanceChanges.push({
+            asset: 'native:XLM',
+            before: null,
+            after: op.startingBalance,
+            change: `+${op.startingBalance}`,
+          });
+          break;
+        }
+
+        case 'changeTrust': {
+          const diff = getOrCreateDiff(source);
+          if (op.line && 'getCode' in op.line) {
+            diff.trustlineChanges.push({
+              asset: `${op.line.getCode()}:${op.line.getIssuer()}`,
+              action: op.limit === '0' ? 'removed' : 'added',
+              limitAfter: op.limit === '0' ? undefined : op.limit,
+            });
+          }
+          break;
+        }
+
+        case 'manageData': {
+          const diff = getOrCreateDiff(source);
+          diff.dataEntryChanges.push({
+            key: op.name,
+            action: op.value === null ? 'removed' : 'added',
+            valueAfter: op.value?.toString('base64'),
+          });
+          break;
+        }
+
+        case 'setOptions': {
+          const diff = getOrCreateDiff(source);
+
+          if (op.signer) {
+            diff.signerChanges.push({
+              key: 'signer-key',
+              action: op.signer.weight === 0 ? 'removed' : 'added',
+              weight:
+                typeof op.signer.weight === 'string'
+                  ? parseInt(op.signer.weight, 10)
+                  : op.signer.weight,
+            });
+          }
+
+          if (
+            op.lowThreshold !== undefined ||
+            op.medThreshold !== undefined ||
+            op.highThreshold !== undefined
+          ) {
+            diff.thresholdChanges = {
+              lowAfter: op.lowThreshold,
+              medAfter: op.medThreshold,
+              highAfter: op.highThreshold,
+            };
+          }
+          break;
+        }
+      }
+    });
+
+    return Array.from(accountDiffs.values());
+  }
+
+  /**
+   * Build summary statistics for the diff
+   */
+  private buildSummary(stateDiff: StateDiff[]) {
+    return {
+      accountsAffected: stateDiff.length,
+      balanceChanges: stateDiff.reduce((sum, diff) => sum + diff.balanceChanges.length, 0),
+      trustlineChanges: stateDiff.reduce((sum, diff) => sum + diff.trustlineChanges.length, 0),
+      signerChanges: stateDiff.reduce((sum, diff) => sum + diff.signerChanges.length, 0),
+      dataChanges: stateDiff.reduce((sum, diff) => sum + diff.dataEntryChanges.length, 0),
+    };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -801,10 +1529,12 @@ export class ComposerService {
           medThreshold: dto.medThreshold,
           highThreshold: dto.highThreshold,
           homeDomain: dto.homeDomain,
-          signer: dto.signer ? {
-            ed25519PublicKey: dto.signer.ed25519PublicKey,
-            weight: dto.signer.weight,
-          } : undefined,
+          signer: dto.signer
+            ? {
+                ed25519PublicKey: dto.signer.ed25519PublicKey,
+                weight: dto.signer.weight,
+              }
+            : undefined,
         });
       case 'account_merge':
         return Operation.accountMerge({
@@ -851,9 +1581,9 @@ export class ComposerService {
           amount: dto.amount,
         });
       case 'path_payment_strict_send': {
-        const path = ((dto.path as Array<{ code?: string; issuer?: string }> | undefined) || []).map(
-          (a) => resolveAsset(a.code, a.issuer),
-        );
+        const path = (
+          (dto.path as Array<{ code?: string; issuer?: string }> | undefined) || []
+        ).map((a) => resolveAsset(a.code, a.issuer));
         return Operation.pathPaymentStrictSend({
           sendAsset: resolveAsset(dto.sendAsset.code, dto.sendAsset.issuer),
           sendAmount: dto.sendAmount,
@@ -864,9 +1594,9 @@ export class ComposerService {
         });
       }
       case 'path_payment_strict_receive': {
-        const path = ((dto.path as Array<{ code?: string; issuer?: string }> | undefined) || []).map(
-          (a) => resolveAsset(a.code, a.issuer),
-        );
+        const path = (
+          (dto.path as Array<{ code?: string; issuer?: string }> | undefined) || []
+        ).map((a) => resolveAsset(a.code, a.issuer));
         return Operation.pathPaymentStrictReceive({
           sendAsset: resolveAsset(dto.sendAsset.code, dto.sendAsset.issuer),
           sendMax: dto.sendMax,
@@ -902,9 +1632,7 @@ export class ComposerService {
       case 'invoke_host_function':
         return this.buildInvokeHostFunctionOperation(dto);
       default:
-        throw new BadRequestException(
-          `Unknown operation type: ${(dto as { type?: string }).type}`,
-        );
+        throw new BadRequestException(`Unknown operation type: ${(dto as { type?: string }).type}`);
     }
   }
 
@@ -934,12 +1662,14 @@ export class ComposerService {
           dto.contractId,
           dto.functionName,
           args,
-          dto.wasmId
+          dto.wasmId,
         );
         scVals = encodedArgs.map((arg: any) => xdr.ScVal.fromXDR(arg.xdrBase64, 'base64'));
       } catch (error) {
         // Fall back to native conversion if ABI is not available
-        this.logger.warn(`ABI validation failed for ${dto.contractId}.${dto.functionName}, falling back to native conversion: ${error.message}`);
+        this.logger.warn(
+          `ABI validation failed for ${dto.contractId}.${dto.functionName}, falling back to native conversion: ${error.message}`,
+        );
         scVals = args.map((arg: any) => nativeToScVal(arg));
       }
     } else {
@@ -1002,10 +1732,10 @@ export class ComposerService {
         case 'vec':
         case 'array':
           if (Array.isArray(value)) {
-            const elements = value.map(item => 
-              typeof item === 'object' && item.type 
+            const elements = value.map((item) =>
+              typeof item === 'object' && item.type
                 ? this.buildScValFromType(item.type, item.value)
-                : nativeToScVal(item)
+                : nativeToScVal(item),
             );
             return xdr.ScVal.scvVec(elements);
           }
@@ -1015,9 +1745,10 @@ export class ComposerService {
           if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
             const entries = Object.entries(value).map(([key, val]) => {
               const keyScVal = nativeToScVal(key);
-              const valScVal = typeof val === 'object' && (val as any).type
-                ? this.buildScValFromType((val as any).type, (val as any).value)
-                : nativeToScVal(val);
+              const valScVal =
+                typeof val === 'object' && (val as any).type
+                  ? this.buildScValFromType((val as any).type, (val as any).value)
+                  : nativeToScVal(val);
               return new xdr.ScMapEntry({ key: keyScVal, val: valScVal });
             });
             return xdr.ScVal.scvMap(entries);
@@ -1028,9 +1759,7 @@ export class ComposerService {
           return nativeToScVal(value);
       }
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to convert ${type} value to ScVal: ${error.message}`
-      );
+      throw new BadRequestException(`Failed to convert ${type} value to ScVal: ${error.message}`);
     }
   }
 
@@ -1054,7 +1783,7 @@ export class ComposerService {
     }
 
     // Validate threshold ranges
-    const thresholds = [lowThreshold, medThreshold, highThreshold].filter(t => t !== undefined);
+    const thresholds = [lowThreshold, medThreshold, highThreshold].filter((t) => t !== undefined);
     for (const threshold of thresholds) {
       if (threshold < 0 || threshold > 255) {
         throw new BadRequestException('Thresholds must be between 0 and 255');
@@ -1076,7 +1805,9 @@ export class ComposerService {
 
     // Warning: Check if thresholds can be satisfied
     if (masterWeight !== undefined && highThreshold !== undefined && masterWeight < highThreshold) {
-      this.logger.warn(`Master weight (${masterWeight}) is less than high threshold (${highThreshold}). Additional signers will be required.`);
+      this.logger.warn(
+        `Master weight (${masterWeight}) is less than high threshold (${highThreshold}). Additional signers will be required.`,
+      );
     }
   }
 
@@ -1085,8 +1816,7 @@ export class ComposerService {
     const txCount = Math.min(Math.max(dto.transactionCount || 10, 1), 50);
     const concurrency = Math.min(Math.max(dto.concurrency || 5, 1), 20);
 
-    const baseTx = 
-      new Transaction(dto.xdr, this.networkPassphrase(network));
+    const baseTx = new Transaction(dto.xdr, this.networkPassphrase(network));
     const server = this.getHorizonServer(dto.network);
 
     // Benchmark metrics
@@ -1118,7 +1848,7 @@ export class ComposerService {
             const submissionTime = Date.now() - txStartTime;
             totalSubmissionTime += submissionTime;
             successCount++;
-            
+
             results.push({
               transactionIndex,
               submissionTime,
@@ -1129,7 +1859,7 @@ export class ComposerService {
             const submissionTime = Date.now() - txStartTime;
             totalSubmissionTime += submissionTime;
             failureCount++;
-            
+
             results.push({
               transactionIndex,
               submissionTime,
@@ -1174,9 +1904,7 @@ export class ComposerService {
       switch (precondition.type) {
         case 'time_bounds':
           if (precondition.minTime === undefined || precondition.maxTime === undefined) {
-            throw new BadRequestException(
-              'time_bounds precondition requires minTime and maxTime',
-            );
+            throw new BadRequestException('time_bounds precondition requires minTime and maxTime');
           }
           if (precondition.minTime > precondition.maxTime) {
             throw new BadRequestException(

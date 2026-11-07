@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import axios, { AxiosRequestConfig } from 'axios';
 import { CSV_BOM, toCsv } from '../../common/csv';
 import { decodeOperation, DecodedOperation } from './operation-decoder';
 import { explainOpCode, explainTxCode } from './result-codes';
@@ -12,7 +15,10 @@ import {
   groupSorobanEventsByContract,
   parseSorobanEventsFromMeta,
 } from './event-parser';
+import { HorizonReplay } from './entities/horizon-replay.entity';
+import { ReplayHorizonRequestDto } from './dto/replay-horizon-request.dto';
 import { decodeAuthorizationEntry, DecodedAuthorizationEntry } from './auth-entry-decoder';
+import { StrKeyBatchValidation, strKeyBatchToCsv, validateStrKeyBatch } from './strkey-validation';
 
 export interface DecodedEffect {
   type: string;
@@ -91,7 +97,11 @@ export interface SanitizedAuthorizationEntry {
 export class InspectorService {
   private readonly logger = new Logger(InspectorService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @InjectRepository(HorizonReplay)
+    private readonly horizonReplayRepo: Repository<HorizonReplay>,
+  ) {}
 
   private horizon(network: 'testnet' | 'mainnet') {
     const url =
@@ -107,7 +117,10 @@ export class InspectorService {
 
   // ─── GET /inspector/tx/:hash ──────────────────────────────────────────────
 
-  async inspectTransaction(hash: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TransactionBreakdown> {
+  async inspectTransaction(
+    hash: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TransactionBreakdown> {
     const server = this.horizon(network);
 
     let horizonTx: StellarSdk.Horizon.ServerApi.TransactionRecord;
@@ -153,9 +166,20 @@ export class InspectorService {
         .map((e) => ({
           type: String(e.type ?? ''),
           account: String(e.account ?? ''),
-          ...Object.fromEntries(
-            Object.entries(e).filter(([k]) => !['type', 'account', '_links', 'id', 'paging_token', 'operation_id', 'created_at'].includes(k))
-          ) as Record<string, string | number | boolean | null>,
+          ...(Object.fromEntries(
+            Object.entries(e).filter(
+              ([k]) =>
+                ![
+                  'type',
+                  'account',
+                  '_links',
+                  'id',
+                  'paging_token',
+                  'operation_id',
+                  'created_at',
+                ].includes(k),
+            ),
+          ) as Record<string, string | number | boolean | null>),
         }));
 
       return {
@@ -187,7 +211,10 @@ export class InspectorService {
       memo: (horizonTx.memo ?? null) as string | null,
       memoType: horizonTx.memo_type,
       /* eslint-disable @typescript-eslint/no-explicit-any -- Horizon response fields are loosely typed here */
-      timeBounds: this.extractTimeBounds((horizonTx as any).valid_before, (horizonTx as any).valid_after),
+      timeBounds: this.extractTimeBounds(
+        (horizonTx as any).valid_before,
+        (horizonTx as any).valid_after,
+      ),
       signatures: (horizonTx as any).signatures ?? [],
       /* eslint-enable @typescript-eslint/no-explicit-any */
       success: horizonTx.successful,
@@ -304,9 +331,24 @@ export class InspectorService {
     return CSV_BOM + toCsv([header, ...rows]);
   }
 
+  // ─── POST /inspector/strkey/validate(/export) ─────────────────────────────
+
+  /** Offline batch StrKey validation (Savitura/Savitools#500); no Horizon call. */
+  validateStrKeys(inputs: string[]): StrKeyBatchValidation {
+    return validateStrKeyBatch(inputs);
+  }
+
+  /** CSV of the same per-row results, with secret seeds masked. */
+  exportStrKeyValidationCsv(inputs: string[]): string {
+    return strKeyBatchToCsv(this.validateStrKeys(inputs));
+  }
+
   // ─── GET /inspector/account/:publicKey/txs ────────────────────────────────
 
-  async getAccountTransactions(publicKey: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TxSummary[]> {
+  async getAccountTransactions(
+    publicKey: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TxSummary[]> {
     const server = this.horizon(network);
 
     let page: StellarSdk.Horizon.ServerApi.CollectionPage<StellarSdk.Horizon.ServerApi.TransactionRecord>;
@@ -337,7 +379,10 @@ export class InspectorService {
 
   // ─── POST /inspector/decode-xdr ──────────────────────────────────────────
 
-  async decodeXdr(xdr: string, network: 'testnet' | 'mainnet' = 'testnet'): Promise<TransactionBreakdown> {
+  async decodeXdr(
+    xdr: string,
+    network: 'testnet' | 'mainnet' = 'testnet',
+  ): Promise<TransactionBreakdown> {
     const passphrase = this.networkPassphrase(network);
 
     let tx: StellarSdk.Transaction | StellarSdk.FeeBumpTransaction;
@@ -361,11 +406,14 @@ export class InspectorService {
     }));
 
     const memo = innerTx.memo;
-    const memoText = memo.type === 'text'
-      ? (typeof memo.value === 'string' ? memo.value : memo.value?.toString('utf8') ?? null)
-      : memo.type === 'id' || memo.type === 'hash' || memo.type === 'return'
-        ? String(memo.value)
-        : null;
+    const memoText =
+      memo.type === 'text'
+        ? typeof memo.value === 'string'
+          ? memo.value
+          : (memo.value?.toString('utf8') ?? null)
+        : memo.type === 'id' || memo.type === 'hash' || memo.type === 'return'
+          ? String(memo.value)
+          : null;
 
     const timeBounds = innerTx.timeBounds
       ? {
@@ -398,6 +446,134 @@ export class InspectorService {
     };
   }
 
+  // ─── POST /inspector/replay ───────────────────────────────────────────────
+
+  async replayHorizonRequest(
+    dto: ReplayHorizonRequestDto,
+    userId: string,
+    workspaceId: string,
+  ): Promise<{ replay: HorizonReplay; response: any }> {
+    const { method, endpoint, params, network, transactionHash, requestId } = dto;
+
+    const baseUrl =
+      network === 'mainnet'
+        ? this.config.get<string>('STELLAR_HORIZON_MAINNET_URL', 'https://horizon.stellar.org')
+        : this.config.get<string>('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
+
+    const url = `${baseUrl}${endpoint}`;
+    const startTime = Date.now();
+
+    let response: any;
+    let statusCode: number;
+    let errorMessage: string | null = null;
+
+    try {
+      const config: AxiosRequestConfig = {
+        method: method.toUpperCase(),
+        url,
+        params,
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000,
+      };
+
+      const axiosResponse = await axios(config);
+      response = axiosResponse.data;
+      statusCode = axiosResponse.status;
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        statusCode = err.response?.status ?? 500;
+        response = err.response?.data ?? null;
+        errorMessage = err.message;
+      } else {
+        statusCode = 500;
+        response = null;
+        errorMessage = err instanceof Error ? err.message : String(err);
+      }
+      this.logger.warn(`Replay request failed: ${errorMessage}`);
+    }
+
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+
+    // Save replay history
+    const replay = this.horizonReplayRepo.create({
+      userId,
+      workspaceId,
+      method,
+      endpoint,
+      params,
+      response,
+      statusCode,
+      responseTime,
+      network,
+      transactionHash,
+      requestId,
+      errorMessage,
+    });
+
+    await this.horizonReplayRepo.save(replay);
+
+    return { replay, response };
+  }
+
+  // ─── GET /inspector/replay/history ────────────────────────────────────────
+
+  async getReplayHistory(
+    userId: string,
+    workspaceId: string,
+    options: {
+      limit?: number;
+      offset?: number;
+      network?: 'testnet' | 'mainnet';
+      transactionHash?: string;
+      requestId?: string;
+    } = {},
+  ): Promise<{ replays: HorizonReplay[]; total: number }> {
+    const { limit = 50, offset = 0, network, transactionHash, requestId } = options;
+
+    const queryBuilder = this.horizonReplayRepo
+      .createQueryBuilder('replay')
+      .where('replay.userId = :userId', { userId })
+      .andWhere('replay.workspaceId = :workspaceId', { workspaceId });
+
+    if (network) {
+      queryBuilder.andWhere('replay.network = :network', { network });
+    }
+
+    if (transactionHash) {
+      queryBuilder.andWhere('replay.transactionHash = :transactionHash', { transactionHash });
+    }
+
+    if (requestId) {
+      queryBuilder.andWhere('replay.requestId = :requestId', { requestId });
+    }
+
+    queryBuilder
+      .orderBy('replay.createdAt', 'DESC')
+      .skip(offset)
+      .take(Math.min(limit, 100));
+
+    const [replays, total] = await queryBuilder.getManyAndCount();
+
+    return { replays, total };
+  }
+
+  // ─── DELETE /inspector/replay/:id ──────────────────────────────────────────
+
+  async deleteReplayHistory(
+    replayId: string,
+    userId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const result = await this.horizonReplayRepo.delete({
+      id: replayId,
+      userId,
+      workspaceId,
+    });
+
+    if (result.affected === 0) {
+      throw new NotFoundException(`Replay record ${replayId} not found`);
+    }
   // ─── POST /inspector/auth-entry ──────────────────────────────────────────
 
   /**
@@ -558,25 +734,60 @@ export class InspectorService {
 }
 
 const COMPOSER_SUPPORTED_TYPES = new Set([
-  'payment', 'create_account', 'change_trust', 'manage_sell_offer',
-  'manage_buy_offer', 'create_passive_sell_offer', 'set_options',
-  'account_merge', 'allow_trust', 'path_payment_strict_send',
-  'path_payment_strict_receive', 'manage_data',
+  'payment',
+  'create_account',
+  'change_trust',
+  'manage_sell_offer',
+  'manage_buy_offer',
+  'create_passive_sell_offer',
+  'set_options',
+  'account_merge',
+  'allow_trust',
+  'path_payment_strict_send',
+  'path_payment_strict_receive',
+  'manage_data',
 ]);
 
 function buildComposerOp(op: DecodedOperation): Record<string, unknown> & { type: string } {
   const f = op.fields;
   switch (op.type) {
     case 'payment':
-      return { type: 'payment', destination: f.destination, amount: f.amount, asset: parseAssetField(f.asset) };
+      return {
+        type: 'payment',
+        destination: f.destination,
+        amount: f.amount,
+        asset: parseAssetField(f.asset),
+      };
     case 'create_account':
-      return { type: 'create_account', destination: f.destination, startingBalance: parseFloat(f.startingBalance ?? '0') };
+      return {
+        type: 'create_account',
+        destination: f.destination,
+        startingBalance: parseFloat(f.startingBalance ?? '0'),
+      };
     case 'change_trust':
-      return { type: 'change_trust', asset: parseAssetField(f.asset), limit: f.limit === 'max' ? undefined : f.limit };
+      return {
+        type: 'change_trust',
+        asset: parseAssetField(f.asset),
+        limit: f.limit === 'max' ? undefined : f.limit,
+      };
     case 'manage_sell_offer':
-      return { type: 'manage_sell_offer', selling: parseAssetField(f.selling), buying: parseAssetField(f.buying), amount: f.amount, price: parsePrice(f.price), offerId: f.offerId };
+      return {
+        type: 'manage_sell_offer',
+        selling: parseAssetField(f.selling),
+        buying: parseAssetField(f.buying),
+        amount: f.amount,
+        price: parsePrice(f.price),
+        offerId: f.offerId,
+      };
     case 'manage_buy_offer':
-      return { type: 'manage_buy_offer', selling: parseAssetField(f.selling), buying: parseAssetField(f.buying), buyAmount: f.buyAmount, price: parsePrice(f.price), offerId: f.offerId };
+      return {
+        type: 'manage_buy_offer',
+        selling: parseAssetField(f.selling),
+        buying: parseAssetField(f.buying),
+        buyAmount: f.buyAmount,
+        price: parsePrice(f.price),
+        offerId: f.offerId,
+      };
     case 'account_merge':
       return { type: 'account_merge', destination: f.destination };
     case 'manage_data':

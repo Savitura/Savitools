@@ -16,6 +16,7 @@ import { MonitorDigestPreference } from '../modules/monitor/entities/monitor-dig
 import { TransactionReplay } from '../modules/transaction/entities/transaction-replay.entity';
 import { NetworkSample } from '../modules/network/entities/network-sample.entity';
 import { NetworkProfile } from '../modules/network/entities/network-profile.entity';
+import { HorizonReplay } from '../modules/inspector/entities/horizon-replay.entity';
 import { WatchedPool } from '../modules/liquidity-pools/entities/watched-pool.entity';
 import { LedgerCloseStat } from '../modules/ledger-close/entities/ledger-close-stat.entity';
 
@@ -36,6 +37,7 @@ import { CreateNetworkProfiles1786400000000 } from './migrations/1786400000000-c
 import { WorkspaceDefaultUniqueIndex1786400000000 } from './migrations/1786400000000-workspace-default-unique-index';
 import { DropGraphSnapshots1786500000000 } from './migrations/1786500000000-drop-graph-snapshots';
 import { DropTransactionSequenceRun1790607330235 } from './migrations/1790607330235-drop-transaction-sequence-run';
+import { CreateHorizonReplayHistory1798300000000 } from './migrations/1798300000000-create-horizon-replay-history';
 import { AddApiKeyMaskedKey1790700000000 } from './migrations/1790700000000-add-api-key-masked-key';
 import { CreateLiquidityPools1790800000000 } from './migrations/1790800000000-create-liquidity-pools';
 import { CreateLedgerCloseStats1791000000000 } from './migrations/1791000000000-create-ledger-close-stats';
@@ -70,6 +72,7 @@ export const ALL_ENTITIES: EntityClass[] = [
   TransactionReplay,
   NetworkSample,
   NetworkProfile,
+  HorizonReplay,
   WatchedPool,
   LedgerCloseStat,
 ];
@@ -102,6 +105,7 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   WorkspaceDefaultUniqueIndex1786400000000,
   DropGraphSnapshots1786500000000,
   DropTransactionSequenceRun1790607330235,
+  CreateHorizonReplayHistory1798300000000,
   AddApiKeyMaskedKey1790700000000,
   CreateLiquidityPools1790800000000,
   CreateLedgerCloseStats1791000000000,

@@ -19,6 +19,15 @@ import type { SorobanRpcNetwork } from './dto/execute-soroban-rpc.dto';
 /** Upstream budget for a single JSON-RPC call; the console shows it as `tookMs`. */
 const RPC_TIMEOUT_MS = 15_000;
 
+/**
+ * Hosted-mode allowlist of upstream RPC origins, configured as a comma-separated
+ * list of origins (e.g. `https://rpc.example.org,https://soroban.example.net`).
+ * When `NODE_ENV` is `production` and `STELLAR_RPC_ALLOWED_ORIGINS` is unset or
+ * empty, every custom endpoint is rejected. Operators must explicitly allow each
+ * custom origin.
+ */
+const ALLOWED_ORIGINS_ENV = 'STELLAR_RPC_ALLOWED_ORIGINS';
+
 export interface SorobanRpcError {
   code: number;
   message: string;
@@ -77,11 +86,54 @@ export class SorobanRpcService {
     };
   }
 
+  /** Parsed set of origins explicitly allowed for custom RPC endpoints. */
+  private allowedOrigins(): Set<string> {
+    const raw = this.config.get<string | undefined>(ALLOWED_ORIGINS_ENV) ?? '';
+    const origins = new Set<string>();
+    for (const entry of raw.split(',')) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      try {
+        origins.add(new URL(trimmed).origin);
+      } catch {
+        // Ignore malformed entries; they can never match a URL origin.
+      }
+    }
+    return origins;
+  }
+
+  /**
+   * Enforces the hosted-mode allowlist for custom RPC endpoints. Only the
+   * origin is compared; an unlisted origin is refused before any request is
+   * issued.
+   */
+  private assertEndpointAllowed(url: string): void {
+    const nodeEnv = this.config.get<string | undefined>('NODE_ENV');
+    if (nodeEnv !== 'production') return;
+
+    const origin = new URL(url).origin;
+    if (!this.allowedOrigins().has(origin)) {
+      throw new BadGatewayException(
+        `Soroban RPC endpoint origin "${origin}" is not in ${ALLOWED_ORIGINS_ENV}`,
+      );
+    }
+  }
+
   private rpcUrl(network: SorobanRpcNetwork): string {
-    return resolveStellarRpcUrl(
+    const url = resolveStellarRpcUrl(
       this.rpcEnv(),
       network === 'mainnet' ? 'public' : 'testnet',
     );
+    this.assertEndpointAllowed(url);
+    return url;
+  }
+
+  /**
+   * Exposed for tests and diagnostics: returns the resolved endpoint only
+   * after the hosted-mode allowlist check has passed.
+   */
+  resolveAllowedRpcUrl(network: SorobanRpcNetwork): string {
+    return this.rpcUrl(network);
   }
 
   async execute(input: {

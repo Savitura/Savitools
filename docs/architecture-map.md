@@ -153,6 +153,11 @@ To prevent frontend and backend divergence, SaviTools enforces **five explicit c
 - **Compatibility**: Automatically detects and migrates legacy unversioned (`v0`)
   and explicit `v1` workspace files to `v2` during import, preserving user data
   across client upgrades.
+- **Export Sanitization**: All exported and shared workspace payloads are automatically
+  sanitized prior to export via `workspace-sanitizer` and `workspace-format.ts`.
+  Stellar secret seeds (`S...`), private credentials, bearer/JWT tokens, and signed
+  transaction envelopes / signatures are stripped to prevent credential exposure
+  and replay attacks.
 
 ### 4.4 Network Profile Envelope Contract (`network-profile-format.ts`)
 
