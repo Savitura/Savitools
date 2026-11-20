@@ -177,9 +177,14 @@ All API error responses implement a uniform structure:
   "error": "Bad Request",
   "message": "Detailed actionable error message",
   "timestamp": "2026-10-21T21:00:00.000Z",
-  "path": "/api/v1/simulator/paths"
+  "path": "/api/v1/simulator/paths",
+  "requestId": "2f1e2d4d-bbcc-4d15-b79c-56f76884fa36"
 }
 ```
+
+The same `requestId` is returned in the `x-request-id` response header. Web
+requests send a UUID by default; the API replaces malformed or oversized caller
+IDs and creates one for errors that occur before a route interceptor runs.
 
 ---
 
