@@ -120,7 +120,12 @@ export function base32Encode(data: Uint8Array): string {
   return output;
 }
 
-/** Decode a base32 string without padding. Throws on invalid characters. */
+/**
+ * Decode a base32 string without padding. Throws on invalid characters.
+ *
+ * The offending character is quoted with `JSON.stringify` so a quote or escape
+ * character in the input still yields a well-formed error message.
+ */
 export function base32Decode(input: string): Uint8Array {
   if (input.length === 0) return new Uint8Array(0);
 
@@ -131,7 +136,7 @@ export function base32Decode(input: string): Uint8Array {
   for (const char of input) {
     const lookup = BASE32_LOOKUP[char];
     if (lookup === undefined) {
-      throw new Error(`Invalid base32 character: "${char}"`);
+      throw new Error(`Invalid base32 character: ${JSON.stringify(char)}`);
     }
     value = (value << 5) | lookup;
     bits += 5;

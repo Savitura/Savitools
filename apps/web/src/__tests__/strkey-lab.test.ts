@@ -69,6 +69,13 @@ describe('base32 StrKey encoding', () => {
     expect(() => base32Decode('1AAAAAAA')).toThrow(/Invalid base32 character/);
   });
 
+  it('keeps the invalid-character message well-formed for quote characters', () => {
+    expect(() => base32Decode('0')).toThrow('Invalid base32 character: "0"');
+    expect(() => base32Decode('"')).toThrow('Invalid base32 character: "\\\""');
+    expect(() => base32Decode('\\')).toThrow('Invalid base32 character: "\\\\"');
+    expect(() => base32Decode("'")).toThrow('Invalid base32 character: "\'"');
+  });
+
   it('rejects non-canonical last-byte padding', () => {
     // 'A' is 0 and a 5-bit group with non-zero padding bits.
     expect(() => base32Decode('ABC')).toThrow(/non-zero padding/);
@@ -220,6 +227,18 @@ describe('checksum errors', () => {
   it('throws for inputs that are not decodable at all', () => {
     expect(() => decodeStrKey('0')).toThrow(StrKeyError);
     expect(() => decodeStrKey('')).toThrow(StrKeyError);
+  });
+
+  it('surfaces the well-formed invalid-character message on StrKeyError', () => {
+    try {
+      decodeStrKey('"');
+      throw new Error('expected decodeStrKey to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(StrKeyError);
+      const strKeyError = error as StrKeyError;
+      expect(strKeyError.kind).toBe('invalid-characters');
+      expect(strKeyError.message).toBe('Invalid base32 character: "\\\""');
+    }
   });
 });
 
