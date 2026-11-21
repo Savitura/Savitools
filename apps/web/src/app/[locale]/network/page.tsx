@@ -52,6 +52,10 @@ import {
   apiErrorMessage,
 } from '@/lib/api';
 import { NETWORK_DETECTION_TIMEOUT_MS } from '@/lib/network-detection';
+import {
+  NetworkProfileFormatError,
+  parseNetworkProfile,
+} from '@/lib/network-profile-format';
 
 const MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -289,13 +293,29 @@ export default function NetworkStatusPage() {
   async function handleImportProfile(file: File) {
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      await importNetworkProfile(parsed);
+      // Validate the profile structure and schema version before the API call.
+      // parseNetworkProfile throws a typed NetworkProfileFormatError on bad
+      // JSON, missing required fields, or an unsupported schema version, so a
+      // malformed file never reaches the network.
+      const validated = parseNetworkProfile(text);
+      await importNetworkProfile(validated);
       const data = await listNetworkProfiles();
       setProfiles(data);
     } catch (err) {
       console.error(err);
-      setProfileError(apiErrorMessage(err, 'Could not import profile. Ensure the JSON is valid.'));
+      if (err instanceof NetworkProfileFormatError) {
+        const detail =
+          err.code === 'INVALID_JSON'
+            ? 'The file is not valid JSON.'
+            : err.code === 'UNSUPPORTED_VERSION'
+              ? err.message
+              : err.message;
+        setProfileError(`Invalid network profile: ${detail}`);
+      } else {
+        setProfileError(
+          apiErrorMessage(err, 'Could not import profile. Ensure the JSON is valid.'),
+        );
+      }
     }
   }
 
