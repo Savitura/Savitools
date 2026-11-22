@@ -1,7 +1,10 @@
-import { IsEnum, IsISO8601, IsOptional } from 'class-validator';
+import { IsEnum, IsISO8601, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export type StellarNetwork = 'mainnet' | 'testnet';
+
+export const MAX_LEDGER_CLOSE_STATS = 50_000;
 
 export class LedgerCloseStatsQueryDto {
   @ApiPropertyOptional({ enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
@@ -18,4 +21,17 @@ export class LedgerCloseStatsQueryDto {
   @IsOptional()
   @IsISO8601()
   to?: string;
+
+  @ApiPropertyOptional({
+    description: `Maximum number of records to return (1–${MAX_LEDGER_CLOSE_STATS}, default: ${MAX_LEDGER_CLOSE_STATS})`,
+    minimum: 1,
+    maximum: MAX_LEDGER_CLOSE_STATS,
+    default: MAX_LEDGER_CLOSE_STATS,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_LEDGER_CLOSE_STATS)
+  limit?: number;
 }

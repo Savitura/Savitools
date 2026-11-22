@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateNetworkProfileDto } from './dto/create-network-profile.dto';
 import { ImportNetworkProfileDto } from './dto/import-network-profile.dto';
+import { ListNetworkProfilesQueryDto } from './dto/list-network-profiles-query.dto';
 import { RecordConnectivityDto } from './dto/record-connectivity.dto';
 import { UpdateNetworkProfileDto } from './dto/update-network-profile.dto';
 import { VerifyNetworkPassphraseDto } from './dto/verify-network-passphrase.dto';
@@ -70,9 +71,13 @@ export class NetworkController {
   @ApiCookieAuth()
   @ApiOperation({ summary: 'List network profiles for the authenticated user' })
   @ApiResponse({ status: 200, description: 'List of profiles returned' })
+  @ApiResponse({ status: 400, description: 'Invalid query parameters' })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  listProfiles(@CurrentUser() user: { id: string }) {
-    return this.networkService.listNetworkProfiles(user.id);
+  listProfiles(
+    @CurrentUser() user: { id: string },
+    @Query() query: ListNetworkProfilesQueryDto,
+  ) {
+    return this.networkService.listNetworkProfiles(user.id, query.limit);
   }
 
   @Post('profiles')

@@ -75,6 +75,7 @@ export interface NetworkHistoryResponse {
 const MAX_HISTORY_SAMPLES = 20_000;
 const HISTORY_CACHE_TTL_MS = 15_000;
 const MAX_HISTORY_CACHE_ENTRIES = 100;
+export const MAX_NETWORK_PROFILES = 200;
 
 @Injectable()
 export class NetworkService implements OnModuleInit, OnModuleDestroy {
@@ -130,10 +131,15 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async listNetworkProfiles(ownerId: string): Promise<NetworkProfile[]> {
+  async listNetworkProfiles(
+    ownerId: string,
+    limit = MAX_NETWORK_PROFILES,
+  ): Promise<NetworkProfile[]> {
+    const take = Math.min(Math.max(1, limit), MAX_NETWORK_PROFILES);
     return this.networkProfileRepository.find({
       where: { ownerId },
       order: { isDefault: 'DESC' },
+      take,
     });
   }
 

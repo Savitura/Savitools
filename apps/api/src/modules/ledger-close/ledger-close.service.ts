@@ -10,13 +10,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Between, LessThan, Repository } from 'typeorm';
 import { LedgerCloseStat } from './entities/ledger-close-stat.entity';
-import { LedgerCloseStatsQueryDto } from './dto/ledger-close-stats-query.dto';
+import { LedgerCloseStatsQueryDto, MAX_LEDGER_CLOSE_STATS } from './dto/ledger-close-stats-query.dto';
 import {
   LedgerCloseStatsListResponse,
   LedgerCloseStatsSummary,
 } from './dto/ledger-close-stats-response.dto';
 
-const MAX_HISTORY_SAMPLES = 50_000;
 const POLL_INTERVAL_MS = 60_000;
 
 @Injectable()
@@ -52,6 +51,7 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
   ): Promise<LedgerCloseStatsListResponse> {
     const network = query.network ?? 'mainnet';
     const range = this.parseHistoryRange(query.from, query.to);
+    const take = Math.min(Math.max(1, query.limit ?? MAX_LEDGER_CLOSE_STATS), MAX_LEDGER_CLOSE_STATS);
 
     const stats = await this.ledgerCloseStatRepository.find({
       where: {
@@ -59,12 +59,12 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
         sampledAt: Between(range.from, range.to),
       },
       order: { sampledAt: 'DESC' },
-      take: MAX_HISTORY_SAMPLES + 1,
+      take: take + 1,
     });
 
-    if (stats.length > MAX_HISTORY_SAMPLES) {
+    if (stats.length > take) {
       throw new BadRequestException(
-        `History range contains more than ${MAX_HISTORY_SAMPLES} samples; narrow the date range`,
+        `History range contains more than ${take} samples; narrow the date range or reduce the limit`,
       );
     }
 
