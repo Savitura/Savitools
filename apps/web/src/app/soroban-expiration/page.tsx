@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,48 +15,21 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Clock, AlertTriangle, CheckCircle2, XCircle, Info, TrendingUp } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-type StorageType = 'persistent' | 'temporary' | 'instance';
-
-type ExpirationStatus = 'healthy' | 'warning' | 'critical' | 'expired';
-
-interface ExpirationEstimate {
-  currentLedger: number;
-  liveUntilLedger: number;
-  ttlRemaining: number;
-  storageType: StorageType;
-  isExpired: boolean;
-  expiresIn: {
-    ledgers: number;
-    seconds: number;
-    minutes: number;
-    hours: number;
-    days: number;
-  };
-  estimatedExpirationDate: string;
-  status: ExpirationStatus;
-  recommendation: string;
-}
-
-interface TtlExtensionEstimate {
-  currentTtl: number;
-  extendByLedgers: number;
-  newTtl: number;
-  newLiveUntilLedger?: number;
-  extendedLifetime: {
-    ledgers: number;
-    days: number;
-  };
-  estimatedCost: {
-    stroops: number;
-    xlm: string;
-  };
-  recommendation: string;
-}
+import {
+  apiErrorMessage,
+  estimateExpiration,
+  estimateTtlExtension,
+  type ExpirationEstimate,
+  type ExpirationStatus,
+  type StorageType,
+  type TtlExtensionEstimate,
+} from '@/lib/api';
 
 export default function SorobanExpirationPage() {
   const [currentLedger, setCurrentLedger] = useState('');
+  const [currentLedgerError, setCurrentLedgerError] = useState<string | null>(null);
   const [liveUntilLedger, setLiveUntilLedger] = useState('');
+  const [liveUntilLedgerError, setLiveUntilLedgerError] = useState<string | null>(null);
   const [storageType, setStorageType] = useState<StorageType>('persistent');
   const [estimate, setEstimate] = useState<ExpirationEstimate | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,66 +37,173 @@ export default function SorobanExpirationPage() {
 
   // TTL Extension form
   const [currentTtl, setCurrentTtl] = useState('');
+  const [currentTtlError, setCurrentTtlError] = useState<string | null>(null);
   const [extendByLedgers, setExtendByLedgers] = useState('');
+  const [extendByLedgersError, setExtendByLedgersError] = useState<string | null>(null);
   const [entrySizeBytes, setEntrySizeBytes] = useState('1024');
+  const [entrySizeBytesError, setEntrySizeBytesError] = useState<string | null>(null);
   const [extensionType, setExtensionType] = useState<StorageType>('persistent');
   const [extensionEstimate, setExtensionEstimate] = useState<TtlExtensionEstimate | null>(null);
   const [extensionLoading, setExtensionLoading] = useState(false);
 
+  // In-flight request controllers to abort on unmount or superseded calls
+  const expirationAbortRef = useRef<AbortController | null>(null);
+  const extensionAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      expirationAbortRef.current?.abort();
+      extensionAbortRef.current?.abort();
+    };
+  }, []);
+
   const handleEstimate = async () => {
-    setLoading(true);
     setError(null);
+    let hasValidationError = false;
+
+    const trimmedCurrent = currentLedger.trim();
+    const parsedCurrentLedger = Number.parseInt(trimmedCurrent, 10);
+    if (!trimmedCurrent) {
+      setCurrentLedgerError('Current ledger is required');
+      hasValidationError = true;
+    } else if (!Number.isFinite(parsedCurrentLedger) || !/^-?\d+$/.test(trimmedCurrent)) {
+      setCurrentLedgerError('Current ledger must be a valid integer');
+      hasValidationError = true;
+    } else if (parsedCurrentLedger < 0) {
+      setCurrentLedgerError('Current ledger must be non-negative');
+      hasValidationError = true;
+    } else {
+      setCurrentLedgerError(null);
+    }
+
+    const trimmedLiveUntil = liveUntilLedger.trim();
+    const parsedLiveUntilLedger = Number.parseInt(trimmedLiveUntil, 10);
+    if (!trimmedLiveUntil) {
+      setLiveUntilLedgerError('Live until ledger is required');
+      hasValidationError = true;
+    } else if (!Number.isFinite(parsedLiveUntilLedger) || !/^-?\d+$/.test(trimmedLiveUntil)) {
+      setLiveUntilLedgerError('Live until ledger must be a valid integer');
+      hasValidationError = true;
+    } else if (parsedLiveUntilLedger < 0) {
+      setLiveUntilLedgerError('Live until ledger must be non-negative');
+      hasValidationError = true;
+    } else {
+      setLiveUntilLedgerError(null);
+    }
+
+    if (hasValidationError) {
+      return;
+    }
+
+    expirationAbortRef.current?.abort();
+    const controller = new AbortController();
+    expirationAbortRef.current = controller;
+
+    setLoading(true);
 
     try {
-      const response = await fetch('/api/soroban/estimate-expiration', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentLedger: parseInt(currentLedger),
-          liveUntilLedger: parseInt(liveUntilLedger),
+      const data = await estimateExpiration(
+        {
+          currentLedger: parsedCurrentLedger,
+          liveUntilLedger: parsedLiveUntilLedger,
           storageType,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to estimate expiration');
+        },
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted) {
+        setEstimate(data);
       }
-
-      const data = await response.json();
-      setEstimate(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (controller.signal.aborted) return;
+      setError(apiErrorMessage(err, 'Failed to estimate expiration'));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
   const handleExtensionEstimate = async () => {
-    setExtensionLoading(true);
     setError(null);
+    let hasValidationError = false;
+
+    const trimmedCurrentTtl = currentTtl.trim();
+    const parsedCurrentTtl = Number.parseInt(trimmedCurrentTtl, 10);
+    if (!trimmedCurrentTtl) {
+      setCurrentTtlError('Current TTL is required');
+      hasValidationError = true;
+    } else if (!Number.isFinite(parsedCurrentTtl) || !/^-?\d+$/.test(trimmedCurrentTtl)) {
+      setCurrentTtlError('Current TTL must be a valid integer');
+      hasValidationError = true;
+    } else if (parsedCurrentTtl < 0) {
+      setCurrentTtlError('Current TTL must be non-negative');
+      hasValidationError = true;
+    } else {
+      setCurrentTtlError(null);
+    }
+
+    const trimmedExtendBy = extendByLedgers.trim();
+    const parsedExtendByLedgers = Number.parseInt(trimmedExtendBy, 10);
+    if (!trimmedExtendBy) {
+      setExtendByLedgersError('Extend by ledgers is required');
+      hasValidationError = true;
+    } else if (!Number.isFinite(parsedExtendByLedgers) || !/^-?\d+$/.test(trimmedExtendBy)) {
+      setExtendByLedgersError('Extend by ledgers must be a valid integer');
+      hasValidationError = true;
+    } else if (parsedExtendByLedgers < 1) {
+      setExtendByLedgersError('Extend by ledgers must be greater than 0');
+      hasValidationError = true;
+    } else {
+      setExtendByLedgersError(null);
+    }
+
+    let parsedEntrySizeBytes: number | undefined;
+    const trimmedEntrySize = entrySizeBytes.trim();
+    if (trimmedEntrySize) {
+      parsedEntrySizeBytes = Number.parseInt(trimmedEntrySize, 10);
+      if (!Number.isFinite(parsedEntrySizeBytes) || !/^-?\d+$/.test(trimmedEntrySize)) {
+        setEntrySizeBytesError('Entry size must be a valid integer');
+        hasValidationError = true;
+      } else if (parsedEntrySizeBytes < 1) {
+        setEntrySizeBytesError('Entry size must be greater than 0');
+        hasValidationError = true;
+      } else {
+        setEntrySizeBytesError(null);
+      }
+    } else {
+      setEntrySizeBytesError(null);
+    }
+
+    if (hasValidationError) {
+      return;
+    }
+
+    extensionAbortRef.current?.abort();
+    const controller = new AbortController();
+    extensionAbortRef.current = controller;
+
+    setExtensionLoading(true);
 
     try {
-      const response = await fetch('/api/soroban/estimate-ttl-extension', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentTtl: parseInt(currentTtl),
-          extendByLedgers: parseInt(extendByLedgers),
-          entrySizeBytes: parseInt(entrySizeBytes),
+      const data = await estimateTtlExtension(
+        {
+          currentTtl: parsedCurrentTtl,
+          extendByLedgers: parsedExtendByLedgers,
+          entrySizeBytes: parsedEntrySizeBytes,
           storageType: extensionType,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to estimate TTL extension');
+        },
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted) {
+        setExtensionEstimate(data);
       }
-
-      const data = await response.json();
-      setExtensionEstimate(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (controller.signal.aborted) return;
+      setError(apiErrorMessage(err, 'Failed to estimate TTL extension'));
     } finally {
-      setExtensionLoading(false);
+      if (!controller.signal.aborted) {
+        setExtensionLoading(false);
+      }
     }
   };
 
@@ -192,10 +272,22 @@ export default function SorobanExpirationPage() {
                   <Input
                     id="currentLedger"
                     type="number"
+                    min="0"
+                    step="1"
                     placeholder="e.g., 1000000"
                     value={currentLedger}
-                    onChange={(e) => setCurrentLedger(e.target.value)}
+                    onChange={(e) => {
+                      setCurrentLedger(e.target.value);
+                      if (currentLedgerError) setCurrentLedgerError(null);
+                    }}
+                    aria-invalid={Boolean(currentLedgerError)}
+                    aria-describedby={currentLedgerError ? 'currentLedger-error' : undefined}
                   />
+                  {currentLedgerError && (
+                    <p id="currentLedger-error" role="alert" className="text-xs text-destructive">
+                      {currentLedgerError}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     The current ledger sequence number
                   </p>
@@ -206,10 +298,22 @@ export default function SorobanExpirationPage() {
                   <Input
                     id="liveUntilLedger"
                     type="number"
+                    min="0"
+                    step="1"
                     placeholder="e.g., 1500000"
                     value={liveUntilLedger}
-                    onChange={(e) => setLiveUntilLedger(e.target.value)}
+                    onChange={(e) => {
+                      setLiveUntilLedger(e.target.value);
+                      if (liveUntilLedgerError) setLiveUntilLedgerError(null);
+                    }}
+                    aria-invalid={Boolean(liveUntilLedgerError)}
+                    aria-describedby={liveUntilLedgerError ? 'liveUntilLedger-error' : undefined}
                   />
+                  {liveUntilLedgerError && (
+                    <p id="liveUntilLedger-error" role="alert" className="text-xs text-destructive">
+                      {liveUntilLedgerError}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     The liveUntilLedger value from the entry
                   </p>
@@ -217,7 +321,10 @@ export default function SorobanExpirationPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="storageType">Storage Type</Label>
-                  <Select value={storageType} onValueChange={(v) => setStorageType(v as StorageType)}>
+                  <Select
+                    value={storageType}
+                    onValueChange={(v) => setStorageType(v as StorageType)}
+                  >
                     <SelectTrigger id="storageType">
                       <SelectValue />
                     </SelectTrigger>
@@ -233,7 +340,7 @@ export default function SorobanExpirationPage() {
                 </div>
               </div>
 
-              <Button onClick={handleEstimate} disabled={loading || !currentLedger || !liveUntilLedger}>
+              <Button onClick={handleEstimate} disabled={loading}>
                 {loading ? 'Calculating...' : 'Estimate Expiration'}
               </Button>
             </CardContent>
@@ -251,7 +358,9 @@ export default function SorobanExpirationPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <div className="text-sm text-muted-foreground">TTL Remaining</div>
-                    <div className="text-2xl font-bold">{estimate.ttlRemaining.toLocaleString()}</div>
+                    <div className="text-2xl font-bold">
+                      {estimate.ttlRemaining.toLocaleString()}
+                    </div>
                     <div className="text-xs text-muted-foreground">ledgers</div>
                   </div>
 
@@ -298,7 +407,7 @@ export default function SorobanExpirationPage() {
             <CardHeader>
               <CardTitle>Estimate TTL Extension Cost</CardTitle>
               <CardDescription>
-                Calculate the cost and impact of extending a storage entry's TTL
+                Calculate the cost and impact of extending a storage entry&apos;s TTL
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -308,13 +417,23 @@ export default function SorobanExpirationPage() {
                   <Input
                     id="currentTtl"
                     type="number"
+                    min="0"
+                    step="1"
                     placeholder="e.g., 100000"
                     value={currentTtl}
-                    onChange={(e) => setCurrentTtl(e.target.value)}
+                    onChange={(e) => {
+                      setCurrentTtl(e.target.value);
+                      if (currentTtlError) setCurrentTtlError(null);
+                    }}
+                    aria-invalid={Boolean(currentTtlError)}
+                    aria-describedby={currentTtlError ? 'currentTtl-error' : undefined}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Current TTL remaining in ledgers
-                  </p>
+                  {currentTtlError && (
+                    <p id="currentTtl-error" role="alert" className="text-xs text-destructive">
+                      {currentTtlError}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Current TTL remaining in ledgers</p>
                 </div>
 
                 <div className="space-y-2">
@@ -322,10 +441,22 @@ export default function SorobanExpirationPage() {
                   <Input
                     id="extendByLedgers"
                     type="number"
+                    min="1"
+                    step="1"
                     placeholder="e.g., 518400"
                     value={extendByLedgers}
-                    onChange={(e) => setExtendByLedgers(e.target.value)}
+                    onChange={(e) => {
+                      setExtendByLedgers(e.target.value);
+                      if (extendByLedgersError) setExtendByLedgersError(null);
+                    }}
+                    aria-invalid={Boolean(extendByLedgersError)}
+                    aria-describedby={extendByLedgersError ? 'extendByLedgers-error' : undefined}
                   />
+                  {extendByLedgersError && (
+                    <p id="extendByLedgers-error" role="alert" className="text-xs text-destructive">
+                      {extendByLedgersError}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Number of ledgers to extend (~518,400 = 30 days)
                   </p>
@@ -336,10 +467,22 @@ export default function SorobanExpirationPage() {
                   <Input
                     id="entrySizeBytes"
                     type="number"
+                    min="1"
+                    step="1"
                     placeholder="1024"
                     value={entrySizeBytes}
-                    onChange={(e) => setEntrySizeBytes(e.target.value)}
+                    onChange={(e) => {
+                      setEntrySizeBytes(e.target.value);
+                      if (entrySizeBytesError) setEntrySizeBytesError(null);
+                    }}
+                    aria-invalid={Boolean(entrySizeBytesError)}
+                    aria-describedby={entrySizeBytesError ? 'entrySizeBytes-error' : undefined}
                   />
+                  {entrySizeBytesError && (
+                    <p id="entrySizeBytes-error" role="alert" className="text-xs text-destructive">
+                      {entrySizeBytesError}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Size of the storage entry in bytes
                   </p>
@@ -347,7 +490,10 @@ export default function SorobanExpirationPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="extensionType">Storage Type</Label>
-                  <Select value={extensionType} onValueChange={(v) => setExtensionType(v as StorageType)}>
+                  <Select
+                    value={extensionType}
+                    onValueChange={(v) => setExtensionType(v as StorageType)}
+                  >
                     <SelectTrigger id="extensionType">
                       <SelectValue />
                     </SelectTrigger>
@@ -360,10 +506,7 @@ export default function SorobanExpirationPage() {
                 </div>
               </div>
 
-              <Button
-                onClick={handleExtensionEstimate}
-                disabled={extensionLoading || !currentTtl || !extendByLedgers}
-              >
+              <Button onClick={handleExtensionEstimate} disabled={extensionLoading}>
                 {extensionLoading ? 'Calculating...' : 'Estimate Extension Cost'}
               </Button>
             </CardContent>
@@ -381,7 +524,9 @@ export default function SorobanExpirationPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <div className="text-sm text-muted-foreground">New TTL</div>
-                    <div className="text-2xl font-bold">{extensionEstimate.newTtl.toLocaleString()}</div>
+                    <div className="text-2xl font-bold">
+                      {extensionEstimate.newTtl.toLocaleString()}
+                    </div>
                     <div className="text-xs text-muted-foreground">ledgers</div>
                   </div>
 
@@ -442,16 +587,16 @@ export default function SorobanExpirationPage() {
           <div>
             <h3 className="font-semibold mb-2">Time Calculations</h3>
             <p className="text-muted-foreground">
-              TTL is measured in ledgers. On average, Stellar produces a new ledger every ~5 seconds,
-              which equals approximately 17,280 ledgers per day.
+              TTL is measured in ledgers. On average, Stellar produces a new ledger every ~5
+              seconds, which equals approximately 17,280 ledgers per day.
             </p>
           </div>
 
           <div>
             <h3 className="font-semibold mb-2">Cost Estimates</h3>
             <p className="text-muted-foreground">
-              Extension costs are estimates based on entry size and storage type. Actual costs may vary
-              based on network conditions and protocol parameters.
+              Extension costs are estimates based on entry size and storage type. Actual costs may
+              vary based on network conditions and protocol parameters.
             </p>
           </div>
         </CardContent>

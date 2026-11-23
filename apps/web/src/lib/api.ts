@@ -2476,3 +2476,84 @@ export async function executeSorobanRpc(input: {
     body: JSON.stringify(input),
   });
 }
+
+/* ─── Soroban Storage Expiration Estimator ────────────────────────────────── */
+
+export type StorageType = 'persistent' | 'temporary' | 'instance';
+
+export type ExpirationStatus = 'healthy' | 'warning' | 'critical' | 'expired';
+
+export interface EstimateExpirationParams {
+  currentLedger: number;
+  liveUntilLedger: number;
+  storageType?: StorageType;
+  ledgerCloseTime?: number;
+}
+
+export interface ExpirationEstimate {
+  currentLedger: number;
+  liveUntilLedger: number;
+  ttlRemaining: number;
+  storageType: StorageType;
+  isExpired: boolean;
+  expiresIn: {
+    ledgers: number;
+    seconds: number;
+    minutes: number;
+    hours: number;
+    days: number;
+  };
+  estimatedExpirationDate: string;
+  status: ExpirationStatus;
+  recommendation: string;
+}
+
+export interface EstimateTtlExtensionParams {
+  currentTtl: number;
+  extendByLedgers: number;
+  entrySizeBytes?: number;
+  storageType?: StorageType;
+}
+
+export interface TtlExtensionEstimate {
+  currentTtl: number;
+  extendByLedgers: number;
+  newTtl: number;
+  newLiveUntilLedger?: number;
+  extendedLifetime: {
+    ledgers: number;
+    days: number;
+  };
+  estimatedCost: {
+    stroops: number;
+    xlm: string;
+  };
+  recommendation: string;
+}
+
+export async function estimateExpiration(
+  params: EstimateExpirationParams,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<ExpirationEstimate> {
+  return apiFetch<ExpirationEstimate>('/soroban/estimate-expiration', {
+    method: 'POST',
+    body: JSON.stringify(params),
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+export async function estimateTtlExtension(
+  params: EstimateTtlExtensionParams,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<TtlExtensionEstimate> {
+  return apiFetch<TtlExtensionEstimate>('/soroban/estimate-ttl-extension', {
+    method: 'POST',
+    body: JSON.stringify(params),
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+export const estimateSorobanExpiration = estimateExpiration;
+export const estimateSorobanTtlExtension = estimateTtlExtension;
