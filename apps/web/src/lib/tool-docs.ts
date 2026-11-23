@@ -2,7 +2,7 @@
  * Per-tool usage documentation content (see Savitura/Savitools#146).
  *
  * Every tool page on the site links to its `/docs/<slug>` page, and the
- * `/docs` index lists all ten. Each entry is kept in a consistent format:
+ * `/docs` index lists all fifteen. Each entry is kept in a consistent format:
  * overview → prerequisites → setup → usage steps → troubleshooting, so the
  * documentation is uniform in tone and structure.
  */
@@ -709,8 +709,8 @@ export const toolDocs: ToolDocs[] = [
     ],
     prerequisites: [
       'A running SaviTools API (the console reads its catalog from /api/v1/soroban-rpc/methods).',
-      'Network access from the API server to the configured Soroban RPC endpoint.',
-      'For mainnet calls, a reachable STELLAR_RPC_PUBLIC_URL (defaults to the public mainnet endpoint).',
+      'Network access from the API server to the configured Soroban RPC endpoint (STELLAR_RPC_URL for testnet, STELLAR_RPC_PUBLIC_URL for mainnet).',
+      'For reading contract storage entries and TTLs, access to the getLedgerEntries RPC method.',
     ],
     setup: [
       'Open the console from the home page or go directly to /rpc.',
@@ -827,6 +827,82 @@ export const toolDocs: ToolDocs[] = [
         issue: '"The imported envelope changes the transaction body"',
         cause: 'The incoming XDR differs from the one loaded locally (amount, destination, memo, fee \u2026).',
         fix: 'Confirm the details, then tick the replace confirmation if the change is intended.',
+      },
+    ],
+  },
+  {
+    slug: 'soroban-expiration',
+    name: 'Soroban Storage & TTL Estimator',
+    href: '/soroban-expiration',
+    tagline: 'Estimate storage expiration dates, analyze TTL remaining, and calculate extension costs across persistent, temporary, and instance storage.',
+    overview: [
+      'The Soroban Storage & TTL Estimator calculates time-to-live (TTL) and expiration schedules for smart contract data entries on the Stellar network.',
+      'Soroban enforces a state archival model where contracts pay rent to maintain entries in ledger state. Storage entries are divided into three durabilities: Persistent (long-lived state, archived upon expiration and restorable via RestoreFootprintOp), Temporary (cheaper rent, deleted permanently upon expiration with no recovery option), and Instance (contract bytecode and instance state coupled to the contract itself).',
+      'This tool translates raw ledger sequence deltas into human-readable hours, days, and projected calendar expiration dates, while calculating accurate rent extension fees in stroops and XLM.',
+    ],
+    prerequisites: [
+      'A running SaviTools API server providing the expiration estimation endpoints.',
+      'Current ledger sequence number (obtainable via Soroban RPC getLatestLedger or Horizon /ledgers).',
+      'The entry’s liveUntilLedger (found in the Soroban RPC getLedgerEntries response for the target key).',
+      'Knowledge of the entry storage durability (Persistent, Temporary, or Instance) and approximate byte size for rent fee estimation.',
+      'For network lookups, configured RPC/Horizon endpoints (STELLAR_HORIZON_URL, STELLAR_HORIZON_MAINNET_URL, and STELLAR_RPC_URL).',
+    ],
+    setup: [
+      'Open the Soroban Storage & TTL Estimator from the home page or go directly to /soroban-expiration.',
+      'Optionally switch between the Expiration Estimator and TTL Extension Cost tabs depending on your objective.',
+    ],
+    usage: [
+      {
+        title: 'Estimate storage entry expiration',
+        steps: [
+          'Select the "Expiration Estimator" tab.',
+          'Enter the Current Ledger sequence number (e.g. 1000000) or check the live ledger from the network.',
+          'Enter the Live Until Ledger sequence from your contract storage entry.',
+          'Select the Storage Type: Persistent, Temporary, or Instance.',
+          'Click "Estimate Expiration" to compute remaining ledgers, seconds, hours, days, and projected calendar expiration date.',
+          'Review the status badge (Healthy, Warning, Critical, or Expired) and the actionable protocol recommendation.',
+        ],
+      },
+      {
+        title: 'Calculate TTL extension costs',
+        steps: [
+          'Select the "TTL Extension Cost" tab.',
+          'Enter the Current TTL remaining in ledgers.',
+          'Specify the number of ledgers to extend (e.g. 172800 for ~10 days, 518400 for ~30 days, or 1555200 for ~90 days).',
+          'Provide the entry size in bytes (default: 1024 bytes) to calculate rent footprint fees.',
+          'Select the storage durability to apply appropriate rent fee multipliers (temporary storage receives a 50% discount).',
+          'Click "Calculate Extension Cost" to view the extended lifetime in days and total estimated fee in stroops and XLM.',
+        ],
+      },
+      {
+        title: 'Determine state archival and recovery strategy',
+        steps: [
+          'For Persistent storage nearing expiration (<7 days critical threshold), submit an ExtendFootprintTTLOp transaction before it expires.',
+          'If a Persistent entry has already expired, use RestoreFootprintOp to restore it from archive before submitting an ExtendFootprintTTLOp.',
+          'For Temporary storage, ensure extensions occur before expiration; once expired, temporary data is permanently purged and cannot be restored.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: '“Ledger numbers must be non-negative”',
+        cause: 'Negative integers were supplied for currentLedger or liveUntilLedger.',
+        fix: 'Enter valid positive ledger sequence numbers.',
+      },
+      {
+        issue: '“Entry has expired and cannot be recovered”',
+        cause: 'Temporary storage entry reached TTL = 0. Soroban permanently prunes temporary entries without archiving them.',
+        fix: 'Temporary data cannot be restored. Recreate or re-initialize the entry, or use Persistent storage if durability is required.',
+      },
+      {
+        issue: '“RPC or Horizon endpoint unreachable”',
+        cause: 'The API server cannot connect to the configured STELLAR_HORIZON_URL or Soroban RPC endpoint.',
+        fix: 'Verify your network connection and ensure STELLAR_HORIZON_URL, STELLAR_HORIZON_MAINNET_URL, and STELLAR_RPC_URL are set to active endpoints.',
+      },
+      {
+        issue: '“Live until ledger is earlier than current ledger”',
+        cause: 'The entry expired in a past ledger sequence.',
+        fix: 'The tool marks this as expired. For persistent storage, initiate a RestoreFootprintOp transaction.',
       },
     ],
   },

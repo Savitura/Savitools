@@ -202,7 +202,7 @@ export class SorobanService {
         try {
           // Get current ledger
           const ledgerResponse = await server.ledgers().order('desc').limit(1).call();
-          const currentLedger = ledgerResponse.records[0]?.sequence || 0;
+          const _currentLedger = ledgerResponse.records[0]?.sequence || 0;
 
           // Fetch contract data (this is simplified - in production you'd use RPC)
           // For now, return mock data structure
