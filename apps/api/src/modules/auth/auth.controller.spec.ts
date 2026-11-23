@@ -8,6 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthController, clientAddress } from './auth.controller';
 import { AuthService } from './auth.service';
+import { FluxaOAuthService } from './fluxa-oauth.service';
+import { PasskeyAuthService } from './passkey-auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import {
@@ -20,6 +22,8 @@ import {
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: jest.Mocked<Partial<AuthService>>;
+  let passkeyAuthService: jest.Mocked<Partial<PasskeyAuthService>>;
+  let fluxaOAuthService: jest.Mocked<Partial<FluxaOAuthService>>;
   let configService: jest.Mocked<Partial<ConfigService>>;
   let redis: {
     set: jest.Mock;
@@ -80,11 +84,17 @@ describe('AuthController', () => {
       listSessions: jest.fn(),
       revokeSession: jest.fn(),
       getUserById: jest.fn(),
+    };
+
+    fluxaOAuthService = {
       fluxaLink: jest.fn(),
       listConnectedAccounts: jest.fn(),
       beginFluxaConnect: jest.fn(),
       completeFluxaConnect: jest.fn(),
       disconnectProvider: jest.fn(),
+    };
+
+    passkeyAuthService = {
       requestPasskeyReauth: jest.fn(),
       beginPasskeyRegistration: jest.fn(),
       verifyPasskeyRegistration: jest.fn(),
@@ -110,6 +120,8 @@ describe('AuthController', () => {
 
     controller = new AuthController(
       authService as unknown as AuthService,
+      passkeyAuthService as unknown as PasskeyAuthService,
+      fluxaOAuthService as unknown as FluxaOAuthService,
       configService as unknown as ConfigService,
       redis as never,
     );
@@ -480,7 +492,7 @@ describe('AuthController', () => {
   describe('fluxa link and OAuth', () => {
     it('fluxa handles logged-in user link', async () => {
       authService.getUserById = jest.fn().mockResolvedValue(mockUser);
-      authService.fluxaLink = jest.fn().mockResolvedValue({
+      fluxaOAuthService.fluxaLink = jest.fn().mockResolvedValue({
         user: mockUser,
         tokens: mockTokens,
       });
@@ -494,7 +506,7 @@ describe('AuthController', () => {
       const result = await controller.fluxa({ apiKey: 'fluxa-key' }, req, reply);
 
       expect(authService.getUserById).toHaveBeenCalledWith(mockUser.id);
-      expect(authService.fluxaLink).toHaveBeenCalledWith({ apiKey: 'fluxa-key' }, mockUser, {
+      expect(fluxaOAuthService.fluxaLink).toHaveBeenCalledWith({ apiKey: 'fluxa-key' }, mockUser, {
         ipAddress: '10.1.2.3',
         userAgent: 'fluxa-client',
       });
@@ -509,7 +521,7 @@ describe('AuthController', () => {
     });
 
     it('fluxa handles anonymous link when req.user is undefined', async () => {
-      authService.fluxaLink = jest.fn().mockResolvedValue({
+      fluxaOAuthService.fluxaLink = jest.fn().mockResolvedValue({
         user: mockUser,
         tokens: mockTokens,
       });
@@ -519,7 +531,7 @@ describe('AuthController', () => {
       const result = await controller.fluxa({ apiKey: 'fluxa-key' }, req, reply);
 
       expect(authService.getUserById).not.toHaveBeenCalled();
-      expect(authService.fluxaLink).toHaveBeenCalledWith(
+      expect(fluxaOAuthService.fluxaLink).toHaveBeenCalledWith(
         { apiKey: 'fluxa-key' },
         undefined,
         expect.any(Object),
@@ -533,36 +545,36 @@ describe('AuthController', () => {
       });
     });
 
-    it('listConnectedAccounts calls authService.listConnectedAccounts', async () => {
+    it('listConnectedAccounts calls fluxaOAuthService.listConnectedAccounts', async () => {
       const accounts = [{ id: 'ca-1', provider: 'fluxa', connectedAt: new Date() }];
-      authService.listConnectedAccounts = jest.fn().mockResolvedValue(accounts as never);
+      fluxaOAuthService.listConnectedAccounts = jest.fn().mockResolvedValue(accounts as never);
 
       const result = await controller.listConnectedAccounts({ id: mockUser.id });
 
-      expect(authService.listConnectedAccounts).toHaveBeenCalledWith(mockUser.id);
+      expect(fluxaOAuthService.listConnectedAccounts).toHaveBeenCalledWith(mockUser.id);
       expect(result).toEqual(accounts);
     });
 
-    it('beginFluxaConnect delegates to authService.beginFluxaConnect with redis', async () => {
+    it('beginFluxaConnect delegates to fluxaOAuthService.beginFluxaConnect with redis', async () => {
       const redirect = { url: 'https://auth.fluxa.example.com/oauth' };
-      authService.beginFluxaConnect = jest.fn().mockResolvedValue(redirect);
+      fluxaOAuthService.beginFluxaConnect = jest.fn().mockResolvedValue(redirect);
 
       const result = await controller.beginFluxaConnect({ id: mockUser.id });
 
-      expect(authService.beginFluxaConnect).toHaveBeenCalledWith(mockUser.id, redis);
+      expect(fluxaOAuthService.beginFluxaConnect).toHaveBeenCalledWith(mockUser.id, redis);
       expect(result).toEqual(redirect);
     });
 
     it('fluxaCallback completes oauth connection and returns account details', async () => {
       const account = { id: 'ca-1', provider: 'fluxa', connectedAt: new Date() };
-      authService.completeFluxaConnect = jest.fn().mockResolvedValue(account as never);
+      fluxaOAuthService.completeFluxaConnect = jest.fn().mockResolvedValue(account as never);
       const req = createMockRequest({
         query: { code: 'oauth-code', state: 'oauth-state' },
       }) as never;
 
       const result = await controller.fluxaCallback(req);
 
-      expect(authService.completeFluxaConnect).toHaveBeenCalledWith(
+      expect(fluxaOAuthService.completeFluxaConnect).toHaveBeenCalledWith(
         'oauth-code',
         'oauth-state',
         redis,
@@ -574,12 +586,12 @@ describe('AuthController', () => {
       });
     });
 
-    it('disconnectProvider calls authService.disconnectProvider and returns success', async () => {
-      authService.disconnectProvider = jest.fn().mockResolvedValue(undefined);
+    it('disconnectProvider calls fluxaOAuthService.disconnectProvider and returns success', async () => {
+      fluxaOAuthService.disconnectProvider = jest.fn().mockResolvedValue(undefined);
 
       const result = await controller.disconnectProvider('fluxa', { id: mockUser.id });
 
-      expect(authService.disconnectProvider).toHaveBeenCalledWith(mockUser.id, 'fluxa');
+      expect(fluxaOAuthService.disconnectProvider).toHaveBeenCalledWith(mockUser.id, 'fluxa');
       expect(result).toEqual({ success: true });
     });
   });
@@ -612,29 +624,29 @@ describe('AuthController', () => {
   });
 
   describe('passkeys', () => {
-    it('reauthenticate delegates to authService.requestPasskeyReauth', async () => {
+    it('reauthenticate delegates to passkeyAuthService.requestPasskeyReauth', async () => {
       const grant = { reauthToken: 'reauth-grant-token', expiresAt: new Date() };
-      authService.requestPasskeyReauth = jest.fn().mockResolvedValue(grant);
+      passkeyAuthService.requestPasskeyReauth = jest.fn().mockResolvedValue(grant);
 
       const result = await controller.reauthenticate(
         { id: mockUser.id },
         { password: 'Password123!' },
       );
 
-      expect(authService.requestPasskeyReauth).toHaveBeenCalledWith(mockUser.id, 'Password123!');
+      expect(passkeyAuthService.requestPasskeyReauth).toHaveBeenCalledWith(mockUser.id, 'Password123!');
       expect(result).toEqual(grant);
     });
 
-    it('beginPasskeyRegistration delegates to authService.beginPasskeyRegistration', async () => {
+    it('beginPasskeyRegistration delegates to passkeyAuthService.beginPasskeyRegistration', async () => {
       const options = { challenge: 'passkey-challenge-string' };
-      authService.beginPasskeyRegistration = jest.fn().mockResolvedValue(options as never);
+      passkeyAuthService.beginPasskeyRegistration = jest.fn().mockResolvedValue(options as never);
 
       const result = await controller.beginPasskeyRegistration(
         { id: mockUser.id },
         { reauthToken: 'reauth-grant' },
       );
 
-      expect(authService.beginPasskeyRegistration).toHaveBeenCalledWith(
+      expect(passkeyAuthService.beginPasskeyRegistration).toHaveBeenCalledWith(
         mockUser.id,
         'reauth-grant',
       );
@@ -647,7 +659,7 @@ describe('AuthController', () => {
         name: 'MacBook Touch ID',
         createdAt: new Date(),
       };
-      authService.verifyPasskeyRegistration = jest.fn().mockResolvedValue(credential as never);
+      passkeyAuthService.verifyPasskeyRegistration = jest.fn().mockResolvedValue(credential as never);
 
       const result = await controller.verifyPasskeyRegistration(
         { id: mockUser.id },
@@ -659,7 +671,7 @@ describe('AuthController', () => {
         },
       );
 
-      expect(authService.verifyPasskeyRegistration).toHaveBeenCalledWith(
+      expect(passkeyAuthService.verifyPasskeyRegistration).toHaveBeenCalledWith(
         mockUser.id,
         'reauth-grant',
         'MacBook Touch ID',
@@ -669,18 +681,18 @@ describe('AuthController', () => {
       expect(result).toEqual({ passkey: credential });
     });
 
-    it('beginPasskeyLogin delegates to authService.beginPasskeyLogin with optional email', async () => {
+    it('beginPasskeyLogin delegates to passkeyAuthService.beginPasskeyLogin with optional email', async () => {
       const options = { challenge: 'login-challenge' };
-      authService.beginPasskeyLogin = jest.fn().mockResolvedValue(options as never);
+      passkeyAuthService.beginPasskeyLogin = jest.fn().mockResolvedValue(options as never);
 
       const result = await controller.beginPasskeyLogin({ email: 'user@example.com' });
 
-      expect(authService.beginPasskeyLogin).toHaveBeenCalledWith('user@example.com');
+      expect(passkeyAuthService.beginPasskeyLogin).toHaveBeenCalledWith('user@example.com');
       expect(result).toEqual(options);
     });
 
     it('verifyPasskeyLogin validates assertion, sets auth cookies, and returns user', async () => {
-      authService.verifyPasskeyLogin = jest.fn().mockResolvedValue({
+      passkeyAuthService.verifyPasskeyLogin = jest.fn().mockResolvedValue({
         user: mockUser,
         tokens: mockTokens,
       });
@@ -696,7 +708,7 @@ describe('AuthController', () => {
         reply,
       );
 
-      expect(authService.verifyPasskeyLogin).toHaveBeenCalledWith(
+      expect(passkeyAuthService.verifyPasskeyLogin).toHaveBeenCalledWith(
         { id: 'assert-id' },
         {
           ipAddress: '192.168.1.50',
@@ -714,18 +726,18 @@ describe('AuthController', () => {
       });
     });
 
-    it('listPasskeys delegates to authService.listPasskeys', async () => {
+    it('listPasskeys delegates to passkeyAuthService.listPasskeys', async () => {
       const passkeys = [{ id: 'pk-1', name: 'YubiKey', createdAt: new Date() }];
-      authService.listPasskeys = jest.fn().mockResolvedValue(passkeys as never);
+      passkeyAuthService.listPasskeys = jest.fn().mockResolvedValue(passkeys as never);
 
       const result = await controller.listPasskeys({ id: mockUser.id });
 
-      expect(authService.listPasskeys).toHaveBeenCalledWith(mockUser.id);
+      expect(passkeyAuthService.listPasskeys).toHaveBeenCalledWith(mockUser.id);
       expect(result).toEqual(passkeys);
     });
 
-    it('renamePasskey delegates to authService.renamePasskey', async () => {
-      authService.renamePasskey = jest.fn().mockResolvedValue(undefined);
+    it('renamePasskey delegates to passkeyAuthService.renamePasskey', async () => {
+      passkeyAuthService.renamePasskey = jest.fn().mockResolvedValue(undefined);
 
       const result = await controller.renamePasskey(
         'pk-1',
@@ -733,7 +745,7 @@ describe('AuthController', () => {
         { name: 'New Name', reauthToken: 'reauth-grant' },
       );
 
-      expect(authService.renamePasskey).toHaveBeenCalledWith(
+      expect(passkeyAuthService.renamePasskey).toHaveBeenCalledWith(
         'pk-1',
         mockUser.id,
         'New Name',
@@ -742,8 +754,8 @@ describe('AuthController', () => {
       expect(result).toEqual({ success: true });
     });
 
-    it('revokePasskey delegates to authService.revokePasskey', async () => {
-      authService.revokePasskey = jest.fn().mockResolvedValue(undefined);
+    it('revokePasskey delegates to passkeyAuthService.revokePasskey', async () => {
+      passkeyAuthService.revokePasskey = jest.fn().mockResolvedValue(undefined);
 
       const result = await controller.revokePasskey(
         'pk-1',
@@ -751,7 +763,7 @@ describe('AuthController', () => {
         { reauthToken: 'reauth-grant' },
       );
 
-      expect(authService.revokePasskey).toHaveBeenCalledWith('pk-1', mockUser.id, 'reauth-grant');
+      expect(passkeyAuthService.revokePasskey).toHaveBeenCalledWith('pk-1', mockUser.id, 'reauth-grant');
       expect(result).toEqual({ success: true });
     });
   });

@@ -5,6 +5,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { createClient } from 'redis';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { FluxaOAuthService } from './fluxa-oauth.service';
+import { PasskeyAuthService } from './passkey-auth.service';
+import { SessionService } from './session.service';
+import { VaultKeyService } from './vault-key.service';
 import { ConnectedAccount } from './entities/connected-account.entity';
 import { PasskeyCredential } from './entities/passkey.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -28,6 +32,10 @@ import { VaultController } from './vault.controller';
   controllers: [AuthController, VaultController],
   providers: [
     AuthService,
+    SessionService,
+    PasskeyAuthService,
+    FluxaOAuthService,
+    VaultKeyService,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     {
@@ -45,6 +53,12 @@ import { VaultController } from './vault.controller';
       },
     },
   ],
-  exports: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, JwtModule, 'REDIS_CLIENT'],
+  exports: [
+    AuthService,
+    SessionService,
+    PasskeyAuthService,
+    FluxaOAuthService,
+    VaultKeyService,
+    JwtAuthGuard, OptionalJwtAuthGuard, JwtModule, 'REDIS_CLIENT'],
 })
 export class AuthModule {}

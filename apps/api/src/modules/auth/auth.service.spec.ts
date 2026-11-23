@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   GoneException,
   Logger,
@@ -9,116 +8,21 @@ import {
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHash } from 'crypto';
+import { REFRESH_TOKEN_REUSE_GRACE_MS } from './auth.constants';
 import { AuthService } from './auth.service';
+import { SessionService } from './session.service';
 import {
-  DISCOVERABLE_CHALLENGE_OWNER,
-  REFRESH_TOKEN_REUSE_GRACE_MS,
-} from './auth.constants';
-import { EncryptionService } from '../../common/encryption.service';
-
-function mockRepo() {
-  return {
-    findOne: jest.fn(),
-    find: jest.fn(),
-    create: jest.fn((dto: Record<string, unknown>): Record<string, unknown> => ({ id: 'uuid-1', ...dto })),
-    save: jest.fn(async (entity: unknown) => entity),
-    update: jest.fn(async () => ({ affected: 1 })),
-    delete: jest.fn(async () => ({ affected: 1 })),
-    remove: jest.fn(async (entity: unknown) => entity),
-  };
-}
-
-/**
- * In-memory refresh_tokens table used to exercise the atomic
- * consume-and-rotate logic under real (single-process, event-loop)
- * concurrency, mirroring the WHERE revoked_at IS NULL semantics a
- * Postgres UPDATE would enforce at the row-lock level.
- */
-function fakeRefreshTokenTable(seed: Array<Record<string, unknown>>) {
-  const rows = new Map<string, Record<string, unknown>>(
-    seed.map((row) => [row.id as string, { ...row }]),
-  );
-  let counter = rows.size;
-
-  return {
-    _rows: rows,
-    create: jest.fn((dto: Record<string, unknown>) => ({
-      id: `rt-new-${++counter}`,
-      revokedAt: null,
-      ...dto,
-    })),
-    save: jest.fn(async (entity: Record<string, unknown>) => {
-      rows.set(entity.id as string, entity);
-      return entity;
-    }),
-    findOne: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
-      for (const row of rows.values()) {
-        if (where.id !== undefined && row.id !== where.id) continue;
-        if (where.tokenHash !== undefined && row.tokenHash !== where.tokenHash) continue;
-        return { ...row };
-      }
-      return null;
-    }),
-    // Simulates `UPDATE ... WHERE id = :id AND revoked_at IS NULL` (or a
-    // family-wide revoke with no revokedAt condition) — synchronous
-    // check-then-set, exactly like a single atomic SQL statement.
-    update: jest.fn(
-      async (
-        criteria: { id?: string; familyId?: string; revokedAt?: unknown },
-        partial: Record<string, unknown>,
-      ) => {
-        let affected = 0;
-        for (const row of rows.values()) {
-          if (criteria.id !== undefined && row.id !== criteria.id) continue;
-          if (criteria.familyId !== undefined && row.familyId !== criteria.familyId) continue;
-          if ('revokedAt' in criteria && row.revokedAt !== null) continue;
-          Object.assign(row, partial);
-          affected++;
-        }
-        return { affected };
-      },
-    ),
-    delete: jest.fn(async () => ({ affected: 1 })),
-    find: jest.fn(async () => Array.from(rows.values())),
-  };
-}
-
-function mockJwt() {
-  return {
-    sign: jest.fn(() => 'mock-access-token'),
-    verify: jest.fn((token: string) => {
-      if (token === 'mock-access-token' || token === 'mock-reauth-token') {
-        return { sub: 'u-passkey', scope: 'passkey-reauth' };
-      }
-      // Minted reauth tokens: sign is stubbed to a constant, but tests pass
-      // whatever requestPasskeyReauth returned — accept tokens signed for reauth.
-      throw new Error('invalid token');
-    }),
-  };
-}
-
-function mockConfig() {
-  return {
-    getOrThrow: jest.fn((key: string) => {
-      if (key === 'JWT_SECRET') return 'test-secret';
-      if (key === 'ENCRYPTION_SECRET') return 'test-encryption-secret-32-bytes!!';
-      throw new Error(`Missing config key: ${key}`);
-    }),
-    get: jest.fn((key: string, defaultValue?: unknown) => {
-      if (key === 'NODE_ENV') return 'test';
-      if (key === 'RESEND_API_KEY') return undefined; // no email sending in tests
-      return defaultValue ?? undefined;
-    }),
-  };
-}
+  fakeRefreshTokenTable,
+  hashTestPassword,
+  mockConfig,
+  mockJwt,
+  mockRepo,
+} from './testing/auth-test-helpers';
 
 describe('AuthService', () => {
   let service: AuthService;
   let usersRepo: ReturnType<typeof mockRepo>;
   let refreshTokensRepo: ReturnType<typeof mockRepo>;
-  let connectedAccountsRepo: ReturnType<typeof mockRepo>;
-  let vaultKeysRepo: ReturnType<typeof mockRepo>;
-  let passkeysRepo: ReturnType<typeof mockRepo>;
   let jwt: ReturnType<typeof mockJwt>;
   let config: ReturnType<typeof mockConfig>;
 
@@ -126,282 +30,24 @@ describe('AuthService', () => {
   let passwordHash: string;
 
   beforeAll(async () => {
-    passwordHash = await argon2.hash('password123', {
-      type: argon2.argon2id,
-      memoryCost: 1024, // low cost for tests
-      timeCost: 1,
-      parallelism: 1,
-    });
+    passwordHash = await hashTestPassword();
   });
 
   beforeEach(() => {
     usersRepo = mockRepo();
     refreshTokensRepo = mockRepo();
-    connectedAccountsRepo = mockRepo();
-    vaultKeysRepo = mockRepo();
-    passkeysRepo = mockRepo();
     jwt = mockJwt();
     config = mockConfig();
 
     service = new AuthService(
       usersRepo as any,
       refreshTokensRepo as any,
-      connectedAccountsRepo as any,
-      vaultKeysRepo as any,
-      passkeysRepo as any,
-      jwt as any,
+      new SessionService(refreshTokensRepo as any, jwt as any, config as any),
       config as any,
-      new EncryptionService(config as any),
     );
   });
 
   // ─── register ──────────────────────────────────────────────────────────────
-
-  describe('passkeys (Savitura/Savitools#218)', () => {
-    const user = () => ({
-      id: 'u-passkey',
-      email: 'passkey@example.com',
-      emailVerified: true,
-      passwordHash,
-    });
-    it('requires a valid reauthentication grant to register', async () => {
-      usersRepo.findOne.mockResolvedValue(user());
-      const grant = await service.requestPasskeyReauth(user().id, 'password123');
-      usersRepo.findOne.mockResolvedValue(user());
-      passkeysRepo.find.mockResolvedValue([]);
-
-      await expect(
-        service.beginPasskeyRegistration(user().id, 'forged-grant'),
-      ).rejects.toThrow(UnauthorizedException);
-      await expect(
-        service.beginPasskeyRegistration(user().id, grant.reauthToken),
-      ).resolves.toBeDefined();
-    });
-
-    it('rejects reauthentication with a wrong password', async () => {
-      usersRepo.findOne.mockResolvedValue(user());
-      await expect(
-        service.requestPasskeyReauth(user().id, 'wrong-password'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('issues single-use, short-lived challenges bound to the RP', async () => {
-      usersRepo.findOne.mockResolvedValue(user());
-      passkeysRepo.find.mockResolvedValue([]);
-      const grant = await service.requestPasskeyReauth(user().id, 'password123');
-
-      const { options } = await service.beginPasskeyRegistration(
-        user().id,
-        grant.reauthToken,
-      );
-      expect(options.rp.name).toBe('SaviTools');
-      expect(options.challenge).toBeDefined();
-
-      // The challenge is stored for this user only. The store is a
-      // BoundedTtlMap, so the expiry lives on the map (#291).
-      const stored = (service as any).passkeyChallenges;
-      const entry = stored
-        .keys()
-        .map((key: string) => stored.get(key))
-        .find((e: any) => e?.challenge === options.challenge);
-      expect(entry.rpId).toBe('localhost');
-      expect(entry.type).toBe('registration');
-      expect(stored.ttl).toBe(120_000);
-      expect(stored.capacity).toBe(10_000);
-    });
-
-    it('revoked credentials cannot authenticate', async () => {
-      passkeysRepo.findOne.mockResolvedValue({
-        id: 'cred-1',
-        userId: user().id,
-        user: user(),
-        credentialId: 'cred-id-1',
-        publicKey: Buffer.from('pubkey').toString('base64url'),
-        counter: 0,
-        transports: null,
-        revokedAt: new Date(),
-      });
-
-      await expect(
-        service.verifyPasskeyLogin({
-          id: 'cred-id-1',
-          rawId: 'cred-id-1',
-          type: 'public-key',
-          response: { challenge: 'x' } as any,
-        } as any),
-      ).rejects.toThrow(/PASSKEY_REVOKED/);
-    });
-
-    it('lets a usernameless login consume the challenge it was issued (#287)', () => {
-      const rpId = 'localhost';
-      // beginPasskeyLogin without an email keys the challenge under the
-      // discoverable owner; nothing is written to challengeKeyCache.
-      (service as any).storePasskeyChallenge(
-        DISCOVERABLE_CHALLENGE_OWNER,
-        'assertion',
-        'challenge-discoverable',
-        rpId,
-      );
-
-      // The assertion names a credential owned by a real user, which is the
-      // only thing the server learns at verification time.
-      expect(() =>
-        (service as any).claimAssertionChallenge(
-          'challenge-discoverable',
-          'cred-id-1',
-          'u-passkey',
-          rpId,
-        ),
-      ).not.toThrow();
-
-      // Still single-use.
-      expect(() =>
-        (service as any).claimAssertionChallenge(
-          'challenge-discoverable',
-          'cred-id-1',
-          'u-passkey',
-          rpId,
-        ),
-      ).toThrow(/PASSKEY_CHALLENGE_INVALID/);
-    });
-
-    it('does not let the discoverable owner stand in for a user-owned challenge (#287)', () => {
-      const rpId = 'localhost';
-      (service as any).storePasskeyChallenge('u-passkey', 'assertion', 'challenge-user', rpId);
-
-      // Another user's credential holds no challenge of its own, and the
-      // fallback reaches only the discoverable owner — so this must fail.
-      expect(() =>
-        (service as any).claimAssertionChallenge('challenge-user', 'cred-id-2', 'u-other', rpId),
-      ).toThrow(/PASSKEY_CHALLENGE_INVALID/);
-
-      // The user the challenge was issued for can still consume it.
-      expect(() =>
-        (service as any).claimAssertionChallenge('challenge-user', 'cred-id-1', 'u-passkey', rpId),
-      ).not.toThrow();
-    });
-
-    it('rejects an assertion whose challenge was already consumed', async () => {
-      const rpId = 'localhost';
-      (service as any).storePasskeyChallenge(
-        'u-passkey',
-        'assertion',
-        'challenge-abc',
-        rpId,
-      );
-
-      // Consume it once via the claim path (allowed-list branch returns
-      // early only when allowCredentials were used, so discoverable flow
-      // keys by userId).
-      (service as any).claimAssertionChallenge(
-        'challenge-abc',
-        'cred-id-1',
-        'u-passkey',
-        rpId,
-      );
-
-      expect(() =>
-        (service as any).claimAssertionChallenge(
-          'challenge-abc',
-          'cred-id-1',
-          'u-passkey',
-          rpId,
-        ),
-      ).toThrow(/PASSKEY_CHALLENGE_INVALID/);
-    });
-
-    it('rejects assertions with a credential outside the challenge allow-list', async () => {
-      const rpId = 'localhost';
-      const allowed = [{ id: 'cred-allowed' }];
-      (service as any).storePasskeyChallenge(
-        (service as any).userIdForChallenge(allowed),
-        'assertion',
-        'challenge-allow',
-        rpId,
-        allowed.map((c) => c.id),
-      );
-
-      expect(() =>
-        (service as any).claimAssertionChallenge(
-          'challenge-allow',
-          'cred-allowed',
-          'u1',
-          rpId,
-        ),
-      ).not.toThrow();
-
-      // Re-issue and try a foreign credential
-      (service as any).storePasskeyChallenge(
-        (service as any).userIdForChallenge(allowed),
-        'assertion',
-        'challenge-allow-2',
-        rpId,
-        allowed.map((c) => c.id),
-      );
-      expect(() =>
-        (service as any).claimAssertionChallenge(
-          'challenge-allow-2',
-          'cred-foreign',
-          'u2',
-          rpId,
-        ),
-      ).toThrow(/PASSKEY_CHALLENGE_MISMATCH/);
-    });
-
-    it('renames and revokes credentials only with a fresh reauth grant', async () => {
-      usersRepo.findOne.mockResolvedValue(user());
-      passkeysRepo.findOne.mockResolvedValue({
-        id: 'cred-1',
-        userId: user().id,
-        name: 'Old',
-        revokedAt: null,
-      });
-      passkeysRepo.save.mockImplementation(async (e: any) => e);
-
-      const grant = await service.requestPasskeyReauth(user().id, 'password123');
-
-      await expect(
-        service.renamePasskey('cred-1', user().id, 'New Name', 'forged'),
-      ).rejects.toThrow(UnauthorizedException);
-      await expect(
-        service.renamePasskey('cred-1', user().id, 'New Name', grant.reauthToken),
-      ).resolves.toBeUndefined();
-
-      const revokeGrant = await service.requestPasskeyReauth(
-        user().id,
-        'password123',
-      );
-      await expect(
-        service.revokePasskey('cred-1', user().id, revokeGrant.reauthToken),
-      ).resolves.toBeUndefined();
-
-      const saved: any = passkeysRepo.save.mock.calls.flat().pop();
-      expect(saved.revokedAt).toBeInstanceOf(Date);
-    });
-
-    it('lists credentials including revoked ones with their state', async () => {
-      passkeysRepo.find.mockResolvedValue([
-        {
-          id: 'cred-1',
-          name: 'MacBook',
-          createdAt: new Date(),
-          lastUsedAt: null,
-          revokedAt: null,
-        },
-        {
-          id: 'cred-2',
-          name: 'Phone',
-          createdAt: new Date(),
-          lastUsedAt: new Date(),
-          revokedAt: new Date(),
-        },
-      ]);
-
-      const list = await service.listPasskeys(user().id);
-      expect(list).toHaveLength(2);
-      expect(list.find((p) => p.id === 'cred-2')?.revokedAt).toBeInstanceOf(Date);
-    });
-  });
 
   describe('register', () => {
     it('creates a new user and returns { userId, message }', async () => {
@@ -528,12 +174,8 @@ describe('AuthService', () => {
       const prodService = new AuthService(
         usersRepo as any,
         refreshTokensRepo as any,
-        connectedAccountsRepo as any,
-        vaultKeysRepo as any,
-        passkeysRepo as any,
-        jwt as any,
+        new SessionService(refreshTokensRepo as any, jwt as any, prodConfig as any),
         prodConfig as any,
-        new EncryptionService(prodConfig as any),
       );
 
       const createdUser = { id: 'u-prod', email: 'prod@example.com' };
@@ -567,12 +209,8 @@ describe('AuthService', () => {
       const prodService = new AuthService(
         usersRepo as any,
         refreshTokensRepo as any,
-        connectedAccountsRepo as any,
-        vaultKeysRepo as any,
-        passkeysRepo as any,
-        jwt as any,
+        new SessionService(refreshTokensRepo as any, jwt as any, prodConfig as any),
         prodConfig as any,
-        new EncryptionService(prodConfig as any),
       );
 
       const mockSend = jest.fn().mockRejectedValue(new Error('Resend network outage'));
@@ -617,12 +255,8 @@ describe('AuthService', () => {
       const prodService = new AuthService(
         usersRepo as any,
         refreshTokensRepo as any,
-        connectedAccountsRepo as any,
-        vaultKeysRepo as any,
-        passkeysRepo as any,
-        jwt as any,
+        new SessionService(refreshTokensRepo as any, jwt as any, prodConfig as any),
         prodConfig as any,
-        new EncryptionService(prodConfig as any),
       );
 
       const mockSend = jest.fn().mockResolvedValue({ id: 'msg-1' });
@@ -826,12 +460,8 @@ describe('AuthService', () => {
         const svc = new AuthService(
           usersRepo as any,
           table as any,
-          connectedAccountsRepo as any,
-          vaultKeysRepo as any,
-          passkeysRepo as any,
-          jwt as any,
+          new SessionService(table as any, jwt as any, config as any),
           config as any,
-          new EncryptionService(config as any),
         );
         return { svc, table };
       }
@@ -950,67 +580,6 @@ describe('AuthService', () => {
     });
   });
 
-  // ─── vault ─────────────────────────────────────────────────────────────────
-
-  describe('createVaultKey', () => {
-    it('encrypts key and does not return plaintext', async () => {
-      const savedKey = { id: 'vk1', name: 'My Key', provider: 'fluxa', createdAt: new Date() };
-      vaultKeysRepo.create.mockReturnValue(savedKey);
-      vaultKeysRepo.save.mockResolvedValue(savedKey);
-
-      const result = await service.createVaultKey('u1', {
-        name: 'My Key',
-        provider: 'fluxa' as any,
-        key: 'secret-api-key',
-      });
-
-      expect(result.id).toBe('vk1');
-      expect(result).not.toHaveProperty('key');
-      expect(result).not.toHaveProperty('encryptedKey');
-
-      // Verify what was stored is encrypted (not the plaintext)
-      const createArgs = vaultKeysRepo.create.mock.calls[0][0];
-      expect(createArgs.encryptedKey).toBeDefined();
-      expect(createArgs.encryptedKey).not.toBe('secret-api-key');
-    });
-  });
-
-  describe('resolveKey', () => {
-    it('returns decrypted vault key when one exists', async () => {
-      // Encrypt a test key so we can verify round-trip
-      const userId = 'u1';
-      const plainKey = 'my-fluxa-api-key';
-
-      // Use the service internals via the public createVaultKey path
-      const encryptedData = (service as any).encryptForUser(
-        userId,
-        plainKey,
-        'savitools-vault-key-v1',
-      );
-
-      vaultKeysRepo.findOne.mockResolvedValue({
-        id: 'vk1',
-        userId,
-        provider: 'fluxa',
-        encryptedKey: encryptedData.encrypted,
-        iv: encryptedData.iv,
-        authTag: encryptedData.authTag,
-        createdAt: new Date(),
-      });
-
-      const resolved = await service.resolveKey(userId, 'fluxa');
-      expect(resolved).toBe(plainKey);
-    });
-
-    it('returns null when no key exists for the provider', async () => {
-      vaultKeysRepo.findOne.mockResolvedValue(null);
-      connectedAccountsRepo.findOne.mockResolvedValue(null);
-
-      const resolved = await service.resolveKey('u1', 'fluxa');
-      expect(resolved).toBeNull();
-    });
-  });
-
   // ─── getUserById ───────────────────────────────────────────────────────────
 
   describe('getUserById', () => {
@@ -1018,208 +587,6 @@ describe('AuthService', () => {
       usersRepo.findOne.mockResolvedValue({ id: 'user-1' });
       const result = await service.getUserById('user-1');
       expect(result).toEqual({ id: 'user-1' });
-    });
-  });
-
-  // ─── fluxaLink (Fluxa SSO) ─────────────────────────────────────────────────
-
-  describe('fluxaLink', () => {
-    const fluxaApiKey = 'flx_valid-key';
-    const fluxaEmail = (tenantId: string) => `fluxa-${tenantId}@savitools.local`;
-
-    const tenantIdFor = (apiKey: string) => {
-      const hash = createHash('sha256').update(apiKey).digest('hex').slice(0, 16);
-      return `fluxa_${hash}`;
-    };
-
-    const fluxaDto = (apiKey: string, confirmLink?: boolean) => ({
-      apiKey,
-      ...(confirmLink === undefined ? {} : { confirmLink }),
-    });
-
-    /**
-     * Stateful users repo mirroring the unique fluxa_tenant_id / email
-     * constraints, so repeated fluxaLink calls exercise the same paths a
-     * real database would (return login, idempotent relink).
-     */
-    const withFakeUsersTable = (seed: Array<Record<string, unknown>> = []) => {
-      const rows = new Map<string, Record<string, unknown>>();
-      for (const row of seed) {
-        if (row.email) rows.set(`email:${row.email}`, row);
-        if (row.fluxaTenantId) rows.set(`tenant:${row.fluxaTenantId}`, row);
-      }
-      let counter = 0;
-      usersRepo.findOne.mockImplementation(
-        async ({ where }: { where: Record<string, unknown> }) => {
-          if (where.fluxaTenantId) return rows.get(`tenant:${where.fluxaTenantId}`) ?? null;
-          if (where.email) return rows.get(`email:${where.email}`) ?? null;
-          return null;
-        },
-      );
-      usersRepo.create.mockImplementation((dto: Record<string, unknown>) => ({
-        id: `new-user-${++counter}`,
-        ...dto,
-      }));
-      usersRepo.save.mockImplementation(async (entity: Record<string, unknown>) => {
-        if (entity.email) rows.set(`email:${entity.email}`, entity);
-        if (entity.fluxaTenantId) rows.set(`tenant:${entity.fluxaTenantId}`, entity);
-        return entity;
-      });
-      return rows;
-    };
-
-    it('logs in an unauthenticated caller only via an already-linked tenant', async () => {
-      const tenantId = tenantIdFor(fluxaApiKey);
-      const linked = {
-        id: 'linked-user',
-        email: 'owner@example.com',
-        fluxaTenantId: tenantId,
-        emailVerified: true,
-      };
-      usersRepo.findOne.mockResolvedValue(linked);
-
-      const { user } = await service.fluxaLink(fluxaDto(fluxaApiKey));
-
-      expect(user.id).toBe('linked-user');
-      expect(user.fluxaTenantId).toBe(tenantId);
-      expect(usersRepo.save).toHaveBeenCalledTimes(1);
-    });
-
-    it('never selects or mutates an existing account solely from an email match', async () => {
-      const tenantId = tenantIdFor(fluxaApiKey);
-      const emailOwner = {
-        id: 'email-owner',
-        email: fluxaEmail(tenantId),
-        fluxaTenantId: null,
-      };
-
-      withFakeUsersTable();
-      usersRepo.findOne.mockImplementation(
-        async ({ where }: { where: Record<string, unknown> }) => {
-          if (where.fluxaTenantId) return null;
-          return emailOwner;
-        },
-      );
-
-      await expect(service.fluxaLink(fluxaDto(fluxaApiKey))).rejects.toThrow(
-        ConflictException,
-      );
-      expect(usersRepo.save).not.toHaveBeenCalled();
-    });
-
-    it('requires authenticated re-confirmation before attaching a new tenant to an existing user', async () => {
-      const currentUser = {
-        id: 'user-a',
-        email: 'user-a@example.com',
-        fluxaTenantId: null,
-        emailVerified: false,
-      };
-      withFakeUsersTable(); // no tenant user, no email owner
-
-      await expect(
-        service.fluxaLink(fluxaDto(fluxaApiKey), currentUser as any),
-      ).rejects.toThrow(BadRequestException);
-      expect(usersRepo.save).not.toHaveBeenCalled();
-
-      const { user } = await service.fluxaLink(
-        fluxaDto(fluxaApiKey, true),
-        currentUser as any,
-      );
-      expect(user.id).toBe('user-a');
-      expect(user.fluxaTenantId).toBe(tenantIdFor(fluxaApiKey));
-      expect(usersRepo.save).toHaveBeenCalledTimes(1);
-    });
-
-    it('rejects cross-user tenant linking', async () => {
-      const existingTenantUser = {
-        id: 'user-b',
-        email: 'user-b@example.com',
-        fluxaTenantId: tenantIdFor(fluxaApiKey),
-      };
-
-      usersRepo.findOne.mockResolvedValue(existingTenantUser);
-
-      await expect(
-        service.fluxaLink(fluxaDto(fluxaApiKey), { id: 'user-a', email: 'user-a@example.com' } as any),
-      ).rejects.toThrow(ConflictException);
-      expect(usersRepo.save).not.toHaveBeenCalled();
-    });
-
-    it('creates a brand-new account for unauthenticated Fluxa signup', async () => {
-      withFakeUsersTable(); // no tenant user, no email owner
-
-      const { user } = await service.fluxaLink(fluxaDto(fluxaApiKey));
-
-      expect(user.fluxaTenantId).toBe(tenantIdFor(fluxaApiKey));
-      expect(user.emailVerified).toBe(true);
-      expect(usersRepo.create).toHaveBeenCalledTimes(1);
-    });
-
-    it('replays the same Fluxa key onto the linked account without creating a duplicate', async () => {
-      withFakeUsersTable();
-
-      const { user: first } = await service.fluxaLink(fluxaDto(fluxaApiKey));
-      const { user: second } = await service.fluxaLink(fluxaDto(fluxaApiKey));
-
-      expect(usersRepo.create).toHaveBeenCalledTimes(1);
-      expect(second.id).toBe(first.id);
-      expect(second.fluxaTenantId).toBe(tenantIdFor(fluxaApiKey));
-    });
-  });
-
-  describe('completeFluxaConnect', () => {
-    const redisWithNonce = () => {
-      let stored: string | null = 'user-1';
-      return {
-        get: jest.fn(async () => {
-          const value = stored;
-          stored = null;
-          return value;
-        }),
-        del: jest.fn(async () => undefined),
-      };
-    };
-
-    it('rejects replayed OAuth states', async () => {
-      const redis = redisWithNonce();
-
-      await service.completeFluxaConnect('auth-code', 'state-1', redis);
-
-      await expect(
-        service.completeFluxaConnect('auth-code', 'state-1', redis),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('fails closed when production Fluxa OAuth token-exchange configuration is incomplete', async () => {
-      const prodConfig = {
-        getOrThrow: jest.fn((key: string) => {
-          if (key === 'JWT_SECRET') return 'test-secret';
-          if (key === 'ENCRYPTION_SECRET') return 'test-encryption-secret-32-bytes!!';
-          throw new Error(`Missing config key: ${key}`);
-        }),
-        get: jest.fn((key: string, defaultValue?: unknown) => {
-          if (key === 'NODE_ENV') return 'production';
-          return defaultValue ?? undefined;
-        }),
-      };
-
-      const prodService = new AuthService(
-        usersRepo as any,
-        refreshTokensRepo as any,
-        connectedAccountsRepo as any,
-        vaultKeysRepo as any,
-        passkeysRepo as any,
-        jwt as any,
-        prodConfig as any,
-        new EncryptionService(prodConfig as any),
-      );
-
-      const redis = redisWithNonce();
-
-      await expect(
-        prodService.completeFluxaConnect('auth-code', 'state-1', redis),
-      ).rejects.toThrow(ServiceUnavailableException);
-      expect(connectedAccountsRepo.save).not.toHaveBeenCalled();
     });
   });
 
