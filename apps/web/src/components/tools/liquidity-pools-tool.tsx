@@ -37,15 +37,19 @@ function shortKey(key: string): string {
 export function LiquidityPoolsTool() {
   const [network, setNetwork] = useState<NetworkChoice>('testnet');
   const [assetA, setAssetA] = useState<AssetInput>({ type: 'native', code: 'XLM', issuer: '' });
-  const [assetB, setAssetB] = useState<AssetInput>({ type: 'custom', code: 'USDC', issuer: TESTNET_USDC_ISSUER });
-  
+  const [assetB, setAssetB] = useState<AssetInput>({
+    type: 'custom',
+    code: 'USDC',
+    issuer: TESTNET_USDC_ISSUER,
+  });
+
   const [searchResults, setSearchResults] = useState<PoolDetails[]>([]);
   const [selectedPool, setSelectedPool] = useState<PoolDetails | null>(null);
   const [shareAmount, setShareAmount] = useState('');
   const [shareValue, setShareValue] = useState<ShareValueResult | null>(null);
-  
+
   const [watchedPools, setWatchedPools] = useState<WatchedPoolItem[]>([]);
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,7 +72,7 @@ export function LiquidityPoolsTool() {
     setError(null);
     setSelectedPool(null);
     setShareValue(null);
-    
+
     try {
       const results = await searchPools(assetToParam(assetA), assetToParam(assetB), network);
       setSearchResults(results);
@@ -89,10 +93,10 @@ export function LiquidityPoolsTool() {
 
   const handleCalculateValue = async () => {
     if (!selectedPool || !shareAmount) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const result = await calculateShareValue({
         poolId: selectedPool.poolId,
@@ -109,7 +113,7 @@ export function LiquidityPoolsTool() {
 
   const handleWatchPool = async () => {
     if (!selectedPool) return;
-    
+
     try {
       const watched = await watchPool({
         poolId: selectedPool.poolId,
@@ -135,7 +139,7 @@ export function LiquidityPoolsTool() {
   const handleLoadWatched = async (watched: WatchedPoolItem) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const pool = await getPoolDetails(watched.poolId, watched.network as NetworkChoice);
       setSelectedPool(pool);
@@ -260,7 +264,9 @@ export function LiquidityPoolsTool() {
                 className="flex items-center justify-between p-3 rounded-md border border-border bg-background"
               >
                 <div className="flex-1">
-                  <div className="text-sm font-medium">{watched.label || `${watched.assetA}/${watched.assetB}`}</div>
+                  <div className="text-sm font-medium">
+                    {watched.label || `${watched.assetA}/${watched.assetB}`}
+                  </div>
                   <div className="text-xs text-muted-foreground">{shortKey(watched.poolId)}</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -302,12 +308,18 @@ export function LiquidityPoolsTool() {
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <div className="font-medium">{pool.assetA} / {pool.assetB}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{shortKey(pool.poolId)}</div>
+                    <div className="font-medium">
+                      {pool.assetA} / {pool.assetB}
+                    </div>
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {shortKey(pool.poolId)}
+                    </div>
                   </div>
                   <div className="text-right text-sm">
                     <div className="font-medium">{pool.feePct}</div>
-                    <div className="text-xs text-muted-foreground">{pool.totalTrustlines} trustlines</div>
+                    <div className="text-xs text-muted-foreground">
+                      {pool.totalTrustlines} trustlines
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -370,7 +382,11 @@ export function LiquidityPoolsTool() {
             disabled={loading || !shareAmount}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <TrendingUp className="h-4 w-4" />
+            )}
             Calculate Value
           </button>
 

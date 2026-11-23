@@ -158,23 +158,21 @@ describe('PathPaymentLabTool', () => {
     render(<PathPaymentLabTool />);
     await run();
 
-    expect(
-      await screen.findByText(/exceeds every tolerance compared/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/exceeds every tolerance compared/i)).toBeInTheDocument();
   });
 
   it('shows a loading state while the routes are being read', async () => {
     let release: (value: PathPaymentLabResult) => void = () => {};
-    runLabMock.mockReturnValue(new Promise<PathPaymentLabResult>((resolve) => {
-      release = resolve;
-    }));
+    runLabMock.mockReturnValue(
+      new Promise<PathPaymentLabResult>((resolve) => {
+        release = resolve;
+      }),
+    );
 
     render(<PathPaymentLabTool />);
     await run();
 
-    expect(
-      await screen.findByText(/reading live routes from horizon/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/reading live routes from horizon/i)).toBeInTheDocument();
 
     release(RESULT);
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
@@ -205,9 +203,7 @@ describe('PathPaymentLabTool', () => {
     await run();
 
     expect(runLabMock).not.toHaveBeenCalled();
-    expect(
-      screen.getByText('A positive decimal with at most 7 decimals'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('A positive decimal with at most 7 decimals')).toBeInTheDocument();
   });
 
   it('rejects an asset that is neither XLM nor CODE:ISSUER', async () => {
@@ -253,9 +249,7 @@ describe('PathPaymentLabTool', () => {
     await userEvent.click(screen.getByRole('button', { name: /add tolerance/i }));
     expect(screen.getAllByLabelText(/slippage tolerance percent/i)).toHaveLength(before + 1);
 
-    await userEvent.click(
-      screen.getByRole('button', { name: /remove tolerance 5/i }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /remove tolerance 5/i }));
     expect(screen.getAllByLabelText(/slippage tolerance percent/i)).toHaveLength(before);
   });
 
@@ -267,9 +261,7 @@ describe('PathPaymentLabTool', () => {
     await run();
 
     await waitFor(() => expect(runLabMock).toHaveBeenCalled());
-    expect(runLabMock).toHaveBeenCalledWith(
-      expect.objectContaining({ adverseMovePercent: 0 }),
-    );
+    expect(runLabMock).toHaveBeenCalledWith(expect.objectContaining({ adverseMovePercent: 0 }));
   });
 
   it('resets the form to the example values', async () => {
