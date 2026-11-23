@@ -203,6 +203,28 @@ This keeps the existing public contract: the simulator/order book routes still
 return HTTP 400 for upstream Horizon failures, and the web client continues to
 display the existing error envelope. No request, response, or UI shape changes.
 
+### 4.7 Horizon Cursor Loop Diagnostics (`horizon-cursor.ts`)
+
+`exploreHorizon` (`apps/api/src/common/horizon-cursor.ts`) enforces bounded,
+SSRF-safe Horizon cursor pagination where the caller owns URL construction.
+When an upstream Horizon node or proxy repeats an already-visited cursor
+(including `options.initialCursor`), pagination aborts immediately with
+`HorizonCursorLoopError` (`code: 'HORIZON_CURSOR_LOOP'`):
+
+- **Endpoint & state diagnostics**: `error.diagnostics` records the sanitized
+  `endpoint` (`page.endpoint` taking precedence over `options.endpoint`, or
+  `null` when omitted), 1-based `page`, clamped `limit`, `requestCursor`,
+  `repeatedCursor`, and `seenCursorCount`.
+- **Privacy & log-safety redaction**: `sanitizeHorizonEndpoint` strips URL
+  userinfo, query strings, fragments, and CR/LF control characters via
+  `redactUrl` / `redactString`, while cursor diagnostics mask Stellar secret
+  seeds (`S...`), JWTs, and bearer tokens and bound length to 128 characters.
+- **Public contract preservation**: `HorizonCursorLoopError` extends `Error`
+  (retaining the `'Horizon pagination cursor repeated'` prefix) rather than
+  `HttpException`, so `ApiExceptionFilter` logs full operator diagnostics with
+  the request `requestId` without leaking upstream endpoint internals in public
+  HTTP error bodies.
+
 ---
 
 ## 5. Security & Operational Boundaries
