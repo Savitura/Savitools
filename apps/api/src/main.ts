@@ -182,8 +182,11 @@ async function bootstrap() {
   enableGracefulShutdown(app);
 
   await app.listen(port, "0.0.0.0");
-  console.log(`SaviTools API running on http://localhost:${port}/${prefix}`);
-  console.log(`Swagger docs at http://localhost:${port}/${prefix}/docs`);
+  const logger = new Logger("Bootstrap");
+  logger.log(`SaviTools API running on http://localhost:${port}/${prefix}`);
+  if (nodeEnv !== 'production') {
+    logger.log(`Swagger docs at http://localhost:${port}/${prefix}/docs`);
+  }
 }
 
 bootstrap().catch((error) => {

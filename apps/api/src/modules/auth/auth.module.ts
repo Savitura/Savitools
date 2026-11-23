@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -35,10 +35,11 @@ import { VaultController } from './vault.controller';
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
         const redisUrl = config.get<string>('REDIS_URL', 'redis://localhost:6379');
+        const logger = new Logger('AuthRedis');
         const client = createClient({ url: redisUrl });
         client.on('error', (err: unknown) => {
           // Non-fatal: OAuth nonce storage will degrade gracefully
-          console.warn('[redis] Connection error:', err);
+          logger.warn(`Redis connection error: ${err instanceof Error ? err.message : String(err)}`);
         });
         await client.connect();
         return client;
