@@ -69,9 +69,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<RequestWithRequestId>();
 
     const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+      exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
     const requestId = this.resolveRequestId(request);
     response.header(REQUEST_ID_HEADER, requestId);
@@ -102,7 +100,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
   private describe(
     exception: unknown,
     status: number,
-  ): { message: string | string[]; error: string; code?: string; details?: Record<string, unknown> } {
+  ): {
+    message: string | string[];
+    error: string;
+    code?: string;
+    details?: Record<string, unknown>;
+  } {
     if (!(exception instanceof HttpException)) {
       return {
         message: 'Internal server error',
@@ -137,10 +140,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
    * carries the correlation the client supplied.
    */
   private resolveRequestId(request: RequestWithRequestId): string {
-    if (
-      typeof request.requestId === 'string' &&
-      isValidRequestId(request.requestId)
-    ) {
+    if (typeof request.requestId === 'string' && isValidRequestId(request.requestId)) {
       return request.requestId;
     }
 
@@ -152,10 +152,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
   /** `INTERNAL_SERVER_ERROR` -> `Internal Server Error`, matching Nest defaults. */
   private statusText(status: number): string {
-    const name = (HttpStatus as unknown as Record<
-      number,
-      string | undefined
-    >)[status];
+    const name = (HttpStatus as unknown as Record<number, string | undefined>)[status];
     if (typeof name !== 'string') return 'Error';
     return name
       .toLowerCase()
@@ -181,8 +178,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const client = host
       .switchToWs()
       .getClient<{ emit?: (event: string, payload: unknown) => void }>();
-    const message =
-      exception instanceof Error ? exception.message : exception;
+    const message = exception instanceof Error ? exception.message : exception;
     client?.emit?.('exception', { status: 'error', message });
   }
 }

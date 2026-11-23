@@ -1,13 +1,6 @@
-import {
-  BadGatewayException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  resolveStellarRpcUrl,
-  type StellarEndpointEnv,
-} from '../../config/stellar-endpoints';
+import { resolveStellarRpcUrl, type StellarEndpointEnv } from '../../config/stellar-endpoints';
 import {
   findRpcMethod,
   listRpcMethods,
@@ -80,9 +73,7 @@ export class SorobanRpcService {
   private rpcEnv(): StellarEndpointEnv {
     return {
       STELLAR_RPC_URL: this.config.get<string | undefined>('STELLAR_RPC_URL'),
-      STELLAR_RPC_PUBLIC_URL: this.config.get<string | undefined>(
-        'STELLAR_RPC_PUBLIC_URL',
-      ),
+      STELLAR_RPC_PUBLIC_URL: this.config.get<string | undefined>('STELLAR_RPC_PUBLIC_URL'),
     };
   }
 
@@ -120,10 +111,7 @@ export class SorobanRpcService {
   }
 
   private rpcUrl(network: SorobanRpcNetwork): string {
-    const url = resolveStellarRpcUrl(
-      this.rpcEnv(),
-      network === 'mainnet' ? 'public' : 'testnet',
-    );
+    const url = resolveStellarRpcUrl(this.rpcEnv(), network === 'mainnet' ? 'public' : 'testnet');
     this.assertEndpointAllowed(url);
     return url;
   }
@@ -163,21 +151,15 @@ export class SorobanRpcService {
       });
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new BadGatewayException(
-        `Could not reach the Soroban RPC endpoint: ${reason}`,
-      );
+      throw new BadGatewayException(`Could not reach the Soroban RPC endpoint: ${reason}`);
     }
     const tookMs = Date.now() - startedAt;
 
     if (!response.ok) {
-      throw new BadGatewayException(
-        `Soroban RPC responded with HTTP ${response.status}`,
-      );
+      throw new BadGatewayException(`Soroban RPC responded with HTTP ${response.status}`);
     }
 
-    const payload = (await response.json().catch(() => null)) as
-      | JsonRpcPayload
-      | null;
+    const payload = (await response.json().catch(() => null)) as JsonRpcPayload | null;
     if (!payload || typeof payload !== 'object') {
       throw new BadGatewayException('Soroban RPC returned a non-JSON response');
     }
@@ -190,9 +172,7 @@ export class SorobanRpcService {
         error: {
           code: payload.error.code ?? -1,
           message: payload.error.message ?? 'Unknown JSON-RPC error',
-          ...(payload.error.data === undefined
-            ? {}
-            : { data: payload.error.data }),
+          ...(payload.error.data === undefined ? {} : { data: payload.error.data }),
         },
       };
     }

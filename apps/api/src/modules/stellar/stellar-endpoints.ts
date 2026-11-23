@@ -30,9 +30,7 @@ function parseAllowlist(envValue: string | undefined): string[] {
       try {
         return new URL(entry).origin;
       } catch {
-        throw new BadRequestException(
-          `Invalid endpoint in allowlist configuration: ${entry}`,
-        );
+        throw new BadRequestException(`Invalid endpoint in allowlist configuration: ${entry}`);
       }
     });
 }
@@ -42,11 +40,7 @@ function parseAllowlist(envValue: string | undefined): string[] {
  * origin appears in the configured allowlist. Custom endpoints are rejected
  * in hosted mode unless explicitly allowlisted by the operator.
  */
-function assertAllowedEndpoint(
-  label: string,
-  url: string,
-  allowlist: string[],
-): void {
+function assertAllowedEndpoint(label: string, url: string, allowlist: string[]): void {
   let origin: string;
   try {
     const parsed = new URL(url);
@@ -154,9 +148,7 @@ export function resolveStellarEndpoints(
         process.env.STELLAR_QUICKSTART_RPC_URL ||
         'http://localhost:8000/soroban/rpc',
       passphrase:
-        overrides?.passphrase ||
-        process.env.STELLAR_QUICKSTART_PASSPHRASE ||
-        STANDALONE_PASSPHRASE,
+        overrides?.passphrase || process.env.STELLAR_QUICKSTART_PASSPHRASE || STANDALONE_PASSPHRASE,
     };
   }
 
@@ -188,12 +180,7 @@ export function resolveStellarEndpoints(
       process.env.STELLAR_FRIENDBOT_URL ||
       'https://friendbot.stellar.org',
     rpcUrl:
-      overrides?.rpcUrl ||
-      process.env.STELLAR_RPC_URL ||
-      'https://soroban-rpc-testnet.stellar.org',
-    passphrase:
-      overrides?.passphrase ||
-      process.env.STELLAR_NETWORK_PASSPHRASE ||
-      Networks.TESTNET,
+      overrides?.rpcUrl || process.env.STELLAR_RPC_URL || 'https://soroban-rpc-testnet.stellar.org',
+    passphrase: overrides?.passphrase || process.env.STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET,
   };
 }

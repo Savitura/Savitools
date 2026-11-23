@@ -1,6 +1,7 @@
 # Webhook Payload Diffing Implementation Summary
 
 ## Overview
+
 Implemented webhook delivery payload diffing between retries to track and visualize payload changes across multiple delivery attempts.
 
 ## Changes Made
@@ -8,6 +9,7 @@ Implemented webhook delivery payload diffing between retries to track and visual
 ### 1. Backend (API) - `apps/api/src/modules/webhook/webhook.service.ts`
 
 #### Added Interfaces:
+
 - **`PayloadDiff`**: Tracks added, modified, and removed fields between retry attempts
   - `added?: Record<string, unknown>` - New fields in current attempt
   - `modified?: Record<string, { from: unknown; to: unknown }>` - Changed fields with before/after values
@@ -15,9 +17,11 @@ Implemented webhook delivery payload diffing between retries to track and visual
   - `previousAttemptId?: string` - Links to the previous attempt
 
 #### Updated Interface:
+
 - **`WebhookHistoryEntry`**: Added optional `payloadDiff?: PayloadDiff` field
 
 #### New Methods:
+
 - **`computePayloadDiff(previous, current)`**: Computes differences between two payloads
   - Detects added, modified, and removed fields
   - Returns `undefined` if payloads are identical
@@ -28,6 +32,7 @@ Implemented webhook delivery payload diffing between retries to track and visual
   - Handles primitives, nulls, and arrays
 
 #### Updated Method:
+
 - **`sendWebhook()`**: Enhanced to track payload changes across retries
   - Maintains `previousPayload` and `previousEntryId` during retry loop
   - Computes diff for each retry (i > 0)
@@ -36,14 +41,17 @@ Implemented webhook delivery payload diffing between retries to track and visual
 ### 2. Frontend (Web) - `apps/web/src/lib/api.ts`
 
 #### Added Interface:
+
 - **`PayloadDiff`**: Mirror of backend interface for type safety
 
 #### Updated Interface:
+
 - **`WebhookHistoryEntry`**: Added optional `payloadDiff?: PayloadDiff` field
 
 ### 3. Tests
 
 #### Created `apps/api/src/modules/webhook/payload-diff.spec.ts`:
+
 - Unit tests for `computePayloadDiff()` method
 - Unit tests for `deepEqual()` method
 - Coverage for:
@@ -57,6 +65,7 @@ Implemented webhook delivery payload diffing between retries to track and visual
   - Null and undefined handling
 
 #### Updated `apps/api/src/modules/webhook/webhook.service.spec.ts`:
+
 - Added integration tests for payload diffing in retry scenarios
 - Tests for identical payloads across retries
 - Tests for various diff computation scenarios
@@ -64,6 +73,7 @@ Implemented webhook delivery payload diffing between retries to track and visual
 ### 4. Documentation - `docs/webhook-payload-diffing.md`
 
 Complete feature documentation including:
+
 - Feature overview and interface definitions
 - When diffs are generated
 - Diff computation logic
@@ -93,13 +103,14 @@ Complete feature documentation including:
 ## Example Usage
 
 ### Sending webhook with retries:
+
 ```typescript
 const result = await sendWebhook({
   endpointUrl: 'https://example.com/hook',
   eventType: 'order.created',
   payload: { id: 1, status: 'pending' },
   repeatCount: 3,
-  repeatIntervalMs: 1000
+  repeatIntervalMs: 1000,
 });
 
 // Result is an array of WebhookHistoryEntry
@@ -109,6 +120,7 @@ const result = await sendWebhook({
 ```
 
 ### Accessing diff information:
+
 ```typescript
 if (entry.payloadDiff) {
   console.log('Added fields:', entry.payloadDiff.added);

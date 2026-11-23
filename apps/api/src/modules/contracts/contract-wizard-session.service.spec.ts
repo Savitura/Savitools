@@ -113,7 +113,9 @@ describe('ContractWizardSessionService', () => {
 
       expect(await service.getSession('active')).toBeDefined();
       expect(ContractWizardSessionService.getFallbackSessions().has('expired')).toBe(false);
-      expect(ContractWizardSessionService.getFallbackSessions().has('expired-deploying')).toBe(true);
+      expect(ContractWizardSessionService.getFallbackSessions().has('expired-deploying')).toBe(
+        true,
+      );
     });
 
     it('updates an existing session in place', async () => {
@@ -210,7 +212,9 @@ describe('ContractWizardSessionService', () => {
         });
       }
 
-      await expect(service.ensureCapacity(wasm.length)).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.ensureCapacity(wasm.length)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
     });
 
     it('throws BadRequestException when wasmBuffer exceeds MAX_WIZARD_BUFFER_BYTES', async () => {

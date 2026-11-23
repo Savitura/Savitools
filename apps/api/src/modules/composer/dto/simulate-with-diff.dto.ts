@@ -7,7 +7,11 @@ export class SimulateWithDiffDto {
   @IsNotEmpty()
   xdr: string;
 
-  @ApiPropertyOptional({ description: 'Network to simulate on', enum: ['testnet', 'mainnet'], default: 'testnet' })
+  @ApiPropertyOptional({
+    description: 'Network to simulate on',
+    enum: ['testnet', 'mainnet'],
+    default: 'testnet',
+  })
   @IsOptional()
   @IsEnum(['testnet', 'mainnet'])
   network?: 'testnet' | 'mainnet';

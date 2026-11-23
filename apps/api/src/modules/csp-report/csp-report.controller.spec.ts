@@ -1,8 +1,5 @@
 import { Test } from '@nestjs/testing';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Module } from '@nestjs/common';
 import { CspReportController, normaliseCspBody } from './csp-report.controller';
 
@@ -13,19 +10,11 @@ class CspReportFixtureModule {}
 function registerCspContentTypeParsers(app: NestFastifyApplication) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const fastify = app.getHttpAdapter().getInstance() as any;
-  const jsonParser = async (_request: any, body: string) =>
-    JSON.parse(body) as unknown;
+  const jsonParser = async (_request: any, body: string) => JSON.parse(body) as unknown;
 
-  for (const contentType of [
-    'application/reports+json',
-    'application/csp-report',
-  ]) {
+  for (const contentType of ['application/reports+json', 'application/csp-report']) {
     if (!fastify.hasContentTypeParser(contentType)) {
-      fastify.addContentTypeParser(
-        contentType,
-        { parseAs: 'string' },
-        jsonParser,
-      );
+      fastify.addContentTypeParser(contentType, { parseAs: 'string' }, jsonParser);
     }
   }
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -121,9 +110,7 @@ describe('CspReportController (HTTP)', () => {
       imports: [CspReportFixtureModule],
     }).compile();
 
-    app = moduleRef.createNestApplication<NestFastifyApplication>(
-      new FastifyAdapter(),
-    );
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init();
     registerCspContentTypeParsers(app);
     await app.getHttpAdapter().getInstance().ready();
@@ -178,9 +165,7 @@ describe('CspReportController (HTTP)', () => {
   });
 
   it('returns 204 and silently drops non-csp-violation Reporting API types', async () => {
-    const payload = [
-      { type: 'deprecation', url: 'https://app.example/', body: {} },
-    ];
+    const payload = [{ type: 'deprecation', url: 'https://app.example/', body: {} }];
 
     const response = await app.inject({
       method: 'POST',
