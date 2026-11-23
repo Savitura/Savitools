@@ -28,6 +28,8 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { createHash, randomBytes, randomUUID } from 'crypto';
+// NOTE: The api.ts split (apps/web/src/lib/api/*) is a frontend refactor and does not
+// touch this backend service; no change to AuthService is required for that issue.
 import { Resend } from 'resend';
 import { IsNull, Repository } from 'typeorm';
 import { EncryptionService, ENCRYPTION_PURPOSES } from '../../common/encryption.service';

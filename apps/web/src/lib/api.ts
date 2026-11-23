@@ -1,3 +1,16 @@
+// NOTE: This monolithic module is being split into `lib/api/`:
+//   - lib/api/client.ts      shared fetch, auth headers, refresh, error normalization
+//   - lib/api/auth.ts        authentication, sessions, passkeys, vault, connected accounts
+//   - lib/api/contracts.ts   contract endpoints
+//   - lib/api/monitor.ts     monitor endpoints
+//   - lib/api/simulator.ts   simulator endpoints
+//   - lib/api/federation.ts  federation endpoints
+//   - lib/api/playground.ts  playground endpoints
+//   - lib/api/index.ts       barrel re-exporting everything for backward compatibility
+//
+// Import from `@/lib/api` (or `./api`) so consumers keep working unchanged.
+// The contents below are retained until each domain module has been migrated.
+
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
