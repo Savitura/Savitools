@@ -379,7 +379,11 @@ export class ContractsService {
     } finally {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {}
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to remove temporary Git clone directory ${tempDir}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
 
