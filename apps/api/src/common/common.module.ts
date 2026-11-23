@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { EncryptionService } from './encryption.service';
+import { RedisProvider } from './redis.provider';
 import { ApiExceptionFilter } from './filters/api-exception.filter';
 import { RequestIdInterceptor } from './interceptors/request-id.interceptor';
 
@@ -14,9 +15,10 @@ import { RequestIdInterceptor } from './interceptors/request-id.interceptor';
 @Module({
   providers: [
     EncryptionService,
+    RedisProvider,
     { provide: APP_FILTER, useClass: ApiExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: RequestIdInterceptor },
   ],
-  exports: [EncryptionService],
+  exports: [EncryptionService, RedisProvider],
 })
 export class CommonModule {}

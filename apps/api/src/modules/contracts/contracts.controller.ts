@@ -7,8 +7,8 @@ import {
   Req,
   Query,
   BadRequestException,
-  ServiceUnavailableException,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags, ApiConsumes, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
@@ -19,21 +19,34 @@ import { AttachAbiDto } from './dto/attach-abi.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ContractAuthorizationGuard } from './guards/contract-authorization.guard';
 import { ContractQuotaService } from './contract-quota.service';
+import {
+  ContractWizardSessionService,
+  WizardSessionData,
+  MAX_WIZARD_SESSIONS,
+  MAX_WIZARD_BUFFER_BYTES,
+} from './contract-wizard-session.service';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import * as crypto from 'crypto';
 
 @ApiTags('contracts')
 @Controller('contracts')
 export class ContractsController {
-  private static readonly MAX_WIZARD_SESSIONS = 32;
-  private static readonly MAX_WIZARD_BUFFER_BYTES = 32 * 1024 * 1024;
-  private static wizardBufferBytes = 0;
-  private static wizardSessions = new Map<string, { lastStep: number; wasmBuffer?: Buffer; admin?: string; salt?: string; args?: unknown[]; expiresAt: number; deploying?: boolean }>();
+  private static readonly MAX_WIZARD_SESSIONS = MAX_WIZARD_SESSIONS;
+  private static readonly MAX_WIZARD_BUFFER_BYTES = MAX_WIZARD_BUFFER_BYTES;
+
+  static get wizardSessions(): Map<string, WizardSessionData> {
+    return ContractWizardSessionService.getFallbackSessions();
+  }
+
+  private readonly sessionService: ContractWizardSessionService;
 
   constructor(
     private readonly contractsService: ContractsService,
     private readonly quotaService: ContractQuotaService,
-  ) {}
+    @Optional() sessionService?: ContractWizardSessionService,
+  ) {
+    this.sessionService = sessionService ?? new ContractWizardSessionService();
+  }
 
   @Post('deploy')
   @ApiCookieAuth()
@@ -92,13 +105,9 @@ export class ContractsController {
     @CurrentUser() user: AuthUser,
   ) {
     const now = Date.now();
-    for (const [k, v] of ContractsController.wizardSessions.entries()) {
-      if (v.expiresAt < now && !v.deploying) {
-        ContractsController.removeWizardSession(k);
-      }
-    }
+    await this.sessionService.cleanExpiredSessions();
 
-    const ttl = 3600 * 1000; // 1-hour TTL
+    const ttl = ContractWizardSessionService.DEFAULT_TTL_MS;
 
     if (dto.step === 1) {
       let wasmBuffer: Buffer;
@@ -135,28 +144,12 @@ export class ContractsController {
       }
 
       const stepToken = crypto.randomBytes(32).toString('hex');
-      while (
-        ContractsController.wizardSessions.size >= ContractsController.MAX_WIZARD_SESSIONS ||
-        ContractsController.wizardBufferBytes + wasmBuffer.length > ContractsController.MAX_WIZARD_BUFFER_BYTES
-      ) {
-        const oldestToken = [...ContractsController.wizardSessions.entries()].find(
-          ([, session]) => !session.deploying,
-        )?.[0];
-        if (!oldestToken) break;
-        ContractsController.removeWizardSession(oldestToken);
-      }
-      if (
-        ContractsController.wizardSessions.size >= ContractsController.MAX_WIZARD_SESSIONS ||
-        ContractsController.wizardBufferBytes + wasmBuffer.length > ContractsController.MAX_WIZARD_BUFFER_BYTES
-      ) {
-        throw new ServiceUnavailableException('Deployment wizard capacity is temporarily full');
-      }
-      ContractsController.wizardSessions.set(stepToken, {
+      await this.sessionService.ensureCapacity(wasmBuffer.length);
+      await this.sessionService.createSession(stepToken, {
         lastStep: 1,
         wasmBuffer,
         expiresAt: now + ttl,
       });
-      ContractsController.wizardBufferBytes += wasmBuffer.length;
 
       return {
         step: 1,
@@ -170,7 +163,7 @@ export class ContractsController {
       if (!dto.stepToken) {
         throw new BadRequestException('Step token is required for Step 2');
       }
-      const session = ContractsController.wizardSessions.get(dto.stepToken);
+      const session = await this.sessionService.getSession(dto.stepToken);
       if (!session || session.expiresAt < now) {
         throw new BadRequestException('Invalid or expired step token');
       }
@@ -200,8 +193,7 @@ export class ContractsController {
       session.expiresAt = now + ttl;
 
       const nextStepToken = crypto.randomBytes(32).toString('hex');
-      ContractsController.wizardSessions.delete(dto.stepToken);
-      ContractsController.wizardSessions.set(nextStepToken, session);
+      await this.sessionService.rotateSession(dto.stepToken, nextStepToken, session);
 
       return {
         step: 2,
@@ -215,7 +207,7 @@ export class ContractsController {
       if (!dto.stepToken) {
         throw new BadRequestException('Step token is required for Step 3');
       }
-      const session = ContractsController.wizardSessions.get(dto.stepToken);
+      const session = await this.sessionService.getSession(dto.stepToken);
       if (!session || session.expiresAt < now) {
         throw new BadRequestException('Invalid or expired step token');
       }
@@ -231,6 +223,8 @@ export class ContractsController {
 
       await this.quotaService.consume(user.id, 'deploy');
       session.deploying = true;
+      await this.sessionService.updateSession(dto.stepToken, session);
+
       let result: Awaited<ReturnType<ContractsService['deployConfigured']>>;
       try {
         result = await this.contractsService.deployConfigured({
@@ -241,10 +235,11 @@ export class ContractsController {
         });
       } catch (error) {
         session.deploying = false;
+        await this.sessionService.updateSession(dto.stepToken, session);
         throw error;
       }
 
-      ContractsController.removeWizardSession(dto.stepToken);
+      await this.sessionService.deleteSession(dto.stepToken);
 
       return {
         step: 3,
@@ -401,9 +396,6 @@ export class ContractsController {
   }
 
   private static removeWizardSession(token: string): void {
-    const session = ContractsController.wizardSessions.get(token);
-    if (!session) return;
-    ContractsController.wizardSessions.delete(token);
-    ContractsController.wizardBufferBytes -= session.wasmBuffer?.length ?? 0;
+    ContractWizardSessionService.removeFallbackSession(token);
   }
 }

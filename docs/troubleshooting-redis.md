@@ -17,7 +17,7 @@ API logs show one or more of:
 ## What degrades
 
 Operations routed through `RedisProvider.safeExecute()` are skipped and return `null`. Features that
-depend on Redis state (auth nonce/session storage, rate-limit and daily-quota counters, monitor
+depend on Redis state (auth nonce/session storage, contract wizard sessions, rate-limit and daily-quota counters, monitor
 leader election, orderbook caching) may be unavailable or fall back to per-process behavior.
 Do not rely on degraded behavior to test quotas or multi-instance leadership.
 
