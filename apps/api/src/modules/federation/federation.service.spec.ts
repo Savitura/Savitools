@@ -3,7 +3,11 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
-import { FederationService, TOML_MAX_BYTES } from './federation.service';
+import {
+  FederationService,
+  RequestTimeoutError,
+  TOML_MAX_BYTES,
+} from './federation.service';
 
 const lookupMock = jest.fn();
 jest.mock('dns/promises', () => ({
@@ -46,11 +50,16 @@ describe('FederationService', () => {
   let service: FederationService;
 
   beforeEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
     lookupMock.mockReset();
     lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
     global.fetch = jest.fn();
     service = new FederationService();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   describe('resolveFederation', () => {
@@ -605,12 +614,21 @@ describe('FederationService', () => {
               ? 100
               : undefined,
       } as never);
-      global.fetch = jest.fn().mockImplementation((input: string | URL | Request) => {
+      global.fetch = jest.fn().mockImplementation((input: string | URL | Request, init?: RequestInit) => {
         const url = input.toString();
         if (url.includes('stellar.toml')) {
           return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('ACCOUNTS=[]\nTRANSFER_SERVER="https://anchor.com/api"\nWEB_AUTH_ENDPOINT="https://anchor.com/auth"') });
         }
-        if (url.endsWith('/info')) return new Promise(() => undefined);
+        if (url.endsWith('/info')) {
+          return new Promise((_, reject) => {
+            const signal = init?.signal;
+            if (signal?.aborted) {
+              reject(signal.reason);
+              return;
+            }
+            signal?.addEventListener('abort', () => reject(signal?.reason));
+          });
+        }
         return Promise.resolve({ ok: true, status: 200 });
       });
 
@@ -933,7 +951,7 @@ describe('FederationService', () => {
         get: (key: string) =>
           key === 'FEDERATION_PROBE_TIMEOUT_MS' ? 10 : undefined,
       } as never);
-      global.fetch = jest.fn().mockImplementation((input: string | URL | Request) => {
+      global.fetch = jest.fn().mockImplementation((input: string | URL | Request, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
         if (url.includes('stellar.toml')) {
           return Promise.resolve({
@@ -942,7 +960,14 @@ describe('FederationService', () => {
             text: () => Promise.resolve(COMPLIANT_TOML),
           });
         }
-        return new Promise(() => undefined); // never resolves
+        return new Promise((_, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          signal?.addEventListener('abort', () => reject(signal?.reason));
+        });
       });
 
       const report = await timeoutService.getServerDiagnostics('slow.example');
@@ -1039,6 +1064,302 @@ describe('FederationService', () => {
       await expect(service.getServerDiagnostics('not a domain!!!')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('fetch timeout and cancellation handling (#566)', () => {
+    interface FederationServiceInternal {
+      fetchWithTimeout(
+        urlStr: string,
+        timeout?: number,
+        parentSignal?: AbortSignal,
+        redirectChain?: string[],
+      ): Promise<Response>;
+      postJsonWithTimeout(
+        url: string,
+        body: Record<string, string>,
+        headers: Record<string, string>,
+        timeout: number,
+        parentSignal?: AbortSignal,
+      ): Promise<Response>;
+      getJsonWithTimeout(
+        url: string,
+        headers: Record<string, string>,
+        timeout: number,
+        parentSignal?: AbortSignal,
+      ): Promise<Response>;
+    }
+
+    let internalService: FederationServiceInternal;
+
+    beforeEach(() => {
+      internalService = service as unknown as FederationServiceInternal;
+    });
+
+    function createMockFetch(
+      handler?: (url: string, init?: RequestInit) => Promise<Response> | Response,
+    ) {
+      return jest.fn().mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const signal = init?.signal;
+        let customPromise: Promise<Response> | Response | undefined;
+        if (handler) {
+          customPromise = handler(url, init);
+        }
+        if (signal?.aborted) {
+          return Promise.reject(signal.reason ?? new Error('Aborted'));
+        }
+        return new Promise<Response>((resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(signal?.reason ?? new Error('Aborted'));
+          });
+          if (customPromise) {
+            Promise.resolve(customPromise).then(resolve, reject);
+          }
+        });
+      });
+    }
+
+    describe('timeout cancellation', () => {
+      it('aborts fetchWithTimeout when configured timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.fetchWithTimeout('https://fed.example/test', 20);
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal).toBeDefined();
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('aborts postJsonWithTimeout when timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.postJsonWithTimeout(
+          'https://fed.example/post',
+          { test: 'data' },
+          { 'Content-Type': 'application/json' },
+          20,
+        );
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('aborts getJsonWithTimeout when timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.getJsonWithTimeout(
+          'https://fed.example/get',
+          { Accept: 'application/json' },
+          20,
+        );
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('cleans up timeout timer when request settles early', async () => {
+        const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve('ok'),
+          json: () => Promise.resolve({ ok: true }),
+          headers: new Headers(),
+        });
+
+        await internalService.fetchWithTimeout('https://fed.example/fast', 5000);
+
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+        clearTimeoutSpy.mockRestore();
+      });
+    });
+
+    describe('parent-abort cancellation', () => {
+      it('aborts underlying fetch when parent signal is aborted in-flight', async () => {
+        const parentController = new AbortController();
+        let passedSignal: AbortSignal | null | undefined;
+        let fetchStarted!: () => void;
+        const fetchStartedPromise = new Promise<void>((resolve) => {
+          fetchStarted = resolve;
+        });
+
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          fetchStarted();
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.fetchWithTimeout(
+          'https://fed.example/long',
+          5000,
+          parentController.signal,
+        );
+
+        await fetchStartedPromise;
+        const customReason = new Error('Parent aborted');
+        parentController.abort(customReason);
+
+        await expect(promise).rejects.toThrow('Parent aborted');
+        expect(passedSignal?.aborted).toBe(true);
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts immediately when parent signal is already aborted', async () => {
+        const parentController = new AbortController();
+        const customReason = new Error('Already aborted');
+        parentController.abort(customReason);
+
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return Promise.resolve({ ok: true } as Response);
+        });
+
+        const promise = internalService.fetchWithTimeout(
+          'https://fed.example/preaborted',
+          5000,
+          parentController.signal,
+        );
+
+        await expect(promise).rejects.toThrow('Already aborted');
+        expect(passedSignal?.aborted).toBe(true);
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts postJsonWithTimeout when parent signal aborts', async () => {
+        const parentController = new AbortController();
+        global.fetch = createMockFetch(() => new Promise(() => undefined));
+
+        const promise = internalService.postJsonWithTimeout(
+          'https://fed.example/post',
+          { a: '1' },
+          {},
+          5000,
+          parentController.signal,
+        );
+
+        parentController.abort(new Error('User cancelled POST'));
+
+        await expect(promise).rejects.toThrow('User cancelled POST');
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts getJsonWithTimeout when parent signal aborts', async () => {
+        const parentController = new AbortController();
+        global.fetch = createMockFetch(() => new Promise(() => undefined));
+
+        const promise = internalService.getJsonWithTimeout(
+          'https://fed.example/get',
+          {},
+          5000,
+          parentController.signal,
+        );
+
+        parentController.abort(new Error('User cancelled GET'));
+
+        await expect(promise).rejects.toThrow('User cancelled GET');
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+    });
+
+    describe('regression and error handling', () => {
+      it('successfully completes fetchWithTimeout on valid response', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true }),
+          headers: new Headers(),
+        });
+
+        const res = await internalService.fetchWithTimeout('https://fed.example/success', 5000);
+        expect(res.ok).toBe(true);
+        expect(res.status).toBe(200);
+      });
+
+      it('preserves request init options in fetchWithTimeout', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+        });
+
+        await internalService.fetchWithTimeout('https://fed.example/options', 5000);
+
+        expect(global.fetch).toHaveBeenCalledWith(
+          'https://fed.example/options',
+          expect.objectContaining({
+            headers: { Accept: '*/*' },
+            redirect: 'manual',
+            signal: expect.any(AbortSignal),
+          }),
+        );
+      });
+
+      it('enforces SSRF protection before issuing fetch', async () => {
+        await expect(
+          internalService.fetchWithTimeout('https://127.0.0.1/ssrf', 5000),
+        ).rejects.toThrow();
+      });
+
+      it('rejects unsupported protocols before issuing fetch', async () => {
+        await expect(
+          internalService.fetchWithTimeout('ftp://fed.example/test', 5000),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('follows redirects while passing the combined signal', async () => {
+        const redirectResponse = {
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: 'https://fed.example/final' }),
+        };
+        const finalResponse = {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+        };
+
+        global.fetch = jest
+          .fn()
+          .mockResolvedValueOnce(redirectResponse)
+          .mockResolvedValueOnce(finalResponse);
+
+        const redirectChain: string[] = [];
+        const res = await internalService.fetchWithTimeout(
+          'https://fed.example/start',
+          5000,
+          undefined,
+          redirectChain,
+        );
+
+        expect(res.ok).toBe(true);
+        expect(redirectChain).toEqual([
+          'https://fed.example/start',
+          'https://fed.example/final',
+        ]);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+      });
     });
   });
 });
