@@ -204,13 +204,13 @@ export async function simulateTransaction(
   });
 }
 
-export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet' = 'testnet', horizonUrl?: string): Promise<{ success: boolean; hash?: string; error?: string }> {
+export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet' = 'testnet', horizonUrl?: string, signal?: AbortSignal): Promise<{ success: boolean; hash?: string; error?: string }> {
   const url =
     horizonUrl ??
     (network === 'mainnet'
       ? 'https://horizon.stellar.org'
       : 'https://horizon-testnet.stellar.org');
-  return submitSignedTransaction(xdr, url);
+  return submitSignedTransaction(xdr, url, signal);
 }
 
 /**
@@ -219,7 +219,7 @@ export async function submitToHorizon(xdr: string, network: 'testnet' | 'mainnet
  * always posted to the active Horizon — a built-in or custom network profile
  * URL — instead of a hard-coded per-network constant.
  */
-export async function submitSignedTransaction(xdr: string, horizonUrl: string): Promise<{ success: boolean; hash?: string; error?: string }> {
+export async function submitSignedTransaction(xdr: string, horizonUrl: string, signal?: AbortSignal): Promise<{ success: boolean; hash?: string; error?: string }> {
   const base = horizonUrl.replace(/\/+$/, '');
 
   try {
@@ -228,6 +228,7 @@ export async function submitSignedTransaction(xdr: string, horizonUrl: string): 
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
+      signal,
     });
     const data = (await res.json()) as { hash?: string; title?: string; detail?: string };
     if (res.ok && data.hash) return { success: true, hash: data.hash };

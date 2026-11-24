@@ -24,6 +24,7 @@ import { isWithinQuietHours, isValidTimezone } from './quiet-hours';
 
 export const DEFAULT_MAX_DIGEST_ALERTS = 25;
 export const DEFAULT_CLAIM_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes crash recovery
+export const CLAIM_BATCH_SIZE = 500;
 
 export interface UpdateDigestPreferencesDto {
   digestEnabled?: boolean;
@@ -207,7 +208,7 @@ export class MonitorDigestService {
         // Fallback for in-memory or SQLite test environments
       }
 
-      const candidateAlerts = await qb.getMany();
+      const candidateAlerts = await qb.take(CLAIM_BATCH_SIZE).getMany();
       if (candidateAlerts.length === 0) {
         return null;
       }

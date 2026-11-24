@@ -39,9 +39,7 @@ import { VaultController } from './vault.controller';
         const client = createClient({ url: redisUrl });
         client.on('error', (err: unknown) => {
           // Non-fatal: OAuth nonce storage will degrade gracefully
-          logger.warn(
-            `Redis connection error: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          logger.warn(`Redis connection error: ${err instanceof Error ? err.message : String(err)}`);
         });
         await client.connect();
         return client;
