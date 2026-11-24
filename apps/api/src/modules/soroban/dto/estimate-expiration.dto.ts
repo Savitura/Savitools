@@ -176,25 +176,47 @@ export class ExpiresInDto {
  * Response schema for storage entry expiration estimation.
  */
 export class ExpirationEstimateResponseDto {
-  @ApiProperty({ description: 'Current ledger sequence number provided in input', example: 1000000 })
+  @ApiProperty({
+    description: 'Current ledger sequence number provided in input',
+    example: 1000000,
+  })
   currentLedger: number;
 
-  @ApiProperty({ description: 'Ledger sequence number at which the entry will expire', example: 1100000 })
+  @ApiProperty({
+    description: 'Ledger sequence number at which the entry will expire',
+    example: 1100000,
+  })
   liveUntilLedger: number;
 
-  @ApiProperty({ description: 'Calculated TTL remaining in ledgers (max(0, liveUntilLedger - currentLedger))', example: 100000 })
+  @ApiProperty({
+    description: 'Calculated TTL remaining in ledgers (max(0, liveUntilLedger - currentLedger))',
+    example: 100000,
+  })
   ttlRemaining: number;
 
-  @ApiProperty({ description: 'Storage durability type evaluated', enum: StorageType, example: StorageType.PERSISTENT })
+  @ApiProperty({
+    description: 'Storage durability type evaluated',
+    enum: StorageType,
+    example: StorageType.PERSISTENT,
+  })
   storageType: StorageType;
 
-  @ApiProperty({ description: 'Whether the storage entry has already expired (ttlRemaining === 0)', example: false })
+  @ApiProperty({
+    description: 'Whether the storage entry has already expired (ttlRemaining === 0)',
+    example: false,
+  })
   isExpired: boolean;
 
-  @ApiProperty({ description: 'Remaining time broken down into ledgers, seconds, minutes, hours, and days', type: ExpiresInDto })
+  @ApiProperty({
+    description: 'Remaining time broken down into ledgers, seconds, minutes, hours, and days',
+    type: ExpiresInDto,
+  })
   expiresIn: ExpiresInDto;
 
-  @ApiProperty({ description: 'Projected calendar expiration timestamp (ISO 8601 string)', example: '2026-11-28T20:13:30.000Z' })
+  @ApiProperty({
+    description: 'Projected calendar expiration timestamp (ISO 8601 string)',
+    example: '2026-11-28T20:13:30.000Z',
+  })
   estimatedExpirationDate: Date;
 
   @ApiProperty({
@@ -221,7 +243,10 @@ export class ExtendedLifetimeDto {
   @ApiProperty({ description: 'Extended lifetime in ledgers', example: 200000 })
   ledgers: number;
 
-  @ApiProperty({ description: 'Extended lifetime in days (based on 17,280 ledgers/day)', example: 11.57 })
+  @ApiProperty({
+    description: 'Extended lifetime in days (based on 17,280 ledgers/day)',
+    example: 11.57,
+  })
   days: number;
 }
 
@@ -229,7 +254,10 @@ export class ExtendedLifetimeDto {
  * Breakdown of estimated fees required for the TTL extension.
  */
 export class EstimatedCostDto {
-  @ApiProperty({ description: 'Estimated total cost in stroops (1 XLM = 10,000,000 stroops)', example: 210000 })
+  @ApiProperty({
+    description: 'Estimated total cost in stroops (1 XLM = 10,000,000 stroops)',
+    example: 210000,
+  })
   stroops: number;
 
   @ApiProperty({ description: 'Estimated total cost formatted in XLM', example: '0.0210000' })
@@ -246,16 +274,28 @@ export class TtlExtensionEstimateResponseDto {
   @ApiProperty({ description: 'Number of ledgers extended', example: 200000 })
   extendByLedgers: number;
 
-  @ApiProperty({ description: 'New TTL in ledgers after extension (currentTtl + extendByLedgers)', example: 300000 })
+  @ApiProperty({
+    description: 'New TTL in ledgers after extension (currentTtl + extendByLedgers)',
+    example: 300000,
+  })
   newTtl: number;
 
-  @ApiPropertyOptional({ description: 'Projected new liveUntilLedger if currentLedger was provided', example: 1300000 })
+  @ApiPropertyOptional({
+    description: 'Projected new liveUntilLedger if currentLedger was provided',
+    example: 1300000,
+  })
   newLiveUntilLedger?: number;
 
-  @ApiProperty({ description: 'Extended lifetime gained in ledgers and days', type: ExtendedLifetimeDto })
+  @ApiProperty({
+    description: 'Extended lifetime gained in ledgers and days',
+    type: ExtendedLifetimeDto,
+  })
   extendedLifetime: ExtendedLifetimeDto;
 
-  @ApiProperty({ description: 'Estimated rent and write fees in stroops and XLM', type: EstimatedCostDto })
+  @ApiProperty({
+    description: 'Estimated rent and write fees in stroops and XLM',
+    type: EstimatedCostDto,
+  })
   estimatedCost: EstimatedCostDto;
 
   @ApiProperty({
@@ -281,21 +321,43 @@ export class BulkExpiresInDto {
  * Response schema for an individual contract in a bulk TTL estimation.
  */
 export class BulkExpirationResultResponseDto {
-  @ApiProperty({ description: 'Contract address evaluated', example: 'CA3D5KRYMCMQU7YOGCVSAEZIC5UFLCCU34H6S376T6CFGD3TUWK7CG7' })
+  @ApiProperty({
+    description: 'Contract address evaluated',
+    example: 'CA3D5KRYMCMQU7YOGCVSAEZIC5UFLCCU34H6S376T6CFGD3TUWK7CG7',
+  })
   contractAddress: string;
 
-  @ApiProperty({ description: 'Instance TTL in ledgers, or null if unretrievable', nullable: true, example: 500000 })
+  @ApiProperty({
+    description: 'Instance TTL in ledgers, or null if unretrievable',
+    nullable: true,
+    example: 500000,
+  })
   instanceTtl: number | null;
 
-  @ApiProperty({ description: 'WASM executable TTL in ledgers, or null if unretrievable', nullable: true, example: 500000 })
+  @ApiProperty({
+    description: 'WASM executable TTL in ledgers, or null if unretrievable',
+    nullable: true,
+    example: 500000,
+  })
   wasmTtl: number | null;
 
-  @ApiProperty({ description: 'Remaining time in days and hours, or null if expired/error', nullable: true, type: BulkExpiresInDto })
+  @ApiProperty({
+    description: 'Remaining time in days and hours, or null if expired/error',
+    nullable: true,
+    type: BulkExpiresInDto,
+  })
   expiresIn: BulkExpiresInDto | null;
 
-  @ApiProperty({ description: 'Contract health status', enum: ['healthy', 'warning', 'critical', 'error'], example: 'healthy' })
+  @ApiProperty({
+    description: 'Contract health status',
+    enum: ['healthy', 'warning', 'critical', 'error'],
+    example: 'healthy',
+  })
   status: 'healthy' | 'warning' | 'critical' | 'error';
 
-  @ApiPropertyOptional({ description: 'Error message if query failed for this address', example: 'Contract not found' })
+  @ApiPropertyOptional({
+    description: 'Error message if query failed for this address',
+    example: 'Contract not found',
+  })
   error?: string;
 }
