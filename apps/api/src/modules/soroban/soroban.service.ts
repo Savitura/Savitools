@@ -117,7 +117,7 @@ export class SorobanService {
       status,
       storageType,
       daysRemaining,
-      ttlRemaining
+      ttlRemaining,
     );
 
     return {
@@ -170,7 +170,7 @@ export class SorobanService {
     const recommendation = this.generateExtensionRecommendation(
       extendedDays,
       totalCostStroops,
-      storageType
+      storageType,
     );
 
     return {
@@ -228,7 +228,7 @@ export class SorobanService {
             error: error instanceof Error ? error.message : 'Unknown error',
           };
         }
-      })
+      }),
     );
 
     return results;
@@ -237,11 +237,7 @@ export class SorobanService {
   /**
    * Calculate rent cost for storage
    */
-  private calculateRentCost(
-    sizeBytes: number,
-    ledgers: number,
-    storageType: StorageType
-  ): number {
+  private calculateRentCost(sizeBytes: number, ledgers: number, storageType: StorageType): number {
     // Cost multiplier based on storage type
     const multiplier = storageType === StorageType.TEMPORARY ? 0.5 : 1.0;
 
@@ -257,7 +253,7 @@ export class SorobanService {
     status: string,
     storageType: StorageType,
     daysRemaining: number,
-    ttlRemaining: number
+    ttlRemaining: number,
   ): string {
     if (status === 'expired') {
       if (storageType === StorageType.TEMPORARY) {
@@ -285,7 +281,7 @@ export class SorobanService {
   private generateExtensionRecommendation(
     extendedDays: number,
     costStroops: number,
-    storageType: StorageType
+    storageType: StorageType,
   ): string {
     const costXlm = (costStroops / 10_000_000).toFixed(7);
 
