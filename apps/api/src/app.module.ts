@@ -30,6 +30,7 @@ import { SorobanRpcModule } from "./modules/soroban-rpc/soroban-rpc.module";
 import { LiquidityPoolsModule } from "./modules/liquidity-pools/liquidity-pools.module";
 import { LedgerCloseModule } from "./modules/ledger-close/ledger-close.module";
 import { MultisigModule } from "./modules/multisig/multisig.module";
+import { DiagnosticsModule } from "./modules/diagnostics/diagnostics.module";
 import { Sep24Module } from "./modules/sep24/sep24.module";
 import { DataSource } from "typeorm";
 import { ALL_ENTITIES, ALL_MIGRATIONS } from "./database/database.registry";
@@ -103,6 +104,7 @@ ThrottlerModule.forRootAsync({
     LiquidityPoolsModule,
     LedgerCloseModule,
     MultisigModule,
+    DiagnosticsModule,
     Sep24Module,
   ],
   controllers: [AppController],
