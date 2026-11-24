@@ -4,11 +4,11 @@ CodeQL scans all JavaScript and TypeScript source files in this repository for s
 
 ## Trigger conditions
 
-| Event | Condition |
-| --- | --- |
-| Push to `main` | Any change to `apps/**`, `scripts/**`, or the workflow file itself |
-| Pull request targeting `main` | Same path filter |
-| Scheduled | Weekly, Monday 02:17 UTC |
+| Event                         | Condition                                                          |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Push to `main`                | Any change to `apps/**`, `scripts/**`, or the workflow file itself |
+| Pull request targeting `main` | Same path filter                                                   |
+| Scheduled                     | Weekly, Monday 02:17 UTC                                           |
 
 The path filter means the workflow is skipped on pushes that only change documentation, Docker files, or configuration that doesn't affect JS/TS code. The weekly schedule ensures vulnerabilities in dependencies or query improvements are caught even when the filtered paths haven't changed.
 
@@ -20,13 +20,13 @@ To reduce noise at the cost of fewer findings, change `queries: security-and-qua
 
 ## Excluded paths
 
-| Pattern | Reason |
-| --- | --- |
+| Pattern              | Reason                                        |
+| -------------------- | --------------------------------------------- |
 | `**/node_modules/**` | Third-party code — excluded by CodeQL default |
-| `**/dist/**` | Compiled NestJS output — not source |
-| `**/.next/**` | Next.js build cache — not source |
-| `**/coverage/**` | Jest coverage artefacts |
-| `**/__mocks__/**` | Test mock stubs — not production logic |
+| `**/dist/**`         | Compiled NestJS output — not source           |
+| `**/.next/**`        | Next.js build cache — not source              |
+| `**/coverage/**`     | Jest coverage artefacts                       |
+| `**/__mocks__/**`    | Test mock stubs — not production logic        |
 
 ## Reviewing results
 
@@ -61,8 +61,8 @@ codeql database analyze codeql-db \
 
 ## Relationship to other security workflows
 
-| Workflow | What it checks |
-| --- | --- |
-| `codeql.yml` (this) | Source-code vulnerabilities (SAST) |
+| Workflow                | What it checks                                                     |
+| ----------------------- | ------------------------------------------------------------------ |
+| `codeql.yml` (this)     | Source-code vulnerabilities (SAST)                                 |
 | `dependency-review.yml` | Vulnerable or license-noncompliant dependencies introduced by a PR |
-| CI `review:deps` step | Local audit of the full dependency tree |
+| CI `review:deps` step   | Local audit of the full dependency tree                            |

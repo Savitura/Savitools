@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Observable } from 'rxjs';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -16,9 +11,7 @@ export const REQUEST_ID_MAX_LENGTH = 128;
 
 export function isValidRequestId(value: string): boolean {
   return (
-    value.length > 0 &&
-    value.length <= REQUEST_ID_MAX_LENGTH &&
-    /^[A-Za-z0-9._:-]+$/.test(value)
+    value.length > 0 && value.length <= REQUEST_ID_MAX_LENGTH && /^[A-Za-z0-9._:-]+$/.test(value)
   );
 }
 

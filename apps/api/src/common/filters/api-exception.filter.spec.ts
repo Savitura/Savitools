@@ -1,5 +1,10 @@
 import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/common';
-import { ApiErrorEnvelope, ApiSuccessEnvelope, ApiEnvelope, ApiExceptionFilter } from './api-exception.filter';
+import {
+  ApiErrorEnvelope,
+  ApiSuccessEnvelope,
+  ApiEnvelope,
+  ApiExceptionFilter,
+} from './api-exception.filter';
 import { REQUEST_ID_HEADER } from '../interceptors/request-id.interceptor';
 
 function hostFor(request: Record<string, unknown>) {
@@ -23,10 +28,7 @@ describe('ApiExceptionFilter', () => {
     const request = { url: '/api/v1/monitor/stream', method: 'GET', headers: {} };
     const { host, reply } = hostFor(request);
 
-    new ApiExceptionFilter().catch(
-      new BadRequestException('Invalid ISO date for "from"'),
-      host,
-    );
+    new ApiExceptionFilter().catch(new BadRequestException('Invalid ISO date for "from"'), host);
 
     const [envelope] = reply.send.mock.calls[0] as [ApiErrorEnvelope];
     expect(reply.status).toHaveBeenCalledWith(400);
@@ -59,10 +61,7 @@ describe('ApiExceptionFilter', () => {
   it('does not leak the message of an unexpected error', () => {
     const { host, reply } = hostFor({ url: '/api/v1/x', method: 'GET', headers: {} });
 
-    new ApiExceptionFilter().catch(
-      new Error('connect ECONNREFUSED 127.0.0.1:6379'),
-      host,
-    );
+    new ApiExceptionFilter().catch(new Error('connect ECONNREFUSED 127.0.0.1:6379'), host);
 
     const [envelope] = reply.send.mock.calls[0] as [ApiErrorEnvelope];
     expect(reply.status).toHaveBeenCalledWith(500);

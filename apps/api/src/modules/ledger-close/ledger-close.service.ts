@@ -10,7 +10,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Between, LessThan, Repository } from 'typeorm';
 import { LedgerCloseStat } from './entities/ledger-close-stat.entity';
-import { LedgerCloseStatsQueryDto, MAX_LEDGER_CLOSE_STATS } from './dto/ledger-close-stats-query.dto';
+import {
+  LedgerCloseStatsQueryDto,
+  MAX_LEDGER_CLOSE_STATS,
+} from './dto/ledger-close-stats-query.dto';
 import {
   LedgerCloseStatsListResponse,
   LedgerCloseStatsSummary,
@@ -46,12 +49,13 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async getStats(
-    query: LedgerCloseStatsQueryDto,
-  ): Promise<LedgerCloseStatsListResponse> {
+  async getStats(query: LedgerCloseStatsQueryDto): Promise<LedgerCloseStatsListResponse> {
     const network = query.network ?? 'mainnet';
     const range = this.parseHistoryRange(query.from, query.to);
-    const take = Math.min(Math.max(1, query.limit ?? MAX_LEDGER_CLOSE_STATS), MAX_LEDGER_CLOSE_STATS);
+    const take = Math.min(
+      Math.max(1, query.limit ?? MAX_LEDGER_CLOSE_STATS),
+      MAX_LEDGER_CLOSE_STATS,
+    );
 
     const stats = await this.ledgerCloseStatRepository.find({
       where: {
@@ -93,9 +97,7 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
     this.pollInProgress = true;
     try {
       await Promise.allSettled(
-        (['mainnet', 'testnet'] as const).map((network) =>
-          this.sampleLedgerClose(network),
-        ),
+        (['mainnet', 'testnet'] as const).map((network) => this.sampleLedgerClose(network)),
       );
       await this.pruneRetention();
     } catch (error) {
@@ -111,11 +113,7 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const server = new StellarSdk.Horizon.Server(horizonBaseUrl);
-      const latestLedgersPage = await server
-        .ledgers()
-        .order('desc')
-        .limit(1)
-        .call();
+      const latestLedgersPage = await server.ledgers().order('desc').limit(1).call();
 
       if (latestLedgersPage.records.length === 0) {
         this.logger.warn(`No ledgers found for ${network}`);
@@ -126,7 +124,8 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
       const _closeTime = new Date(latestLedger.closed_at).getTime();
       const latencyMs = Date.now() - startedAt;
 
-      const rawClosingTime = typeof latestLedger.closing_time === 'number' ? latestLedger.closing_time : 0;
+      const rawClosingTime =
+        typeof latestLedger.closing_time === 'number' ? latestLedger.closing_time : 0;
       const closeTimeSeconds = parseFloat((rawClosingTime / 1000).toFixed(2));
 
       await this.ledgerCloseStatRepository.save(
@@ -139,8 +138,12 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
           p50LatencyMs: null,
           p95LatencyMs: null,
           p99LatencyMs: null,
-          transactionCount: typeof latestLedger.transaction_count === 'number' ? latestLedger.transaction_count : (latestLedger.successful_transaction_count ?? 0),
-          operationCount: typeof latestLedger.operation_count === 'number' ? latestLedger.operation_count : 0,
+          transactionCount:
+            typeof latestLedger.transaction_count === 'number'
+              ? latestLedger.transaction_count
+              : (latestLedger.successful_transaction_count ?? 0),
+          operationCount:
+            typeof latestLedger.operation_count === 'number' ? latestLedger.operation_count : 0,
           sampledAt: new Date(),
         }),
       );
@@ -157,10 +160,7 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
 
   private horizonUrl(network: 'mainnet' | 'testnet') {
     return network === 'mainnet'
-      ? this.configService.get<string>(
-          'STELLAR_HORIZON_MAINNET_URL',
-          'https://horizon.stellar.org',
-        )
+      ? this.configService.get<string>('STELLAR_HORIZON_MAINNET_URL', 'https://horizon.stellar.org')
       : this.configService.get<string>(
           'STELLAR_HORIZON_URL',
           'https://horizon-testnet.stellar.org',
@@ -170,9 +170,7 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
   private parseHistoryRange(from?: string, to?: string) {
     const now = new Date();
     const parsedTo = to ? new Date(to) : now;
-    const parsedFrom = from
-      ? new Date(from)
-      : new Date(parsedTo.getTime() - 24 * 60 * 60 * 1000);
+    const parsedFrom = from ? new Date(from) : new Date(parsedTo.getTime() - 24 * 60 * 60 * 1000);
 
     if (Number.isNaN(parsedFrom.getTime()) || Number.isNaN(parsedTo.getTime())) {
       throw new BadRequestException('from and to must be valid ISO dates');
@@ -205,19 +203,11 @@ export class LedgerCloseService implements OnModuleInit, OnModuleDestroy {
 
     const closeTimes = stats.map((s) => s.closeTimeSeconds);
     const latencies = stats.map((s) => s.latencyMs).sort((a, b) => a - b);
-    const totalTransactions = stats.reduce(
-      (sum, s) => sum + (s.transactionCount ?? 0),
-      0,
-    );
-    const totalOperations = stats.reduce(
-      (sum, s) => sum + (s.operationCount ?? 0),
-      0,
-    );
+    const totalTransactions = stats.reduce((sum, s) => sum + (s.transactionCount ?? 0), 0);
+    const totalOperations = stats.reduce((sum, s) => sum + (s.operationCount ?? 0), 0);
 
-    const avgCloseTimeSeconds =
-      closeTimes.reduce((sum, time) => sum + time, 0) / closeTimes.length;
-    const avgLatencyMs =
-      latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length;
+    const avgCloseTimeSeconds = closeTimes.reduce((sum, time) => sum + time, 0) / closeTimes.length;
+    const avgLatencyMs = latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length;
 
     return {
       avgCloseTimeSeconds: parseFloat(avgCloseTimeSeconds.toFixed(2)),
