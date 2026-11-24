@@ -9,7 +9,7 @@ describe('Sep24DebuggerService', () => {
   let service: Sep24DebuggerService;
 
   beforeEach(async () => {
-    // Ensure DNS lookup resolves to a safe public IP so assertSafeServerTarget passes in tests
+    // Resolve outbound destinations to a public address in tests.
     jest.spyOn(nodeDns, 'lookup').mockResolvedValue([
       { address: '93.184.216.34', family: 4 },
     ] as any);
@@ -37,6 +37,46 @@ describe('Sep24DebuggerService', () => {
   });
 
   describe('startSession against mocked anchor', () => {
+    it('rejects a link-local anchor before making an outbound request', async () => {
+      const fetchSpy = jest.spyOn(global, 'fetch');
+
+      await expect(
+        service.startSession({
+          anchorDomain: '169.254.169.254',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-test-jwt-token',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not follow a redirect to a link-local address', async () => {
+      const fetchSpy = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(
+          new Response('TRANSFER_SERVER_SEP0024 = "https://anchor.example.com/sep24"'),
+        )
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 302,
+            headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+          }),
+        );
+
+      await expect(
+        service.startSession({
+          anchorDomain: 'anchor.example.com',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-test-jwt-token',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
     it('starts a deposit session against a mocked anchor successfully', async () => {
       const mockToml = `
 TRANSFER_SERVER_SEP0024 = "https://anchor.example.com/sep24"

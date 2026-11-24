@@ -44,7 +44,7 @@ SaviTools implements the following security measures:
 
 ### Network Security
 
-- **SSRF Protection**: Guards on outbound requests from Playground, Webhook, and Network modules
+- **SSRF Protection**: Outbound requests from tool proxies validate public DNS/IP targets and revalidate every redirect. SEP-10 and SEP-24 anchor requests use the shared guard, including endpoints discovered from `stellar.toml`; private, loopback, and link-local targets are rejected.
 - **TLS**: All external API calls use HTTPS
 
 ### HTTP Security Headers (Configured in `apps/web/next.config.ts`)

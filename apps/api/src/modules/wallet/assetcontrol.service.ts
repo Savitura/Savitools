@@ -12,6 +12,7 @@ import {
   StellarTestnetService,
   type HorizonAccount,
 } from '../stellar/stellar-testnet.service';
+import { fetchWithSafeRedirects } from '../../common/ssrf-guard';
 
 /** Stellar account flag bitmask values (`SetOptions` setFlags / clearFlags). */
 export const ACCOUNT_FLAGS = {
@@ -265,7 +266,7 @@ export class AssetControlService {
   private async fetchPage(url: string): Promise<HorizonPage> {
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await fetchWithSafeRedirects(url, {
         headers: { Accept: 'application/hal+json' },
         signal: AbortSignal.timeout(15000),
       });
