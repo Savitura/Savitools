@@ -56,7 +56,6 @@ describe('TypeORM Migration Up/Down Reversibility', () => {
     const _executedMigrations = await dataSource.showMigrations();
     
     // Revert all applied migrations down one by one
-    let revertedCount = 0;
     while (true) {
       const pending = await dataSource.showMigrations();
       if (!pending) {
@@ -67,7 +66,6 @@ describe('TypeORM Migration Up/Down Reversibility', () => {
       if (!reverted) {
         break;
       }
-      revertedCount++;
     }
 
     expect(runMigrations.length).toBeGreaterThan(0);
