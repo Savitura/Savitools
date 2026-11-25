@@ -1,28 +1,28 @@
+const tsconfig = {
+  jsx: 'react-jsx',
+  module: 'commonjs',
+  moduleResolution: 'node',
+  esModuleInterop: true,
+  allowJs: true,
+  // ts-jest rewrites `sources` in its inline maps to `file://` URLs, and
+  // babel-plugin-istanbul then keeps those URLs as coverage paths. That
+  // turns into `src/lib/file:/...` entries whose report directories are
+  // named `file:` (with a colon), which `actions/upload-artifact` refuses
+  // to archive. Emitting no map keeps coverage keys on plain file paths.
+  sourceMap: false,
+};
+
 const transform = {
-  '^.+\\.(ts|tsx)$': [
-    'ts-jest',
-    {
-      tsconfig: {
-        jsx: 'react-jsx',
-        module: 'commonjs',
-        moduleResolution: 'node',
-        esModuleInterop: true,
-        allowJs: true,
-        // ts-jest rewrites `sources` in its inline maps to `file://` URLs, and
-        // babel-plugin-istanbul then keeps those URLs as coverage paths. That
-        // turns into `src/lib/file:/...` entries whose report directories are
-        // named `file:` (with a colon), which `actions/upload-artifact` refuses
-        // to archive. Emitting no map keeps coverage keys on plain file paths.
-        sourceMap: false,
-      },
-    },
-  ],
+  '^.+\\.[jt]sx?$': ['ts-jest', { tsconfig }],
 };
 
 const shared = {
   rootDir: __dirname,
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // Components import Prism's stylesheet, which is bundled by Next but is
+    // meaningless in jsdom. Map it to an empty module so they can be mounted.
+    '\\.css$': '<rootDir>/jest.style-mock.js',
   },
   transform,
 };
@@ -52,6 +52,10 @@ module.exports = {
       displayName: 'node',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/src/__tests__/**/*.{test,spec}.ts'],
+      // next-intl ships its middleware as native ESM only (it has no `require`
+      // export condition), so Jest's CommonJS runtime has to compile it. Every
+      // other dependency stays ignored, as usual.
+      transformIgnorePatterns: ['/node_modules/(?!next-intl/|use-intl/|@formatjs/intl-localematcher/|@formatjs/fast-memoize/)'],
     },
     {
       // Component suites: anything that needs to mount React into a DOM.
@@ -60,6 +64,7 @@ module.exports = {
       testEnvironment: 'jsdom',
       setupFilesAfterEnv: ['<rootDir>/jest.setup.dom.ts'],
       testMatch: ['<rootDir>/src/__tests__/**/*.{test,spec}.tsx'],
+      transformIgnorePatterns: ['/node_modules/(?!next-intl/|use-intl/|@formatjs/intl-localematcher/|@formatjs/fast-memoize/)'],
     },
   ],
 };
