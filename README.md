@@ -6,6 +6,10 @@
 
 SaviTools is the official developer console in the [Savitura](https://savitura.com) ecosystem, purpose-built for [Fluxa](https://github.com/Savitura/Fluxa) payment infrastructure. It provides interactive API playgrounds, webhook testing, SDK generation, and SEP debugging against hosted sandboxes — without needing a terminal, Rust toolchain, or deep protocol knowledge.
 
+### Deployment & Reverse Proxy Rate-Limiting
+
+When deploying `apps/api` behind reverse proxies (such as Nginx, Cloudflare, or Railway), configure `TRUST_PROXY` (e.g., `TRUST_PROXY=1` or your proxy's CIDR) to allow `ThrottlerBehindProxyGuard` and Fastify to correctly derive client IPs from `X-RateLimit-*` and `X-Forwarded-For` headers.
+
 > **Live Deployment (Testnet Only)**: [https://savitools.savitura.com](https://savitools.savitura.com)  
 > **Live API**: [https://savitools-api.savitura.com](https://savitools-api.savitura.com)  
 > **Status**: Public testnet preview. Mainnet signing is strictly locked out across all tools (Composer, Wallet Sandbox, and API).
