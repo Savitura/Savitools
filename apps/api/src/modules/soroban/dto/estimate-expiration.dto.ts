@@ -350,10 +350,10 @@ export class BulkExpirationResultResponseDto {
 
   @ApiProperty({
     description: 'Contract health status',
-    enum: ['healthy', 'warning', 'critical', 'error'],
+    enum: ['healthy', 'warning', 'critical', 'expired', 'error'],
     example: 'healthy',
   })
-  status: 'healthy' | 'warning' | 'critical' | 'error';
+  status: 'healthy' | 'warning' | 'critical' | 'expired' | 'error';
 
   @ApiPropertyOptional({
     description: 'Error message if query failed for this address',

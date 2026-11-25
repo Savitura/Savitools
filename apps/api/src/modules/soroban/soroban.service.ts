@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { resolveStellarRpcUrl } from '../../config/stellar-endpoints';
 import {
   EstimateExpirationDto,
   ExtendTtlEstimateDto,
@@ -50,8 +51,17 @@ export interface BulkExpirationResult {
     days: number;
     hours: number;
   } | null;
-  status: 'healthy' | 'warning' | 'critical' | 'error';
+  status: 'healthy' | 'warning' | 'critical' | 'expired' | 'error';
   error?: string;
+}
+
+export interface ContractTtlInfo {
+  currentLedger: number;
+  instanceTtl: number | null;
+  wasmTtl: number | null;
+  instanceLiveUntilLedger: number | null;
+  wasmLiveUntilLedger: number | null;
+  isStellarAsset?: boolean;
 }
 
 @Injectable()
@@ -191,33 +201,91 @@ export class SorobanService {
   }
 
   /**
+   * Look up actual contract instance and WASM code TTL via Soroban RPC
+   */
+  async getContractTtl(
+    address: string,
+    network: 'testnet' | 'mainnet',
+  ): Promise<ContractTtlInfo> {
+    if (!StellarSdk.StrKey.isValidContract(address)) {
+      throw new BadRequestException(`Invalid contract address: ${address}`);
+    }
+
+    const rpcServer = this.getSorobanRpcServer(network);
+    const latestLedger = await rpcServer.getLatestLedger();
+    const currentLedger = latestLedger.sequence;
+
+    const contractScAddress = StellarSdk.Address.fromString(address).toScAddress();
+    const instanceKey = StellarSdk.xdr.LedgerKey.contractData(
+      new StellarSdk.xdr.LedgerKeyContractData({
+        contract: contractScAddress,
+        key: StellarSdk.xdr.ScVal.scvLedgerKeyContractInstance(),
+        durability: StellarSdk.xdr.ContractDataDurability.persistent(),
+      }),
+    );
+
+    const instanceResponse = await rpcServer.getLedgerEntries(instanceKey);
+    const instanceEntry = instanceResponse.entries?.[0];
+
+    if (!instanceEntry || instanceEntry.liveUntilLedgerSeq === undefined) {
+      return {
+        currentLedger,
+        instanceTtl: null,
+        wasmTtl: null,
+        instanceLiveUntilLedger: null,
+        wasmLiveUntilLedger: null,
+      };
+    }
+
+    const instanceLiveUntilLedger = instanceEntry.liveUntilLedgerSeq;
+    const instanceTtl = Math.max(0, instanceLiveUntilLedger - currentLedger);
+
+    const { wasmHash, isStellarAsset } = this.extractWasmHash(instanceEntry.val);
+    if (!wasmHash) {
+      return {
+        currentLedger,
+        instanceTtl,
+        wasmTtl: null,
+        instanceLiveUntilLedger,
+        wasmLiveUntilLedger: null,
+        isStellarAsset,
+      };
+    }
+
+    const wasmKey = StellarSdk.xdr.LedgerKey.contractCode(
+      new StellarSdk.xdr.LedgerKeyContractCode({
+        hash: wasmHash,
+      }),
+    );
+
+    const wasmResponse = await rpcServer.getLedgerEntries(wasmKey);
+    const wasmEntry = wasmResponse.entries?.[0];
+    const wasmLiveUntilLedger =
+      wasmEntry?.liveUntilLedgerSeq !== undefined ? wasmEntry.liveUntilLedgerSeq : null;
+    const wasmTtl =
+      wasmLiveUntilLedger !== null ? Math.max(0, wasmLiveUntilLedger - currentLedger) : null;
+
+    return {
+      currentLedger,
+      instanceTtl,
+      wasmTtl,
+      instanceLiveUntilLedger,
+      wasmLiveUntilLedger,
+      isStellarAsset,
+    };
+  }
+
+  /**
    * Bulk estimate expiration for multiple contracts
    */
   async estimateBulkExpiration(dto: BulkEstimateDto): Promise<BulkExpirationResult[]> {
     const { contractAddresses, network } = dto;
-    const server = this.getHorizonServer(network);
 
     const results = await Promise.all(
       contractAddresses.map(async (address) => {
         try {
-          // Get current ledger
-          const ledgerResponse = await server.ledgers().order('desc').limit(1).call();
-          const _currentLedger = ledgerResponse.records[0]?.sequence || 0;
-
-          // Fetch contract data (this is simplified - in production you'd use RPC)
-          // For now, return mock data structure
-          const result: BulkExpirationResult = {
-            contractAddress: address,
-            instanceTtl: null,
-            wasmTtl: null,
-            expiresIn: null,
-            status: 'healthy',
-          };
-
-          // TODO: Implement actual RPC call to get contract TTL
-          // const contractData = await this.getContractTtl(address, network);
-
-          return result;
+          const ttlInfo = await this.getContractTtl(address, network);
+          return this.buildBulkExpirationResult(address, ttlInfo);
         } catch (error) {
           return {
             contractAddress: address,
@@ -232,6 +300,93 @@ export class SorobanService {
     );
 
     return results;
+  }
+
+  private buildBulkExpirationResult(
+    address: string,
+    ttlInfo: ContractTtlInfo,
+  ): BulkExpirationResult {
+    const { instanceTtl, wasmTtl, isStellarAsset } = ttlInfo;
+
+    if (instanceTtl === null || (!isStellarAsset && wasmTtl === null)) {
+      return {
+        contractAddress: address,
+        instanceTtl,
+        wasmTtl,
+        expiresIn: null,
+        status: 'expired',
+      };
+    }
+
+    const effectiveTtl =
+      wasmTtl !== null ? Math.min(instanceTtl, wasmTtl) : instanceTtl;
+
+    if (effectiveTtl <= 0) {
+      return {
+        contractAddress: address,
+        instanceTtl,
+        wasmTtl,
+        expiresIn: null,
+        status: 'expired',
+      };
+    }
+
+    const daysRemaining = effectiveTtl / this.LEDGERS_PER_DAY;
+    let status: BulkExpirationResult['status'];
+    if (daysRemaining <= this.CRITICAL_THRESHOLD_DAYS) {
+      status = 'critical';
+    } else if (daysRemaining <= this.WARNING_THRESHOLD_DAYS) {
+      status = 'warning';
+    } else {
+      status = 'healthy';
+    }
+
+    const totalHours = (effectiveTtl * this.LEDGER_CLOSE_TIME_SECONDS) / 3600;
+
+    return {
+      contractAddress: address,
+      instanceTtl,
+      wasmTtl,
+      expiresIn: {
+        days: Math.floor(totalHours / 24),
+        hours: Math.floor(totalHours % 24),
+      },
+      status,
+    };
+  }
+
+  private extractWasmHash(val: StellarSdk.xdr.LedgerEntryData): {
+    wasmHash: Buffer | null;
+    isStellarAsset: boolean;
+  } {
+    if (val.switch() !== StellarSdk.xdr.LedgerEntryType.contractData()) {
+      return { wasmHash: null, isStellarAsset: false };
+    }
+
+    const scVal = val.contractData().val();
+    if (scVal.switch() !== StellarSdk.xdr.ScValType.scvContractInstance()) {
+      return { wasmHash: null, isStellarAsset: false };
+    }
+
+    const executable = scVal.instance().executable();
+    if (
+      executable.switch() ===
+      StellarSdk.xdr.ContractExecutableType.contractExecutableWasm()
+    ) {
+      return {
+        wasmHash: Buffer.from(executable.wasmHash()),
+        isStellarAsset: false,
+      };
+    }
+
+    if (
+      executable.switch() ===
+      StellarSdk.xdr.ContractExecutableType.contractExecutableStellarAsset()
+    ) {
+      return { wasmHash: null, isStellarAsset: true };
+    }
+
+    return { wasmHash: null, isStellarAsset: false };
   }
 
   /**
@@ -300,14 +455,20 @@ export class SorobanService {
   }
 
   /**
-   * Get Horizon server instance
+   * Get Soroban RPC server instance
    */
-  private getHorizonServer(network: 'testnet' | 'mainnet'): StellarSdk.Horizon.Server {
-    const url =
-      network === 'mainnet'
-        ? this.config.get<string>('STELLAR_HORIZON_MAINNET_URL', 'https://horizon.stellar.org')
-        : this.config.get<string>('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
+  private getSorobanRpcServer(network: 'testnet' | 'mainnet'): StellarSdk.rpc.Server {
+    const url = resolveStellarRpcUrl(
+      {
+        STELLAR_RPC_URL: this.config.get<string>('STELLAR_RPC_URL'),
+        STELLAR_RPC_PUBLIC_URL: this.config.get<string>('STELLAR_RPC_PUBLIC_URL'),
+        STELLAR_RPC_MAINNET_URL: this.config.get<string>('STELLAR_RPC_MAINNET_URL'),
+      },
+      network,
+    );
 
-    return new StellarSdk.Horizon.Server(url);
+    return new StellarSdk.rpc.Server(url, {
+      allowHttp: url.startsWith('http://'),
+    });
   }
 }
