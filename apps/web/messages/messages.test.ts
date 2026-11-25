@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import test, { describe, it } from 'node:test';
+import assert from 'node:assert';
 import en from './en.json';
 import es from './es.json';
 
@@ -28,7 +29,7 @@ describe('Locale messages parity', () => {
     const missingInEs = enKeys.filter(k => !esKeys.includes(k));
     const missingInEn = esKeys.filter(k => !enKeys.includes(k));
 
-    expect({ missingInEs, missingInEn }).toEqual({
+    assert.deepEqual({ missingInEs, missingInEn }, {
       missingInEs: [],
       missingInEn: [],
     });
@@ -50,6 +51,6 @@ describe('Locale messages parity', () => {
       }
     }
 
-    expect(mismatches).toEqual([]);
+    assert.deepEqual(mismatches, []);
   });
 });
