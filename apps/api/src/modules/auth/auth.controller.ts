@@ -39,8 +39,10 @@ import {
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { FluxaOAuthService } from './fluxa-oauth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+import { PasskeyAuthService } from './passkey-auth.service';
 
 /** Tighter per-IP limit for credential and reset endpoints (Savitura/Savitools#418). */
 const AUTH_ROUTE_THROTTLE = {
@@ -73,6 +75,8 @@ export function clientAddress(req: FastifyRequest): string | undefined {
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly passkeyAuthService: PasskeyAuthService,
+    private readonly fluxaOAuthService: FluxaOAuthService,
     private readonly configService: ConfigService,
     @Inject('REDIS_CLIENT')
     private readonly redis: RedisClientType,
@@ -241,7 +245,7 @@ export class AuthController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const currentUser = req.user ? await this.authService.getUserById(req.user.id) : undefined;
-    const { user, tokens } = await this.authService.fluxaLink(dto, currentUser ?? undefined, {
+    const { user, tokens } = await this.fluxaOAuthService.fluxaLink(dto, currentUser ?? undefined, {
       ipAddress: clientAddress(req),
       userAgent: req.headers['user-agent'],
     });
@@ -262,7 +266,7 @@ export class AuthController {
   @ApiCookieAuth()
   @ApiOperation({ summary: 'List connected external accounts' })
   async listConnectedAccounts(@CurrentUser() user: { id: string }) {
-    return this.authService.listConnectedAccounts(user.id);
+    return this.fluxaOAuthService.listConnectedAccounts(user.id);
   }
 
   @Post('connect/fluxa')
@@ -270,7 +274,7 @@ export class AuthController {
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Begin Fluxa OAuth connection — returns redirect URL' })
   async beginFluxaConnect(@CurrentUser() user: { id: string }) {
-    return this.authService.beginFluxaConnect(
+    return this.fluxaOAuthService.beginFluxaConnect(
       user.id,
       this.redis as unknown as {
         set: (key: string, value: string, options: { EX: number }) => Promise<unknown>;
@@ -285,7 +289,7 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid or expired OAuth state' })
   async fluxaCallback(@Req() req: AuthRequest & { query: { code: string; state: string } }) {
     const { code, state } = req.query;
-    const account = await this.authService.completeFluxaConnect(
+    const account = await this.fluxaOAuthService.completeFluxaConnect(
       code,
       state,
       this.redis as unknown as {
@@ -310,7 +314,7 @@ export class AuthController {
     @Param('provider') provider: string,
     @CurrentUser() user: { id: string },
   ) {
-    await this.authService.disconnectProvider(user.id, provider);
+    await this.fluxaOAuthService.disconnectProvider(user.id, provider);
     return { success: true };
   }
 
@@ -346,7 +350,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Reauthentication grant issued' })
   @ApiResponse({ status: 401, description: 'Invalid password' })
   async reauthenticate(@CurrentUser() user: { id: string }, @Body() dto: PasskeyReauthDto) {
-    return this.authService.requestPasskeyReauth(user.id, dto.password);
+    return this.passkeyAuthService.requestPasskeyReauth(user.id, dto.password);
   }
 
   @Post('passkeys/register/options')
@@ -358,7 +362,7 @@ export class AuthController {
     @CurrentUser() user: { id: string },
     @Body() dto: { reauthToken: string },
   ) {
-    return this.authService.beginPasskeyRegistration(user.id, dto.reauthToken);
+    return this.passkeyAuthService.beginPasskeyRegistration(user.id, dto.reauthToken);
   }
 
   @Post('passkeys/register')
@@ -370,7 +374,7 @@ export class AuthController {
     @CurrentUser() user: { id: string },
     @Body() dto: PasskeyRegistrationVerifyDto,
   ) {
-    const credential = await this.authService.verifyPasskeyRegistration(
+    const credential = await this.passkeyAuthService.verifyPasskeyRegistration(
       user.id,
       dto.reauthToken,
       dto.name,
@@ -390,7 +394,7 @@ export class AuthController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Begin passkey assertion login' })
   async beginPasskeyLogin(@Body() dto: { email?: string }) {
-    return this.authService.beginPasskeyLogin(dto.email);
+    return this.passkeyAuthService.beginPasskeyLogin(dto.email);
   }
 
   @Post('passkeys/login')
@@ -404,7 +408,7 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const { user, tokens } = await this.authService.verifyPasskeyLogin(
+    const { user, tokens } = await this.passkeyAuthService.verifyPasskeyLogin(
       dto.assertionResponse as never,
       {
         ipAddress: clientAddress(req),
@@ -427,7 +431,7 @@ export class AuthController {
   @ApiCookieAuth()
   @ApiOperation({ summary: 'List passkeys registered for the current account' })
   async listPasskeys(@CurrentUser() user: { id: string }) {
-    return this.authService.listPasskeys(user.id);
+    return this.passkeyAuthService.listPasskeys(user.id);
   }
 
   @Patch('passkeys/:id')
@@ -440,7 +444,7 @@ export class AuthController {
     @CurrentUser() user: { id: string },
     @Body() dto: PasskeyRenameDto & { reauthToken: string },
   ) {
-    await this.authService.renamePasskey(id, user.id, dto.name, dto.reauthToken);
+    await this.passkeyAuthService.renamePasskey(id, user.id, dto.name, dto.reauthToken);
     return { success: true };
   }
 
@@ -457,7 +461,7 @@ export class AuthController {
     @CurrentUser() user: { id: string },
     @Body() dto: { reauthToken: string },
   ) {
-    await this.authService.revokePasskey(id, user.id, dto.reauthToken);
+    await this.passkeyAuthService.revokePasskey(id, user.id, dto.reauthToken);
     return { success: true };
   }
 

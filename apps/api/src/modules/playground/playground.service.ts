@@ -19,7 +19,7 @@ import { ListHistoryDto } from './dto/list-history.dto';
 import { ApiKey, ApiKeyProvider } from './entities/api-key.entity';
 import { PlaygroundHistory } from './entities/playground-history.entity';
 import { ProxyRequestDto } from './dto/proxy-request.dto';
-import { AuthService } from '../auth/auth.service';
+import { VaultKeyService } from '../auth/vault-key.service';
 import {
   assertRelativePath,
   assertSafeDestination,
@@ -167,7 +167,7 @@ export class PlaygroundService {
     @InjectRepository(PlaygroundHistory)
     private readonly historyRepository: Repository<PlaygroundHistory>,
     private readonly configService: ConfigService,
-    private readonly authService: AuthService,
+    private readonly vaultKeyService: VaultKeyService,
     private readonly encryptionService: EncryptionService,
   ) {
     this.specTtlMs = parseSpecTtlMs(this.configService.get('PLAYGROUND_SPEC_TTL_MS'));
@@ -308,7 +308,7 @@ export class PlaygroundService {
       key = await this.findUserKey(userId, dto.provider);
       if (!key) {
         // Fall back to the vault / connected accounts for key injection
-        const vaultKey = await this.authService.resolveKey(userId, dto.provider);
+        const vaultKey = await this.vaultKeyService.resolveKey(userId, dto.provider);
         if (!vaultKey) {
           throw new NotFoundException(
             `No ${dto.provider} API key stored. Save one in Playground → Key Manager or the Vault first.`,

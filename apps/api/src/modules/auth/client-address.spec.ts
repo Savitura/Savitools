@@ -40,8 +40,10 @@ describe("clientAddress (Savitura/Savitools#297)", () => {
       .mockResolvedValue({ message: "generic" });
     const controller = new AuthController(
       { requestPasswordReset } as unknown as AuthService,
-      {} as never,
-      {} as never,
+      {} as never, // PasskeyAuthService
+      {} as never, // FluxaOAuthService
+      {} as never, // ConfigService
+      {} as never, // redis
     );
     const dto = { email: "user@example.com" } as never;
 
