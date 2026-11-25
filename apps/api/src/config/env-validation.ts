@@ -63,9 +63,7 @@ export interface EnvValidationResult {
   warnings: string[];
 }
 
-export function collectConfigurationErrors(
-  config: Record<string, unknown>,
-): EnvValidationResult {
+export function collectConfigurationErrors(config: Record<string, unknown>): EnvValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const get = (key: string): string | undefined => {
@@ -107,8 +105,7 @@ export function collectConfigurationErrors(
     if (isProduction) errors.push(message);
     else warnings.push(message);
   } else if (isPlaceholder(encryptionSecret)) {
-    const message =
-      'ENCRYPTION_SECRET must be replaced with a generated secret';
+    const message = 'ENCRYPTION_SECRET must be replaced with a generated secret';
     if (isProduction) errors.push(message);
     else warnings.push(message);
   } else if (isProduction && encryptionSecret.length < 32) {
@@ -138,10 +135,7 @@ export function collectConfigurationErrors(
 
   // ─── Monitor role ─────────────────────────────────────────────────────────
   const monitorRole = get('MONITOR_ROLE');
-  if (
-    monitorRole &&
-    !(MONITOR_ROLES as readonly string[]).includes(monitorRole.toLowerCase())
-  ) {
+  if (monitorRole && !(MONITOR_ROLES as readonly string[]).includes(monitorRole.toLowerCase())) {
     errors.push(
       `MONITOR_ROLE must be one of ${MONITOR_ROLES.join(', ')} (received "${monitorRole}")`,
     );
@@ -210,9 +204,7 @@ export function collectConfigurationErrors(
   const playgroundSpecTtl = get('PLAYGROUND_SPEC_TTL_MS');
   if (playgroundSpecTtl !== undefined) {
     if (!/^\d+$/.test(playgroundSpecTtl) || Number(playgroundSpecTtl) <= 0) {
-      errors.push(
-        'PLAYGROUND_SPEC_TTL_MS must be a positive integer number of milliseconds',
-      );
+      errors.push('PLAYGROUND_SPEC_TTL_MS must be a positive integer number of milliseconds');
     }
   }
 
@@ -231,9 +223,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     logger.warn(warning);
   }
   if (errors.length > 0) {
-    throw new Error(
-      `Environment configuration failed validation:\n- ${errors.join('\n- ')}`,
-    );
+    throw new Error(`Environment configuration failed validation:\n- ${errors.join('\n- ')}`);
   }
   return config;
 }

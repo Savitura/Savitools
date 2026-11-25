@@ -37,6 +37,7 @@ import {
   serializeWorkspaceFile,
   WorkspaceFormatError,
 } from '@/lib/workspace-format';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from '@/lib/browser-storage';
 import { apiErrorMessage } from '@/lib/api';
 import {
   Code2,
@@ -243,6 +244,20 @@ function SequenceRunner({
   );
 }
 
+function loadSavedWorkspaces(): Workspace[] {
+  const loaded = safeGetItem<unknown>(BROWSER_STORAGE_KEYS.LEGACY_COMPOSER_WORKSPACES, []);
+  if (!Array.isArray(loaded)) return [];
+  return loaded.filter(
+    (ws): ws is Workspace =>
+      typeof ws === 'object' &&
+      ws !== null &&
+      typeof (ws as Workspace).id === 'string' &&
+      typeof (ws as Workspace).name === 'string' &&
+      typeof (ws as Workspace).composerState === 'object' &&
+      (ws as Workspace).composerState !== null,
+  );
+}
+
 export function ComposerTool() {
   const { network, horizonUrl, networkPassphrase } = useNetwork();
   const { registerContextActions } = useCommandPalette();
@@ -275,7 +290,7 @@ export function ComposerTool() {
   const prefilled = useRef(false);
 
   // Workspace state
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(loadSavedWorkspaces);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
@@ -476,18 +491,7 @@ export function ComposerTool() {
   // Workspace persistence (localStorage)
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const stored = localStorage.getItem('composer-workspaces');
-    if (stored) {
-      try {
-        setWorkspaces(JSON.parse(stored));
-      } catch {
-        // ignore malformed storage
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('composer-workspaces', JSON.stringify(workspaces));
+    safeSetItem(BROWSER_STORAGE_KEYS.LEGACY_COMPOSER_WORKSPACES, workspaces);
   }, [workspaces]);
 
   const getCurrentComposerState = () => ({

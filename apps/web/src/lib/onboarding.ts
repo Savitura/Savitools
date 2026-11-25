@@ -1,4 +1,5 @@
 import { EXAMPLE_TX_HASH } from './examples';
+import { safeGetItem, safeSetItem } from './browser-storage';
 
 export const ONBOARDING_STORAGE_KEY = 'savitools_onboarding_progress';
 export const ONBOARDING_DISMISSED_KEY = 'savitools_onboarding_dismissed';
@@ -67,18 +68,16 @@ export function isAllComplete(progress: OnboardingProgress): boolean {
 
 export function readProgress(): OnboardingProgress {
   if (typeof window === 'undefined') return getDefaultProgress();
-  try {
-    const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-    if (!raw) return getDefaultProgress();
-    return { ...EMPTY_PROGRESS, ...JSON.parse(raw) };
-  } catch {
+  const parsed = safeGetItem<unknown>(ONBOARDING_STORAGE_KEY, null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return getDefaultProgress();
   }
+  return { ...EMPTY_PROGRESS, ...(parsed as Partial<OnboardingProgress>) };
 }
 
 export function writeProgress(progress: OnboardingProgress): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(progress));
+  safeSetItem(ONBOARDING_STORAGE_KEY, progress);
 }
 
 export function markStepComplete(stepId: OnboardingStepId): OnboardingProgress {
@@ -91,11 +90,12 @@ export function markStepComplete(stepId: OnboardingStepId): OnboardingProgress {
 
 export function isDismissed(): boolean {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+  const val = safeGetItem<unknown>(ONBOARDING_DISMISSED_KEY, false);
+  return val === true || val === 'true';
 }
 
 export function dismissOnboarding(): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+  safeSetItem(ONBOARDING_DISMISSED_KEY, 'true');
   window.dispatchEvent(new CustomEvent('savitools-onboarding-update'));
 }

@@ -155,13 +155,17 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       try {
         await client.zRemRangeByScore(WIZARD_SESSIONS_INDEX_KEY, 0, now);
       } catch (error) {
         this.logger.error(`Redis cleanExpiredSessions failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }
@@ -188,7 +192,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -229,7 +235,9 @@ export class ContractWizardSessionService {
           throw error;
         }
         this.logger.error(`Redis ensureCapacity failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }
@@ -261,7 +269,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -273,7 +283,9 @@ export class ContractWizardSessionService {
         await multi.exec();
       } catch (error) {
         this.logger.error(`Redis createSession failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }
@@ -292,7 +304,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -316,7 +330,9 @@ export class ContractWizardSessionService {
       } catch (error) {
         if (error instanceof ServiceUnavailableException) throw error;
         this.logger.error(`Redis getSession failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
     }
 
@@ -341,7 +357,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -355,7 +373,9 @@ export class ContractWizardSessionService {
         await multi.exec();
       } catch (error) {
         this.logger.error(`Redis rotateSession failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }
@@ -372,7 +392,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -381,7 +403,9 @@ export class ContractWizardSessionService {
         await client.set(this.sessionKey(token), serialized, { EX: ttlSeconds });
       } catch (error) {
         this.logger.error(`Redis updateSession failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }
@@ -397,7 +421,9 @@ export class ContractWizardSessionService {
     if (this.isRedisConfigured()) {
       const client = this.getReadyClient();
       if (!client) {
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
 
       try {
@@ -407,7 +433,9 @@ export class ContractWizardSessionService {
         await multi.exec();
       } catch (error) {
         this.logger.error(`Redis deleteSession failed: ${(error as Error).message}`);
-        throw new ServiceUnavailableException('Contract wizard session storage is temporarily unavailable');
+        throw new ServiceUnavailableException(
+          'Contract wizard session storage is temporarily unavailable',
+        );
       }
       return;
     }

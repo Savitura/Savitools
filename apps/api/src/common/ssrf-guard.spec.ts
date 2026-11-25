@@ -69,7 +69,9 @@ describe('assertPublicHostname', () => {
       { address: '93.184.216.34', family: 4 },
       { address: '10.0.0.5', family: 4 },
     ]);
-    await expect(assertPublicHostname('multi-a-record.example')).rejects.toThrow(BadRequestException);
+    await expect(assertPublicHostname('multi-a-record.example')).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('wraps a DNS resolution failure in a BadGatewayException', async () => {

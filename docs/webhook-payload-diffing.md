@@ -14,13 +14,13 @@ Each webhook history entry can now include a `payloadDiff` field with the follow
 interface PayloadDiff {
   /** Newly added fields that weren't in the previous attempt */
   added?: Record<string, unknown>;
-  
+
   /** Modified fields showing both old and new values */
   modified?: Record<string, { from: unknown; to: unknown }>;
-  
+
   /** Removed fields that existed in the previous attempt */
   removed?: Record<string, unknown>;
-  
+
   /** ID of the previous attempt this diff is relative to */
   previousAttemptId?: string;
 }
@@ -41,6 +41,7 @@ The system performs deep comparison of payloads:
 3. **Removed Fields**: Fields present in the previous payload but not in the current one
 
 The comparison handles:
+
 - Nested objects (compared recursively)
 - Arrays (treated as values, not element-by-element comparison)
 - Primitives (strings, numbers, booleans)
@@ -59,8 +60,8 @@ interface WebhookHistoryEntry {
   method: string;
   payload: Record<string, unknown>;
   // ... other fields
-  repeatIndex?: number;  // 1-indexed attempt number
-  payloadDiff?: PayloadDiff;  // Present only on retries with changes
+  repeatIndex?: number; // 1-indexed attempt number
+  payloadDiff?: PayloadDiff; // Present only on retries with changes
 }
 ```
 
@@ -69,6 +70,7 @@ interface WebhookHistoryEntry {
 ### Example 1: Detecting Added Fields
 
 **First Attempt:**
+
 ```json
 {
   "id": 1,
@@ -77,6 +79,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Second Attempt:**
+
 ```json
 {
   "id": 1,
@@ -86,6 +89,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Resulting Diff:**
+
 ```json
 {
   "added": {
@@ -98,6 +102,7 @@ interface WebhookHistoryEntry {
 ### Example 2: Detecting Modified Fields
 
 **First Attempt:**
+
 ```json
 {
   "id": 1,
@@ -107,6 +112,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Second Attempt:**
+
 ```json
 {
   "id": 1,
@@ -116,6 +122,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Resulting Diff:**
+
 ```json
 {
   "modified": {
@@ -129,6 +136,7 @@ interface WebhookHistoryEntry {
 ### Example 3: Multiple Change Types
 
 **First Attempt:**
+
 ```json
 {
   "id": 1,
@@ -138,6 +146,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Second Attempt:**
+
 ```json
 {
   "id": 1,
@@ -147,6 +156,7 @@ interface WebhookHistoryEntry {
 ```
 
 **Resulting Diff:**
+
 ```json
 {
   "added": {

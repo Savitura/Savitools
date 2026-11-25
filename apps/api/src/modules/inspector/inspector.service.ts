@@ -548,10 +548,7 @@ export class InspectorService {
       queryBuilder.andWhere('replay.requestId = :requestId', { requestId });
     }
 
-    queryBuilder
-      .orderBy('replay.createdAt', 'DESC')
-      .skip(offset)
-      .take(Math.min(limit, 100));
+    queryBuilder.orderBy('replay.createdAt', 'DESC').skip(offset).take(Math.min(limit, 100));
 
     const [replays, total] = await queryBuilder.getManyAndCount();
 
@@ -560,11 +557,7 @@ export class InspectorService {
 
   // ─── DELETE /inspector/replay/:id ──────────────────────────────────────────
 
-  async deleteReplayHistory(
-    replayId: string,
-    userId: string,
-    workspaceId: string,
-  ): Promise<void> {
+  async deleteReplayHistory(replayId: string, userId: string, workspaceId: string): Promise<void> {
     const result = await this.horizonReplayRepo.delete({
       id: replayId,
       userId,
@@ -574,6 +567,8 @@ export class InspectorService {
     if (result.affected === 0) {
       throw new NotFoundException(`Replay record ${replayId} not found`);
     }
+  }
+
   // ─── POST /inspector/auth-entry ──────────────────────────────────────────
 
   /**

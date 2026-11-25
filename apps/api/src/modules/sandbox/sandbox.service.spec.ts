@@ -5,6 +5,19 @@ import { Keypair } from '@stellar/stellar-sdk';
 
 describe('SandboxService', () => {
   let service: SandboxService;
+  const originalHosted = process.env.STELLAR_HOSTED_MODE;
+
+  beforeAll(() => {
+    process.env.STELLAR_HOSTED_MODE = 'false';
+  });
+
+  afterAll(() => {
+    if (originalHosted !== undefined) {
+      process.env.STELLAR_HOSTED_MODE = originalHosted;
+    } else {
+      delete process.env.STELLAR_HOSTED_MODE;
+    }
+  });
 
   beforeEach(() => {
     service = new SandboxService();

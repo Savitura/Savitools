@@ -14,9 +14,7 @@ const HORIZON_URLS: Record<string, string> = {
 export function getHorizonUrl(network: string): string {
   const url = HORIZON_URLS[network];
   if (!url) {
-    throw new BadRequestException(
-      `Invalid network: "${network}". Use "testnet" or "mainnet"`,
-    );
+    throw new BadRequestException(`Invalid network: "${network}". Use "testnet" or "mainnet"`);
   }
   return url;
 }

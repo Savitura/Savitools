@@ -18,10 +18,10 @@ describe('isSensitiveKey', () => {
     'X-API-Key',
     'cookie',
     'set-cookie',
-    'x-auth-token',   // matches /token/i
-    'x-secret',       // matches /secret/i
-    'x-signature',    // matches /signature/i
-    'x-private-key',  // matches /private/i and /key/i
+    'x-auth-token', // matches /token/i
+    'x-secret', // matches /secret/i
+    'x-signature', // matches /signature/i
+    'x-private-key', // matches /private/i and /key/i
     'password',
     'jwt',
   ])('flags %s as sensitive', (header) => {
@@ -110,7 +110,8 @@ describe('redactHeaders', () => {
 
 describe('redactString', () => {
   it('redacts a bare JWT', () => {
-    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
     expect(redactString(jwt)).toBe(REDACTED);
   });
 
@@ -176,9 +177,7 @@ describe('redactUrl', () => {
   });
 
   it('preserves origin and pathname', () => {
-    expect(redactUrl('https://anchor.example.com/auth')).toBe(
-      'https://anchor.example.com/auth',
-    );
+    expect(redactUrl('https://anchor.example.com/auth')).toBe('https://anchor.example.com/auth');
   });
 
   it('returns a placeholder for unparseable input', () => {

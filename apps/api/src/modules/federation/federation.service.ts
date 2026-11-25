@@ -60,11 +60,55 @@ function positiveInteger(value: unknown, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-class RequestTimeoutError extends Error {
-  constructor() {
-    super('Request timed out');
+export class RequestTimeoutError extends Error {
+  constructor(message = 'Request timed out') {
+    super(message);
     this.name = 'RequestTimeoutError';
   }
+}
+
+function createRequestSignal(
+  timeoutMs: number,
+  parentSignal?: AbortSignal,
+): { signal: AbortSignal; cleanup: () => void; isTimeout: () => boolean } {
+  const timeoutController = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    timeoutController.abort(new RequestTimeoutError());
+  }, timeoutMs);
+
+  const signal = parentSignal
+    ? AbortSignal.any([timeoutController.signal, parentSignal])
+    : timeoutController.signal;
+
+  const cleanup = () => {
+    clearTimeout(timer);
+  };
+
+  return {
+    signal,
+    cleanup,
+    isTimeout: () => timedOut || timeoutController.signal.aborted,
+  };
+}
+
+function handleFetchCancellationError(
+  error: unknown,
+  isTimeout: () => boolean,
+  parentSignal?: AbortSignal,
+): never {
+  if (parentSignal?.aborted) {
+    throw error;
+  }
+  if (
+    isTimeout() ||
+    (error instanceof Error && error.name === 'TimeoutError') ||
+    error instanceof RequestTimeoutError
+  ) {
+    throw new RequestTimeoutError();
+  }
+  throw error;
 }
 
 export interface FederationResolveResult {
@@ -526,31 +570,15 @@ export class FederationService {
 
     await assertPublicHostname(target.hostname);
 
-    const controller = new AbortController();
-    let timedOut = false;
-    let rejectAbort!: (reason: Error) => void;
-    const abortPromise = new Promise<never>((_, reject) => {
-      rejectAbort = reject;
-    });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    }, timeout);
-    const abortForParent = () => {
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    };
-    parentSignal?.addEventListener('abort', abortForParent, { once: true });
-    if (parentSignal?.aborted) abortForParent();
+    const { signal, cleanup, isTimeout } = createRequestSignal(timeout, parentSignal);
 
-    const requestInit = {
-      signal: controller.signal,
+    const requestInit: RequestInit = {
+      signal,
       headers: { Accept: '*/*' },
       redirect: 'manual' as const,
     };
     try {
-      let response = await Promise.race([fetch(target.toString(), requestInit), abortPromise]);
+      let response = await fetch(target.toString(), requestInit);
       let hops = 0;
 
       while (
@@ -566,15 +594,13 @@ export class FederationService {
           throw new BadRequestException(`Unsupported protocol in redirect: ${target.protocol}`);
         }
         await assertPublicHostname(target.hostname);
-        response = await Promise.race([fetch(target.toString(), requestInit), abortPromise]);
+        response = await fetch(target.toString(), requestInit);
       }
       return response;
     } catch (error) {
-      if (timedOut || parentSignal?.aborted) throw new RequestTimeoutError();
-      throw error;
+      handleFetchCancellationError(error, isTimeout, parentSignal);
     } finally {
-      clearTimeout(timer);
-      parentSignal?.removeEventListener('abort', abortForParent);
+      cleanup();
     }
   }
 
@@ -1873,41 +1899,20 @@ export class FederationService {
     }
     await assertPublicHostname(target.hostname);
 
-    const controller = new AbortController();
-    let timedOut = false;
-    let rejectAbort!: (reason: Error) => void;
-    const abortPromise = new Promise<never>((_, reject) => {
-      rejectAbort = reject;
-    });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    }, timeout);
-    const abortForParent = () => {
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    };
-    parentSignal?.addEventListener('abort', abortForParent, { once: true });
-    if (parentSignal?.aborted) abortForParent();
+    const { signal, cleanup, isTimeout } = createRequestSignal(timeout, parentSignal);
 
     try {
-      return await Promise.race([
-        fetch(target.toString(), {
-          method: 'POST',
-          signal: controller.signal,
-          headers,
-          body: JSON.stringify(body),
-          redirect: 'manual',
-        }),
-        abortPromise,
-      ]);
+      return await fetch(target.toString(), {
+        method: 'POST',
+        signal,
+        headers,
+        body: JSON.stringify(body),
+        redirect: 'manual',
+      });
     } catch (error) {
-      if (timedOut || parentSignal?.aborted) throw new RequestTimeoutError();
-      throw error;
+      handleFetchCancellationError(error, isTimeout, parentSignal);
     } finally {
-      clearTimeout(timer);
-      parentSignal?.removeEventListener('abort', abortForParent);
+      cleanup();
     }
   }
 
@@ -1923,40 +1928,19 @@ export class FederationService {
     }
     await assertPublicHostname(target.hostname);
 
-    const controller = new AbortController();
-    let timedOut = false;
-    let rejectAbort!: (reason: Error) => void;
-    const abortPromise = new Promise<never>((_, reject) => {
-      rejectAbort = reject;
-    });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    }, timeout);
-    const abortForParent = () => {
-      controller.abort();
-      rejectAbort(new RequestTimeoutError());
-    };
-    parentSignal?.addEventListener('abort', abortForParent, { once: true });
-    if (parentSignal?.aborted) abortForParent();
+    const { signal, cleanup, isTimeout } = createRequestSignal(timeout, parentSignal);
 
     try {
-      return await Promise.race([
-        fetch(target.toString(), {
-          method: 'GET',
-          signal: controller.signal,
-          headers,
-          redirect: 'manual',
-        }),
-        abortPromise,
-      ]);
+      return await fetch(target.toString(), {
+        method: 'GET',
+        signal,
+        headers,
+        redirect: 'manual',
+      });
     } catch (error) {
-      if (timedOut || parentSignal?.aborted) throw new RequestTimeoutError();
-      throw error;
+      handleFetchCancellationError(error, isTimeout, parentSignal);
     } finally {
-      clearTimeout(timer);
-      parentSignal?.removeEventListener('abort', abortForParent);
+      cleanup();
     }
   }
 

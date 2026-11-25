@@ -22,28 +22,26 @@ import {
   type AbiCatalogEntry,
   type DeployedContract,
 } from '@/lib/api';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from '@/lib/browser-storage';
 
 const STELLAR_EXPERT_URL = 'https://stellar.expert/explorer/testnet/contract';
 
 function loadHistory(): DeployedContract[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem('savitools:contracts:history');
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  const history = safeGetItem<unknown>(BROWSER_STORAGE_KEYS.CONTRACTS_HISTORY, []);
+  if (!Array.isArray(history)) return [];
+  return history.filter(
+    (item): item is DeployedContract =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as DeployedContract).contractId === 'string' &&
+      typeof (item as DeployedContract).wasmHash === 'string',
+  );
 }
 
 function saveHistory(contracts: DeployedContract[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    // Keep most recent 50 contracts to preserve browser storage quota
-    const bounded = contracts.slice(0, 50);
-    window.localStorage.setItem('savitools:contracts:history', JSON.stringify(bounded));
-  } catch {
-    // Gracefully ignore storage quota or restriction errors
-  }
+  // Keep most recent 50 contracts to preserve browser storage quota
+  const bounded = contracts.slice(0, 50);
+  safeSetItem(BROWSER_STORAGE_KEYS.CONTRACTS_HISTORY, bounded);
 }
 
 function AbiCatalogPanel({ contractId }: { contractId: string }) {
@@ -70,11 +68,19 @@ function AbiCatalogPanel({ contractId }: { contractId: string }) {
 
   const attach = async () => {
     setAbiError('');
+    if (!abiJson.trim()) {
+      setAbiError('ABI document must be valid JSON');
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(abiJson);
     } catch {
       setAbiError('ABI document must be valid JSON');
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object') {
+      setAbiError('ABI document must be a JSON object or array');
       return;
     }
     setLoading(true);
@@ -120,7 +126,10 @@ function AbiCatalogPanel({ contractId }: { contractId: string }) {
       <div className="flex gap-2">
         <input
           value={abiJson}
-          onChange={(e) => setAbiJson(e.target.value)}
+          onChange={(e) => {
+            setAbiJson(e.target.value);
+            if (abiError) setAbiError('');
+          }}
           placeholder='{"methods":[{"name":"transfer","args":[...]}],"events":[...]}'
           className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono"
           spellCheck={false}
@@ -258,8 +267,40 @@ function AbiDiffPanel() {
 
   const compare = () => {
     setError('');
+    const beforeTrimmed = before.trim();
+    const afterTrimmed = after.trim();
+    if (!beforeTrimmed) {
+      setError('Previous ABI document must be valid JSON.');
+      return;
+    }
+    if (!afterTrimmed) {
+      setError('New ABI document must be valid JSON.');
+      return;
+    }
+    let parsedBefore: unknown;
     try {
-      setChanges(compareAbis(JSON.parse(before), JSON.parse(after)));
+      parsedBefore = JSON.parse(beforeTrimmed);
+    } catch {
+      setError('Previous ABI document must be valid JSON.');
+      return;
+    }
+    let parsedAfter: unknown;
+    try {
+      parsedAfter = JSON.parse(afterTrimmed);
+    } catch {
+      setError('New ABI document must be valid JSON.');
+      return;
+    }
+    if (!parsedBefore || typeof parsedBefore !== 'object') {
+      setError('Previous ABI must be a JSON object or array.');
+      return;
+    }
+    if (!parsedAfter || typeof parsedAfter !== 'object') {
+      setError('New ABI must be a JSON object or array.');
+      return;
+    }
+    try {
+      setChanges(compareAbis(parsedBefore as any, parsedAfter as any));
     } catch (err: unknown) {
       setChanges(null);
       setError(err instanceof Error ? err.message : 'Could not compare these ABIs.');
@@ -280,7 +321,10 @@ function AbiDiffPanel() {
           Previous ABI
           <textarea
             value={before}
-            onChange={(event) => setBefore(event.target.value)}
+            onChange={(event) => {
+              setBefore(event.target.value);
+              if (error) setError('');
+            }}
             rows={8}
             placeholder='{"methods":[...],"events":[...]}'
             className="block w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground"
@@ -291,7 +335,10 @@ function AbiDiffPanel() {
           New ABI
           <textarea
             value={after}
-            onChange={(event) => setAfter(event.target.value)}
+            onChange={(event) => {
+              setAfter(event.target.value);
+              if (error) setError('');
+            }}
             rows={8}
             placeholder='{"methods":[...],"events":[...]}'
             className="block w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground"
@@ -395,7 +442,7 @@ export function ContractsTool() {
       setArgsError('');
       return parsed;
     } catch {
-      setArgsError('Invalid JSON');
+      setArgsError('Invalid JSON in args, expected array e.g. ["arg1", 42]');
       return null;
     }
   };
@@ -444,11 +491,11 @@ export function ContractsTool() {
     try {
       parsedArgs = invokeArgs.trim() ? JSON.parse(invokeArgs) : [];
       if (!Array.isArray(parsedArgs)) {
-        setInvokeError('Args must be a JSON array');
+        setInvokeError('Args must be a JSON array, e.g. ["arg1", 42]');
         return;
       }
     } catch {
-      setInvokeError('Invalid JSON in args');
+      setInvokeError('Invalid JSON in args, expected array e.g. ["arg1", 42]');
       return;
     }
 
@@ -541,13 +588,18 @@ export function ContractsTool() {
           <textarea
             value={constructorArgs}
             onChange={(e) => {
-              setConstructorArgs(e.target.value);
-              if (e.target.value) {
+              const val = e.target.value;
+              setConstructorArgs(val);
+              if (val.trim()) {
                 try {
-                  JSON.parse(e.target.value);
-                  setArgsError('');
+                  const parsed = JSON.parse(val);
+                  if (!Array.isArray(parsed)) {
+                    setArgsError('Args must be a JSON array, e.g. ["arg1", 42]');
+                  } else {
+                    setArgsError('');
+                  }
                 } catch {
-                  setArgsError('Invalid JSON');
+                  setArgsError('Invalid JSON in args, expected array e.g. ["arg1", 42]');
                 }
               } else {
                 setArgsError('');
@@ -618,7 +670,10 @@ export function ContractsTool() {
                 </label>
                 <input
                   value={invokeArgs}
-                  onChange={(e) => setInvokeArgs(e.target.value)}
+                  onChange={(e) => {
+                    setInvokeArgs(e.target.value);
+                    if (invokeError) setInvokeError('');
+                  }}
                   placeholder='["arg1", 42]'
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                 />

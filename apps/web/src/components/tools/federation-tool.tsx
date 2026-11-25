@@ -16,6 +16,7 @@ import {
   type TransferLinkResult,
   type TomlCurrency,
 } from '@/lib/api';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from '@/lib/browser-storage';
 import {
   BookmarkPlus,
   AlertTriangle,
@@ -47,21 +48,18 @@ interface SavedCounterparty {
   name: string;
 }
 
-export const COUNTERPARTY_STORAGE_KEY = 'savitools:federation:counterparties';
+const COUNTERPARTY_STORAGE_KEY = BROWSER_STORAGE_KEYS.FEDERATION_COUNTERPARTIES;
 
-export function loadSavedCounterparties(): SavedCounterparty[] {
-  try {
-    const saved = window.localStorage.getItem(COUNTERPARTY_STORAGE_KEY);
-    if (!saved) return [];
-    const parsed: unknown = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is SavedCounterparty =>
-        typeof item?.input === 'string' && typeof item?.name === 'string',
-    );
-  } catch {
-    return [];
-  }
+function loadSavedCounterparties(): SavedCounterparty[] {
+  const parsed = safeGetItem<unknown>(COUNTERPARTY_STORAGE_KEY, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (item): item is SavedCounterparty =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as SavedCounterparty).input === 'string' &&
+      typeof (item as SavedCounterparty).name === 'string',
+  );
 }
 
 export function detectInputType(value: string): InputType | null {
@@ -879,13 +877,9 @@ export function FederationTool() {
   }, []);
 
   useEffect(() => {
-    try {
-      // Bound counterparties to 50 entries to prevent quota exhaustion
-      const bounded = savedCounterparties.slice(0, 50);
-      window.localStorage.setItem(COUNTERPARTY_STORAGE_KEY, JSON.stringify(bounded));
-    } catch {
-      // Gracefully ignore storage quota or restriction errors
-    }
+    // Bound counterparties to 50 entries to prevent quota exhaustion
+    const bounded = savedCounterparties.slice(0, 50);
+    safeSetItem(COUNTERPARTY_STORAGE_KEY, bounded);
   }, [savedCounterparties]);
 
   useEffect(() => {

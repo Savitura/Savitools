@@ -1,11 +1,21 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsObject, IsIn, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsObject,
+  IsIn,
+  IsNumber,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'HTTP method for the Horizon request',
     enum: ['GET', 'POST'],
-    example: 'GET'
+    example: 'GET',
   })
   @IsString()
   @IsNotEmpty()
@@ -14,7 +24,7 @@ export class ReplayHorizonRequestDto {
 
   @ApiProperty({
     description: 'Horizon API endpoint path (without base URL)',
-    example: '/transactions/abc123...'
+    example: '/transactions/abc123...',
   })
   @IsString()
   @IsNotEmpty()
@@ -23,7 +33,7 @@ export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'Request parameters (query params or body)',
     required: false,
-    example: { limit: 10, order: 'desc' }
+    example: { limit: 10, order: 'desc' },
   })
   @IsOptional()
   @IsObject()
@@ -32,7 +42,7 @@ export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'Network to replay the request on',
     enum: ['testnet', 'mainnet'],
-    default: 'testnet'
+    default: 'testnet',
   })
   @IsOptional()
   @IsEnum(['testnet', 'mainnet'])
@@ -41,7 +51,7 @@ export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'Transaction hash for reference/grouping (optional)',
     required: false,
-    example: 'abc123...'
+    example: 'abc123...',
   })
   @IsOptional()
   @IsString()
@@ -50,7 +60,7 @@ export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'Request ID from network inspector for correlation (optional)',
     required: false,
-    example: 'req_abc123'
+    example: 'req_abc123',
   })
   @IsOptional()
   @IsString()
@@ -59,7 +69,7 @@ export class ReplayHorizonRequestDto {
   @ApiProperty({
     description: 'Workspace ID (defaults to user ID if not provided)',
     required: false,
-    example: 'ws_123'
+    example: 'ws_123',
   })
   @IsOptional()
   @IsString()
@@ -70,7 +80,7 @@ export class GetReplayHistoryDto {
   @ApiProperty({
     description: 'Maximum number of results (1-100)',
     default: 50,
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsNumber()
@@ -81,7 +91,7 @@ export class GetReplayHistoryDto {
   @ApiProperty({
     description: 'Offset for pagination',
     default: 0,
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsNumber()
@@ -91,7 +101,7 @@ export class GetReplayHistoryDto {
   @ApiProperty({
     description: 'Network to filter by',
     enum: ['testnet', 'mainnet'],
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsEnum(['testnet', 'mainnet'])
@@ -99,7 +109,7 @@ export class GetReplayHistoryDto {
 
   @ApiProperty({
     description: 'Transaction hash to filter by',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -107,7 +117,7 @@ export class GetReplayHistoryDto {
 
   @ApiProperty({
     description: 'Request ID to filter by',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -115,7 +125,7 @@ export class GetReplayHistoryDto {
 
   @ApiProperty({
     description: 'Workspace ID to filter by',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()

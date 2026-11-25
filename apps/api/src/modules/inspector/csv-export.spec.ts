@@ -54,7 +54,7 @@ describe('InspectorService CSV export', () => {
   let service: InspectorService;
 
   beforeEach(() => {
-    service = new InspectorService(new ConfigService());
+    service = new InspectorService(new ConfigService(), {} as any);
   });
 
   it('prepends the UTF-8 BOM for Excel compatibility', () => {

@@ -6,12 +6,17 @@ describe('WatchRegistry', () => {
   it('deduplicates watches under one stream key and removes the key last', async () => {
     const watches = [watch('one'), watch('two')];
     const repository = {
-      find: jest.fn().mockResolvedValue(watches),
+      find: jest.fn().mockResolvedValueOnce(watches).mockResolvedValue([]),
     } as unknown as Repository<Watch>;
     const registry = new WatchRegistry(repository);
 
     await registry.load();
 
+    expect(repository.find).toHaveBeenCalledWith({
+      order: { id: 'ASC' },
+      take: WatchRegistry.LOAD_BATCH_SIZE,
+      skip: 0,
+    });
     expect(registry.keys()).toEqual(['testnet:account:GACCOUNT']);
     expect(registry.get(registry.keys()[0])).toHaveLength(2);
     expect(registry.remove(watches[0])).toBe(false);

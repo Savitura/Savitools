@@ -7,12 +7,15 @@ The Soroban Storage Expiration Estimator is a tool for calculating when storage 
 ## Features
 
 ### 1. Expiration Estimation
+
 Calculate when a storage entry will expire based on:
+
 - Current ledger sequence number
 - Entry's `liveUntilLedger` value
 - Storage type (persistent, temporary, or instance)
 
 **Output:**
+
 - TTL remaining (in ledgers)
 - Time until expiration (days, hours, minutes, seconds)
 - Estimated expiration date
@@ -20,12 +23,15 @@ Calculate when a storage entry will expire based on:
 - Actionable recommendations
 
 ### 2. TTL Extension Cost Estimation
+
 Estimate the cost and impact of extending an entry's TTL:
+
 - Calculate new TTL after extension
 - Estimate cost in stroops and XLM
 - Provide recommendations based on extension duration
 
 ### 3. Bulk Contract Estimation (API only)
+
 Check expiration status for multiple contracts in a single request.
 
 ## API Endpoints
@@ -35,6 +41,7 @@ Check expiration status for multiple contracts in a single request.
 Estimate when a storage entry will expire.
 
 **Request Body:**
+
 ```json
 {
   "currentLedger": 1000000,
@@ -45,6 +52,7 @@ Estimate when a storage entry will expire.
 ```
 
 **Response:**
+
 ```json
 {
   "currentLedger": 1000000,
@@ -70,6 +78,7 @@ Estimate when a storage entry will expire.
 Estimate the cost and impact of extending TTL.
 
 **Request Body:**
+
 ```json
 {
   "currentTtl": 100000,
@@ -80,6 +89,7 @@ Estimate the cost and impact of extending TTL.
 ```
 
 **Response:**
+
 ```json
 {
   "currentTtl": 100000,
@@ -102,6 +112,7 @@ Estimate the cost and impact of extending TTL.
 Estimate expiration for multiple contracts.
 
 **Request Body:**
+
 ```json
 {
   "contractAddresses": [
@@ -115,17 +126,20 @@ Estimate expiration for multiple contracts.
 ## Storage Types
 
 ### Persistent Storage
+
 - **Use Case:** Long-term data that must remain accessible
 - **Expiration Behavior:** Archived when TTL expires, can be restored
 - **Examples:** User balances, token metadata, governance decisions
 
 ### Temporary Storage
+
 - **Use Case:** Short-term data with well-defined lifetime
 - **Expiration Behavior:** Permanently deleted when TTL expires
 - **Examples:** Price feeds, limited-time authorizations, session tokens
 - **Warning:** Data cannot be recovered after expiration
 
 ### Instance Storage
+
 - **Use Case:** Small data tied to contract lifecycle
 - **Expiration Behavior:** Shares TTL with contract instance, archived when expired
 - **Examples:** Contract admin addresses, configuration data
@@ -137,12 +151,13 @@ The estimator uses the following thresholds for status classification:
 
 - **Healthy:** > 30 days remaining
 - **Warning:** 7-30 days remaining
-- **Critical:** < 7 days remaining  
+- **Critical:** < 7 days remaining
 - **Expired:** 0 days (TTL expired)
 
 ## Time Calculations
 
 ### Ledger Close Time
+
 - **Average:** ~5 seconds per ledger
 - **Ledgers per day:** ~17,280 (86,400 seconds ÷ 5)
 - **Ledgers per 30 days:** ~518,400
@@ -150,6 +165,7 @@ The estimator uses the following thresholds for status classification:
 - **Ledgers per year:** ~6,307,200
 
 ### Formula
+
 ```
 Days Remaining = (liveUntilLedger - currentLedger) × ledgerCloseTime ÷ 86400
 ```
@@ -157,17 +173,21 @@ Days Remaining = (liveUntilLedger - currentLedger) × ledgerCloseTime ÷ 86400
 ## Cost Estimation
 
 ### Rent Calculation
+
 Storage rent is charged based on:
+
 1. Entry size in bytes
 2. Number of ledgers to extend
 3. Storage type (temporary storage costs ~50% less)
 
 ### Formula (Simplified)
+
 ```
 Cost (stroops) = entrySizeBytes × extendByLedgers × rentFeePerByte × typeMultiplier + baseFee
 ```
 
 Where:
+
 - `rentFeePerByte` ≈ 0.001 stroops/byte/ledger
 - `typeMultiplier` = 0.5 for temporary, 1.0 for persistent/instance
 - `baseFee` = 10,000 stroops (write operation)
@@ -177,18 +197,21 @@ Where:
 ## Best Practices
 
 ### For Persistent Storage
+
 1. **Extend by 90+ days** for cost efficiency
 2. **Monitor entries regularly** before reaching warning threshold
 3. **Automate TTL extension** for critical data
 4. **Budget for restoration costs** if entry expires
 
 ### For Temporary Storage
+
 1. **Use only for truly temporary data**
 2. **Never rely on extensions** to preserve data
 3. **Set initial TTL generously** to avoid premature expiration
 4. **Have fallback data sources**
 
 ### For Instance Storage
+
 1. **Keep data small** (limited by entry size)
 2. **Extend contract instance TTL** to extend instance storage
 3. **Store critical shared data** here (e.g., admin address)
@@ -196,6 +219,7 @@ Where:
 ## Usage Examples
 
 ### Check if Entry Needs Extension
+
 ```javascript
 const response = await fetch('/api/soroban/estimate-expiration', {
   method: 'POST',
@@ -203,8 +227,8 @@ const response = await fetch('/api/soroban/estimate-expiration', {
   body: JSON.stringify({
     currentLedger: 1000000,
     liveUntilLedger: 1100000,
-    storageType: 'persistent'
-  })
+    storageType: 'persistent',
+  }),
 });
 
 const estimate = await response.json();
@@ -216,6 +240,7 @@ if (estimate.status === 'critical' || estimate.status === 'warning') {
 ```
 
 ### Calculate Extension Cost
+
 ```javascript
 const response = await fetch('/api/soroban/estimate-ttl-extension', {
   method: 'POST',
@@ -224,8 +249,8 @@ const response = await fetch('/api/soroban/estimate-ttl-extension', {
     currentTtl: estimate.ttlRemaining,
     extendByLedgers: 1555200, // 90 days
     entrySizeBytes: 2048,
-    storageType: 'persistent'
-  })
+    storageType: 'persistent',
+  }),
 });
 
 const extension = await response.json();

@@ -1216,7 +1216,7 @@ export class ComposerService {
       network: dto.network,
     });
 
-    if (!dto.includeDiff) {
+    if (dto.includeDiff === false) {
       return {
         ...baseSimulation,
         effects: [],

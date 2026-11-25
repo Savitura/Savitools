@@ -23,19 +23,11 @@ export class CspReportModule implements OnModuleInit {
     /* eslint-disable @typescript-eslint/no-explicit-any -- raw Fastify instance */
     const fastify = this.adapterHost.httpAdapter.getInstance() as any;
 
-    const jsonParser = async (request: any, body: string) =>
-      JSON.parse(body) as unknown;
+    const jsonParser = async (request: any, body: string) => JSON.parse(body) as unknown;
 
-    for (const contentType of [
-      'application/reports+json',
-      'application/csp-report',
-    ]) {
+    for (const contentType of ['application/reports+json', 'application/csp-report']) {
       if (!fastify.hasContentTypeParser(contentType)) {
-        fastify.addContentTypeParser(
-          contentType,
-          { parseAs: 'string' },
-          jsonParser,
-        );
+        fastify.addContentTypeParser(contentType, { parseAs: 'string' }, jsonParser);
       }
     }
     /* eslint-enable @typescript-eslint/no-explicit-any */

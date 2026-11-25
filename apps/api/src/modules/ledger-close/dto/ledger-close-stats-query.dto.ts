@@ -7,7 +7,10 @@ export type StellarNetwork = 'mainnet' | 'testnet';
 export const MAX_LEDGER_CLOSE_STATS = 50_000;
 
 export class LedgerCloseStatsQueryDto {
-  @ApiPropertyOptional({ enum: ['mainnet', 'testnet'], description: 'Network to query (default: mainnet)' })
+  @ApiPropertyOptional({
+    enum: ['mainnet', 'testnet'],
+    description: 'Network to query (default: mainnet)',
+  })
   @IsOptional()
   @IsEnum(['mainnet', 'testnet'])
   network?: StellarNetwork;

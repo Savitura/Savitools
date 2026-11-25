@@ -148,9 +148,7 @@ describe('imported network profile schema validation', () => {
       expect(err?.code).toBe('UNSUPPORTED_VERSION');
       expect(err?.message).toMatch(new RegExp(`version ${future} is not supported`));
       expect(err?.message).toMatch(
-        new RegExp(
-          `${MIN_SUPPORTED_NETWORK_PROFILE_VERSION}.*${NETWORK_PROFILE_SCHEMA_VERSION}`,
-        ),
+        new RegExp(`${MIN_SUPPORTED_NETWORK_PROFILE_VERSION}.*${NETWORK_PROFILE_SCHEMA_VERSION}`),
       );
     });
 

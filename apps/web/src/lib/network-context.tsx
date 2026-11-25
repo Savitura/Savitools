@@ -165,6 +165,10 @@ function writeStorage(Key: string, value: string) {
   }
 }
 
+function sanitizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
 function fetchNetworkPassphrase(horizonUrl: string): Promise<string> {
   const baseUrl = sanitizeUrl(horizonUrl);
   return fetch(`${baseUrl}/`)

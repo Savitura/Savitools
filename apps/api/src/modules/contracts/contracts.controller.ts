@@ -10,7 +10,14 @@ import {
   UseGuards,
   Optional,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags, ApiConsumes, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiOperation,
+  ApiTags,
+  ApiConsumes,
+  ApiResponse,
+  ApiParam,
+} from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 import { ContractsService } from './contracts.service';
 import { InvokeContractDto } from './dto/invoke-contract.dto';
@@ -68,7 +75,11 @@ export class ContractsController {
 
     if (file) {
       const mimetype = file.mimetype;
-      if (mimetype !== 'application/wasm' && mimetype !== 'application/octet-stream' && !file.filename.endsWith('.wasm')) {
+      if (
+        mimetype !== 'application/wasm' &&
+        mimetype !== 'application/octet-stream' &&
+        !file.filename.endsWith('.wasm')
+      ) {
         throw new BadRequestException('Uploaded file must be a .wasm file');
       }
       const wasmBuffer = await file.toBuffer();
@@ -87,7 +98,9 @@ export class ContractsController {
     }
 
     const { buffer: wasmBuffer } = await this.contractsService.fetchWasmFromUrl(wasmUrl);
-    const constructorArgs: unknown[] | undefined = body.args ? this.parseArgs(body.args) : undefined;
+    const constructorArgs: unknown[] | undefined = body.args
+      ? this.parseArgs(body.args)
+      : undefined;
     await this.quotaService.consume(user.id, 'deploy');
     return this.contractsService.deploy(wasmBuffer, constructorArgs);
   }
@@ -132,7 +145,9 @@ export class ContractsController {
       }
       const maxWasmBytes = this.contractsService.getMaxWasmFileSize();
       if (wasmBuffer.length > maxWasmBytes) {
-        throw new BadRequestException(`WASM file exceeds maximum size of ${maxWasmBytes / (1024 * 1024)}MB`);
+        throw new BadRequestException(
+          `WASM file exceeds maximum size of ${maxWasmBytes / (1024 * 1024)}MB`,
+        );
       }
       if (wasmBuffer.length > ContractsController.MAX_WIZARD_BUFFER_BYTES) {
         throw new BadRequestException('WASM file exceeds the deployment wizard storage limit');
@@ -258,7 +273,10 @@ export class ContractsController {
   @Post('wasm/upload')
   @ApiCookieAuth()
   @UseGuards(JwtAuthGuard, ContractAuthorizationGuard)
-  @ApiOperation({ summary: 'Upload and pin Soroban contract WASM from local file or Git repo with integrity verification' })
+  @ApiOperation({
+    summary:
+      'Upload and pin Soroban contract WASM from local file or Git repo with integrity verification',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({ status: 201, description: 'WASM uploaded and pinned successfully' })
   @ApiResponse({ status: 400, description: 'Invalid request or file' })
@@ -273,9 +291,12 @@ export class ContractsController {
     let wasmBuffer: Buffer;
     let filename = 'contract.wasm';
 
-    const checksumField = (fields.checksum as { value?: string })?.value || (req.body as any)?.checksum;
-    const gitRepoUrl = (fields.gitRepoUrl as { value?: string })?.value || (req.body as any)?.gitRepoUrl;
-    const gitArtifactPath = (fields.gitArtifactPath as { value?: string })?.value || (req.body as any)?.gitArtifactPath;
+    const checksumField =
+      (fields.checksum as { value?: string })?.value || (req.body as any)?.checksum;
+    const gitRepoUrl =
+      (fields.gitRepoUrl as { value?: string })?.value || (req.body as any)?.gitRepoUrl;
+    const gitArtifactPath =
+      (fields.gitArtifactPath as { value?: string })?.value || (req.body as any)?.gitArtifactPath;
 
     if (gitRepoUrl) {
       if (!gitArtifactPath) {
@@ -285,7 +306,11 @@ export class ContractsController {
       filename = gitArtifactPath.split('/').pop() || 'contract.wasm';
     } else if (file) {
       filename = file.filename || 'contract.wasm';
-      if (!filename.endsWith('.wasm') && file.mimetype !== 'application/wasm' && file.mimetype !== 'application/octet-stream') {
+      if (
+        !filename.endsWith('.wasm') &&
+        file.mimetype !== 'application/wasm' &&
+        file.mimetype !== 'application/octet-stream'
+      ) {
         throw new BadRequestException('Uploaded file must be a .wasm file');
       }
       wasmBuffer = await file.toBuffer();
@@ -331,10 +356,7 @@ export class ContractsController {
   @ApiResponse({ status: 200, description: 'ABI attached and validated' })
   @ApiResponse({ status: 400, description: 'Invalid ABI document or identifier' })
   @ApiResponse({ status: 422, description: 'Field-level ABI validation errors' })
-  async attachAbi(
-    @Param('contractId') contractId: string,
-    @Body() dto: AttachAbiDto,
-  ) {
+  async attachAbi(@Param('contractId') contractId: string, @Body() dto: AttachAbiDto) {
     return this.contractsService.attachAbi(contractId, dto);
   }
 
@@ -345,10 +367,7 @@ export class ContractsController {
   @ApiParam({ name: 'contractId', description: 'Contract ID' })
   @ApiResponse({ status: 200, description: 'ABI catalog retrieved' })
   @ApiResponse({ status: 404, description: 'No ABI attached' })
-  getAbi(
-    @Param('contractId') contractId: string,
-    @Query('wasmId') wasmId?: string,
-  ) {
+  getAbi(@Param('contractId') contractId: string, @Query('wasmId') wasmId?: string) {
     return this.contractsService.getAbi(contractId, wasmId);
   }
 

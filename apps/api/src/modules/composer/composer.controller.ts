@@ -37,7 +37,10 @@ export class ComposerController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Wrap a classic inner transaction in an unsigned fee-bump envelope' })
   @ApiResponse({ status: 200, description: 'Unsigned fee-bump envelope built' })
-  @ApiResponse({ status: 400, description: 'Invalid inner XDR, fee source, fee bounds, or network mismatch' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid inner XDR, fee source, fee bounds, or network mismatch',
+  })
   async buildFeeBump(@Body() dto: FeeBumpDto) {
     return this.composerService.buildFeeBump(dto);
   }

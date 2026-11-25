@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repository } from 'typeorm';
@@ -8,12 +8,18 @@ import { ReplayHorizonRequestDto } from './dto/replay-horizon-request.dto';
 
 // Mock axios module BEFORE any imports that use it
 jest.mock('axios', () => {
-  const mockFn: any = jest.fn();
-  mockFn.isAxiosError = jest.fn();
+  const mockInstance: any = jest.fn();
+  mockInstance.interceptors = {
+    request: { use: jest.fn(), eject: jest.fn() },
+    response: { use: jest.fn(), eject: jest.fn() },
+  };
+  mockInstance.isAxiosError = jest.fn();
+  mockInstance.create = jest.fn(() => mockInstance);
   return {
     __esModule: true,
-    default: mockFn,
-    isAxiosError: mockFn.isAxiosError,
+    default: mockInstance,
+    create: mockInstance.create,
+    isAxiosError: mockInstance.isAxiosError,
   };
 });
 
@@ -117,7 +123,7 @@ describe('InspectorService - Horizon Replay', () => {
           transactionHash: 'abc123',
           requestId: 'req-001',
           errorMessage: null,
-        })
+        }),
       );
 
       expect(horizonReplayRepo.save).toHaveBeenCalled();
@@ -143,7 +149,7 @@ describe('InspectorService - Horizon Replay', () => {
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           url: 'https://horizon.stellar.org/ledgers/12345',
-        })
+        }),
       );
     });
 
@@ -172,7 +178,7 @@ describe('InspectorService - Horizon Replay', () => {
         expect.objectContaining({
           statusCode: 404,
           errorMessage: 'Request failed with status code 404',
-        })
+        }),
       );
 
       expect(result.replay).toBeDefined();
@@ -191,14 +197,14 @@ describe('InspectorService - Horizon Replay', () => {
 
       mockAxios.mockRejectedValueOnce(mockError);
 
-      const result = await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
+      await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
 
       expect(horizonReplayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: 500,
           errorMessage: 'Network timeout',
           response: null,
-        })
+        }),
       );
     });
 
@@ -219,7 +225,7 @@ describe('InspectorService - Horizon Replay', () => {
       expect(horizonReplayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           responseTime: expect.any(Number),
-        })
+        }),
       );
 
       const call = horizonReplayRepo.create.mock.calls[0][0] as any;
@@ -253,7 +259,9 @@ describe('InspectorService - Horizon Replay', () => {
 
       const result = await service.getReplayHistory(mockUserId, mockWorkspaceId);
 
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('replay.userId = :userId', { userId: mockUserId });
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith('replay.userId = :userId', {
+        userId: mockUserId,
+      });
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('replay.workspaceId = :workspaceId', {
         workspaceId: mockWorkspaceId,
       });
@@ -302,9 +310,12 @@ describe('InspectorService - Horizon Replay', () => {
         transactionHash: 'abc123',
       });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('replay.transactionHash = :transactionHash', {
-        transactionHash: 'abc123',
-      });
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'replay.transactionHash = :transactionHash',
+        {
+          transactionHash: 'abc123',
+        },
+      );
     });
 
     it('should respect custom limit and offset', async () => {
@@ -369,7 +380,7 @@ describe('InspectorService - Horizon Replay', () => {
       horizonReplayRepo.delete = jest.fn().mockResolvedValue({ affected: 0 });
 
       await expect(
-        service.deleteReplayHistory(replayId, mockUserId, mockWorkspaceId)
+        service.deleteReplayHistory(replayId, mockUserId, mockWorkspaceId),
       ).rejects.toThrow(NotFoundException);
     });
   });

@@ -209,7 +209,7 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       render(<InspectorTool />);
 
       expect(
-        screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i)
+        screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i),
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Inspect/i })).toBeInTheDocument();
     });
@@ -219,7 +219,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
 
       render(<InspectorTool />);
 
-      const input = screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i);
+      const input = screen.getByPlaceholderText(
+        /Transaction hash, Stellar address \(G…\), or raw XDR/i,
+      );
       fireEvent.change(input, {
         target: { value: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' },
       });
@@ -230,7 +232,7 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       await waitFor(() => {
         expect(api.inspectTransaction).toHaveBeenCalledWith(
           '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-          'testnet'
+          'testnet',
         );
       });
 
@@ -291,7 +293,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
 
       render(<InspectorTool />);
 
-      const input = screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i);
+      const input = screen.getByPlaceholderText(
+        /Transaction hash, Stellar address \(G…\), or raw XDR/i,
+      );
       fireEvent.change(input, { target: { value: xdrString } });
 
       fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
@@ -305,7 +309,7 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
         expect(screen.getByText('1 authorized credential')).toBeInTheDocument();
         expect(screen.getByText(/Soroban Events \(1\/1\)/i)).toBeInTheDocument();
         expect(
-          screen.getByText('transfer(from: Address, to: Address, amount: i128)')
+          screen.getByText('transfer(from: Address, to: Address, amount: i128)'),
         ).toBeInTheDocument();
       });
     });
@@ -327,7 +331,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       render(<InspectorTool />);
 
       const address = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ';
-      const input = screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i);
+      const input = screen.getByPlaceholderText(
+        /Transaction hash, Stellar address \(G…\), or raw XDR/i,
+      );
       fireEvent.change(input, { target: { value: address } });
 
       fireEvent.click(screen.getByRole('button', { name: /Inspect/i }));
@@ -348,19 +354,21 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       await waitFor(() => {
         expect(api.inspectTransaction).toHaveBeenCalledWith(
           'aaaabbbbccccdddd0123456789abcdef0123456789abcdef0123456789abcdef',
-          'testnet'
+          'testnet',
         );
       });
     });
 
     it('displays error state when lookup fails', async () => {
       (api.inspectTransaction as jest.Mock).mockRejectedValue(
-        new Error('Transaction not found on testnet Horizon')
+        new Error('Transaction not found on testnet Horizon'),
       );
 
       render(<InspectorTool />);
 
-      const input = screen.getByPlaceholderText(/Transaction hash, Stellar address \(G…\), or raw XDR/i);
+      const input = screen.getByPlaceholderText(
+        /Transaction hash, Stellar address \(G…\), or raw XDR/i,
+      );
       fireEvent.change(input, {
         target: { value: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' },
       });
@@ -370,7 +378,7 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       await waitFor(() => {
         expect(screen.getByText('Inspection failed')).toBeInTheDocument();
         expect(
-          screen.getAllByText(/Transaction not found on testnet Horizon/i)[0]
+          screen.getAllByText(/Transaction not found on testnet Horizon/i)[0],
         ).toBeInTheDocument();
       });
     });
@@ -442,7 +450,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/2 nodes · 1 edges/i)).toBeInTheDocument();
-        expect(screen.getByRole('img', { name: /Account relationship graph/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('img', { name: /Account relationship graph/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -471,7 +481,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Account details')).toBeInTheDocument();
-        expect(screen.getByText('GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ')).toBeInTheDocument();
+        expect(
+          screen.getByText('GA5ZSEJYB37JRC5AVCIA5MOP4RHT3VM35KCEIWI6VH5XY4O2Y5JV3CJQ'),
+        ).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Use as root/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Rebuild from here/i })).toBeInTheDocument();
       });
@@ -507,7 +519,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
       fireEvent.click(highlightBtn);
 
       await waitFor(() => {
-        expect(screen.getByText(/Shortest path has 2 nodes — highlighted in yellow\./i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Shortest path has 2 nodes — highlighted in yellow\./i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -530,7 +544,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
 
       await waitFor(() => {
         expect(screen.getByRole('status')).toBeInTheDocument();
-        expect(screen.getByText(/Partial graph: the traversal stopped at the 50-node limit/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Partial graph: the traversal stopped at the 50-node limit/i),
+        ).toBeInTheDocument();
       });
     });
   });

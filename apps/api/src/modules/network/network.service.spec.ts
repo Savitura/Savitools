@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Between } from 'typeorm';
-import { NetworkSample } from './entities/network-sample.entity';
+import { NetworkSample, NetworkName } from './entities/network-sample.entity';
 import { NetworkService } from './network.service';
 
 // The SSRF guard resolves hostnames before fetching. Keep these tests off real
@@ -11,7 +11,7 @@ jest.mock('dns/promises', () => ({
 }));
 
 function sample(
-  network: string,
+  network: NetworkName,
   sampledAt: string,
   ok: boolean,
   latencyMs: number | null,
@@ -379,7 +379,7 @@ describe('NetworkService', () => {
           horizonUrl: 'https://horizon-testnet.stellar.org',
           networkPassphrase: 'Test SDF Network ; September 2015',
         }),
-      ).rejects.toThrow(/unsupported schema version/i);
+      ).rejects.toThrow(/schema version .* is not supported/i);
       expect(create).not.toHaveBeenCalled();
     });
   });
