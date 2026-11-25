@@ -10,6 +10,8 @@
  */
 import type { NextConfig } from 'next';
 
+import { playgroundConnectOrigins } from '@/lib/playground-origins';
+
 const REQUIRED_HEADERS = [
   'content-security-policy',
   'x-content-type-options',
@@ -130,6 +132,60 @@ describe('Security Headers', () => {
     expect(csp).toContain('report-to csp-endpoint');
     expect(csp).toContain('report-uri ');
     expect(csp).toMatch(/report-uri [^\s;]+\/api\/v1\/csp-report/);
+  });
+
+  it('carries the Stellar and Playground origins in connect-src in every mode', async () => {
+    // Regression guard for Savitura/Savitools#687: the allow-list is derived
+    // from `playground-origins`, so an edit that drops the spread silently
+    // blocks the Playground without failing the build.
+    for (const env of ['development', 'production']) {
+      const directives = (await loadHeaders(env))['content-security-policy'].split(';');
+      const connectSrc = directives
+        .map((part) => part.trim())
+        .find((part) => part.startsWith('connect-src'));
+
+      expect(connectSrc).toBeDefined();
+      expect(connectSrc).toContain("'self'");
+      expect(connectSrc).toContain('https://horizon-testnet.stellar.org');
+      expect(connectSrc).toContain('https://horizon.stellar.org');
+      expect(connectSrc).toContain('https://friendbot.stellar.org');
+      expect(connectSrc).toContain('wss://*.stellar.org');
+      for (const origin of playgroundConnectOrigins()) {
+        expect(connectSrc).toContain(origin);
+      }
+    }
+  });
+
+  it('carries the same connect-src origins in the report-only policy', async () => {
+    const reportOnly = (await loadHeaders('production'))['content-security-policy-report-only'];
+
+    expect(reportOnly).toContain('https://horizon-testnet.stellar.org');
+    for (const origin of playgroundConnectOrigins()) {
+      expect(reportOnly).toContain(origin);
+    }
+  });
+
+  it('does not allow-list the legacy CrowdPay origin unless it is configured', async () => {
+    const mutableEnv = process.env as Record<string, string | undefined>;
+    const previous = mutableEnv.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL;
+    delete mutableEnv.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL;
+
+    try {
+      expect((await loadHeaders('production'))['content-security-policy']).not.toContain(
+        'api.crowdpay.io',
+      );
+
+      mutableEnv.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL = 'https://api.crowdpay.io';
+      expect((await loadHeaders('production'))['content-security-policy']).toContain(
+        'https://api.crowdpay.io',
+      );
+    } finally {
+      if (previous === undefined) {
+        delete mutableEnv.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL;
+      } else {
+        mutableEnv.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL = previous;
+      }
+    }
   });
 
   it('adds Content-Security-Policy-Report-Only only in production', async () => {

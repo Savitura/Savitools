@@ -41,6 +41,16 @@ export interface SandboxTopUpResponse {
   message: string;
 }
 
+/** Shape returned by `POST /sandbox/reset`, mirrored in the web client. */
+export interface SandboxResetResponse {
+  publicKey: string;
+  reset: boolean;
+  network: string;
+  startingBalance: string;
+  txHash: string | null;
+  message: string;
+}
+
 /**
  * Sandbox page backend.
  *
@@ -153,6 +163,33 @@ export class SandboxService {
         txHash !== null
           ? `Account ${publicKey} on ${endpoints.network} has been topped up.`
           : `Account ${publicKey} on ${endpoints.network} was not topped up; Friendbot may not fund an already-funded account.`,
+    };
+  }
+
+  /**
+   * Reset a sandbox account to a clean starting balance.
+   *
+   * A Stellar account cannot be deleted on testnet, so a reset tops the account
+   * back up through Friendbot and reports the resulting snapshot. `reset` stays
+   * false when Friendbot declined (an already-funded account) so the UI can tell
+   * a real reset from a no-op instead of showing a false success.
+   */
+  async resetAccount(
+    publicKey: string,
+    network: string = 'testnet',
+    overrides?: any,
+  ): Promise<SandboxResetResponse> {
+    const topUp = await this.topUpAccount(publicKey, network, overrides);
+
+    return {
+      publicKey: topUp.publicKey,
+      reset: topUp.toppedUp,
+      network: topUp.network,
+      startingBalance: topUp.startingBalance,
+      txHash: topUp.txHash,
+      message: topUp.toppedUp
+        ? `Account ${publicKey} on ${topUp.network} was reset to the Friendbot starting balance.`
+        : `Account ${publicKey} on ${topUp.network} could not be reset; Friendbot does not fund an already-funded account.`,
     };
   }
 

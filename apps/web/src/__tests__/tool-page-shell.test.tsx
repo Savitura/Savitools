@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { ToolPageShell } from '@/components/tools/tool-page-shell';
 
-// Mock Next.js Link component
+// Mock Next.js Link component. The function is named so `react/display-name`
+// stays satisfied — an anonymous arrow component is a lint error here.
 jest.mock('next/link', () => {
   const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => {
     return <a href={href}>{children}</a>;

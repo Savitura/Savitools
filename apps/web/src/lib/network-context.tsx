@@ -8,6 +8,7 @@ import {
   serializeNetworkProfileStore,
 } from './network-profile-format';
 import {
+  sanitizeUrl,
   verifyNetworkProfile as verifyNetworkProfileRequest,
   type NetworkDetectionOptions,
 } from './network-detection';
@@ -163,10 +164,6 @@ function writeStorage(Key: string, value: string) {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(Key, value);
   }
-}
-
-function sanitizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, '');
 }
 
 function fetchNetworkPassphrase(horizonUrl: string): Promise<string> {

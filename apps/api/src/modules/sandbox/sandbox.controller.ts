@@ -37,6 +37,15 @@ export class SandboxController {
     return this.sandboxService.topUpAccount(dto.publicKey, dto.network);
   }
 
+  @Post('reset')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @ApiOperation({ summary: 'Reset a sandbox account back to the Friendbot starting balance' })
+  @ApiResponse({ status: 201, description: 'Account reset' })
+  @ApiResponse({ status: 400, description: 'Invalid public key or target network' })
+  resetAccount(@Body() dto: ResetAccountDto) {
+    return this.sandboxService.resetAccount(dto.publicKey, dto.network);
+  }
+
   @Get('account/:publicKey')
   @ApiOperation({ summary: 'Get Horizon account details on the selected network' })
   @ApiParam({ name: 'publicKey', description: 'Stellar public key' })

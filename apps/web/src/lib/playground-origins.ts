@@ -86,6 +86,25 @@ export function resolvePlaygroundBaseUrl(provider: PlaygroundRemoteProvider): st
 }
 
 /**
+ * Bare origins for the legacy CrowdPay alias, opt-in only.
+ *
+ * Older deployments still point at `api.crowdpay.io`, but a production build
+ * that allows it unconditionally widens `connect-src` for every page. Set
+ * `NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL` to keep the alias allow-listed; the
+ * default is no origin at all (Savitura/Savitools#688).
+ */
+export function legacyCrowdpayConnectOrigins(): string[] {
+  const configured = normalizePlaygroundBaseUrl(process.env.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL);
+  if (!configured) return [];
+
+  try {
+    return [new URL(configured).origin];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Bare origins (scheme + host + port, no path) for `connect-src`.
  *
  * Paths are stripped because CSP matches on origins; keeping `/api` would make

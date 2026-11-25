@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Between } from 'typeorm';
-import { NetworkSample, NetworkName } from './entities/network-sample.entity';
+import { NetworkSample, type NetworkName } from './entities/network-sample.entity';
 import { NetworkService } from './network.service';
 
 // The SSRF guard resolves hostnames before fetching. Keep these tests off real

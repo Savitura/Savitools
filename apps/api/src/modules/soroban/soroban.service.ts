@@ -194,16 +194,11 @@ export class SorobanService {
    * Bulk estimate expiration for multiple contracts
    */
   async estimateBulkExpiration(dto: BulkEstimateDto): Promise<BulkExpirationResult[]> {
-    const { contractAddresses, network } = dto;
-    const server = this.getHorizonServer(network);
+    const { contractAddresses } = dto;
 
     const results = await Promise.all(
       contractAddresses.map(async (address) => {
         try {
-          // Get current ledger
-          const ledgerResponse = await server.ledgers().order('desc').limit(1).call();
-          const _currentLedger = ledgerResponse.records[0]?.sequence || 0;
-
           // Fetch contract data (this is simplified - in production you'd use RPC)
           // For now, return mock data structure
           const result: BulkExpirationResult = {

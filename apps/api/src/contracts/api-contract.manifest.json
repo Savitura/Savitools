@@ -478,6 +478,16 @@
       "auth": "jwt"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/network/profiles/:id/history",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/network/profiles/:id/history",
+      "auth": "jwt"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/network/profiles/import",
       "auth": "jwt"
@@ -585,6 +595,11 @@
     {
       "method": "POST",
       "path": "/api/v1/sandbox/payment",
+      "auth": "jwt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sandbox/reset",
       "auth": "jwt"
     },
     {

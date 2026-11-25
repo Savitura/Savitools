@@ -37,7 +37,7 @@ export interface NetworkProfileVerification {
   error?: string;
 }
 
-function sanitizeUrl(url: string): string {
+export function sanitizeUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 

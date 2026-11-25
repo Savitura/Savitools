@@ -16,6 +16,7 @@ import { MonitorDigestPreference } from '../modules/monitor/entities/monitor-dig
 import { TransactionReplay } from '../modules/transaction/entities/transaction-replay.entity';
 import { NetworkSample } from '../modules/network/entities/network-sample.entity';
 import { NetworkProfile } from '../modules/network/entities/network-profile.entity';
+import { NetworkProfileHistory } from '../modules/network/entities/network-profile-history.entity';
 import { HorizonReplay } from '../modules/inspector/entities/horizon-replay.entity';
 import { WatchedPool } from '../modules/liquidity-pools/entities/watched-pool.entity';
 import { LedgerCloseStat } from '../modules/ledger-close/entities/ledger-close-stat.entity';
@@ -72,6 +73,7 @@ export const ALL_ENTITIES: EntityClass[] = [
   TransactionReplay,
   NetworkSample,
   NetworkProfile,
+  NetworkProfileHistory,
   HorizonReplay,
   WatchedPool,
   LedgerCloseStat,

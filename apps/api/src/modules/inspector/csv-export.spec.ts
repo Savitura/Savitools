@@ -54,7 +54,10 @@ describe('InspectorService CSV export', () => {
   let service: InspectorService;
 
   beforeEach(() => {
-    service = new InspectorService(new ConfigService(), {} as any);
+    // The repository is only used by the replay endpoints; the CSV formatters
+    // under test never touch it, so an empty stand-in keeps this suite on the
+    // formatting logic alone.
+    service = new InspectorService(new ConfigService(), {} as never);
   });
 
   it('prepends the UTF-8 BOM for Excel compatibility', () => {

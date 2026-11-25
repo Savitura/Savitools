@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +20,12 @@ import {
   NETWORK_PROFILE_SCHEMA_VERSION,
   migrateNetworkProfilePayload,
 } from './network-profile-format';
+import {
+  NetworkProfileHistoryService,
+  type ConnectivityHistory,
+  type ConnectivitySample,
+} from './network-profile-history.service';
+import type { RecordConnectivityDto } from './dto/record-connectivity.dto';
 
 export interface NetworkStatus {
   timestamp: number;
@@ -99,6 +106,7 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(NetworkProfile)
     private readonly networkProfileRepository: Repository<NetworkProfile>,
     @Optional() private readonly metricsService?: MetricsService,
+    @Optional() private readonly profileHistory?: NetworkProfileHistoryService,
   ) {
     this.metricsService?.setHorizonConnections('mainnet', 1);
     this.metricsService?.setHorizonConnections('testnet', 1);
@@ -225,6 +233,41 @@ export class NetworkService implements OnModuleInit, OnModuleDestroy {
     // Legacy exports have no version and may omit the display name; migrate
     // before the create path validates against Horizon.
     return this.createNetworkProfile(ownerId, migrateNetworkProfilePayload(input));
+  }
+
+  /**
+   * Connectivity history for a saved profile.
+   *
+   * Ownership is resolved first so a profile belonging to another user answers
+   * 404, exactly like every other profile route.
+   */
+  async getProfileHistory(
+    ownerId: string,
+    id: string,
+    range: { from?: string; to?: string; bucket?: string } = {},
+  ): Promise<ConnectivityHistory> {
+    const profile = await this.getNetworkProfile(ownerId, id);
+
+    if (!this.profileHistory) {
+      throw new ServiceUnavailableException('Network profile history is not configured');
+    }
+
+    return this.profileHistory.history(profile.id, ownerId, range);
+  }
+
+  /** Records one connectivity probe for a saved profile. */
+  async recordProfileConnectivity(
+    ownerId: string,
+    id: string,
+    input: RecordConnectivityDto,
+  ): Promise<ConnectivitySample> {
+    const profile = await this.getNetworkProfile(ownerId, id);
+
+    if (!this.profileHistory) {
+      throw new ServiceUnavailableException('Network profile history is not configured');
+    }
+
+    return this.profileHistory.record(profile.id, ownerId, input);
   }
 
   async verifyNetworkPassphrase(

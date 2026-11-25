@@ -1,13 +1,18 @@
 import {
   DEFAULT_PLAYGROUND_BASE_URLS,
   configuredPlaygroundBaseUrl,
+  legacyCrowdpayConnectOrigins,
   normalizePlaygroundBaseUrl,
   playgroundBaseUrlEnvKey,
   playgroundConnectOrigins,
   resolvePlaygroundBaseUrl,
 } from '@/lib/playground-origins';
 
-const ENV_KEYS = ['NEXT_PUBLIC_FLUXA_API_URL', 'NEXT_PUBLIC_CROWDPAY_API_URL'] as const;
+const ENV_KEYS = [
+  'NEXT_PUBLIC_FLUXA_API_URL',
+  'NEXT_PUBLIC_CROWDPAY_API_URL',
+  'NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL',
+] as const;
 
 const originalEnv = ENV_KEYS.reduce<Record<string, string | undefined>>((acc, key) => {
   acc[key] = process.env[key];
@@ -83,6 +88,25 @@ describe('playground origins', () => {
     // The superseded default must not stay allow-listed.
     expect(origins).not.toContain('https://crowdpay.up.railway.app');
     expect(origins.every((origin) => new URL(origin).pathname === '/')).toBe(true);
+  });
+
+  it('leaves the legacy CrowdPay origin out of the allow-list by default', () => {
+    delete process.env.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL;
+
+    expect(legacyCrowdpayConnectOrigins()).toEqual([]);
+  });
+
+  it('allow-lists the legacy CrowdPay origin only when it is configured', () => {
+    process.env.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL = 'https://api.crowdpay.io/v1/';
+
+    // CSP matches on origins, so the configured path must be dropped.
+    expect(legacyCrowdpayConnectOrigins()).toEqual(['https://api.crowdpay.io']);
+  });
+
+  it('ignores an unusable legacy origin instead of widening CSP with it', () => {
+    process.env.NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL = 'not a url';
+
+    expect(legacyCrowdpayConnectOrigins()).toEqual([]);
   });
 
   it('exposes the environment variable name each provider reads', () => {

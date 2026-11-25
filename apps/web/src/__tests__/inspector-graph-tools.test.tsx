@@ -270,6 +270,9 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
           {
             index: 0,
             contractId: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+            type: 'contract',
+            eventName: 'transfer',
+            partial: false,
             signature: 'transfer(from: Address, to: Address, amount: i128)',
             topics: [
               {
@@ -322,6 +325,7 @@ describe('Inspector and Graph Tools (Issue #604)', () => {
           operationCount: 2,
           success: true,
           feeCharged: '100',
+          resultCode: 'tx_success',
         },
       ];
 

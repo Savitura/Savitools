@@ -5,7 +5,6 @@ import { RedisProvider } from './common/redis.provider';
 
 describe('AppController', () => {
   let appController: AppController;
-  let _appService: AppService;
   let redisProvider: RedisProvider;
 
   beforeEach(async () => {
@@ -25,7 +24,6 @@ describe('AppController', () => {
     }).compile();
 
     appController = app.get<AppController>(AppController);
-    _appService = app.get<AppService>(AppService);
     redisProvider = app.get<RedisProvider>(RedisProvider);
   });
 

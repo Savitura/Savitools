@@ -425,7 +425,16 @@ export class PlaygroundService {
       if (contentType.includes('application/json')) {
         // Read response with size limit
         const text = await this.readResponseWithLimit(response, MAX_RESPONSE_SIZE);
-        body = JSON.parse(text);
+        try {
+          body = JSON.parse(text);
+        } catch {
+          // Providers sometimes label a plain-text body as JSON. Passing the
+          // text through is more useful to the caller than a 502.
+          this.logger.warn(
+            `[proxy] ${dto.provider} returned a non-JSON body labelled application/json`,
+          );
+          body = text;
+        }
       } else {
         body = await this.readResponseWithLimit(response, MAX_RESPONSE_SIZE);
       }
@@ -462,7 +471,16 @@ export class PlaygroundService {
   private async readResponseWithLimit(response: Response, maxSize: number): Promise<string> {
     const reader = response.body?.getReader();
     if (!reader) {
-      return '';
+      // Some adapters and test doubles expose only `text()`. Returning '' here
+      // used to turn every such response into an "Unexpected end of JSON
+      // input" failure, which hid the real upstream body.
+      if (typeof response.text !== 'function') return '';
+
+      const text = await response.text();
+      if (text.length > maxSize) {
+        throw new BadGatewayException(`Response exceeds maximum size limit (${maxSize} bytes)`);
+      }
+      return text;
     }
 
     const chunks: Uint8Array[] = [];

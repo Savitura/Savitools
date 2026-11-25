@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 
-import { playgroundConnectOrigins } from './src/lib/playground-origins';
+import {
+  legacyCrowdpayConnectOrigins,
+  playgroundConnectOrigins,
+} from './src/lib/playground-origins';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -26,8 +29,10 @@ const connectSrc = [
   'https://horizon.stellar.org',
   'https://friendbot.stellar.org',
   ...playgroundConnectOrigins(),
-  // Legacy CrowdPay alias that older deployments still point at.
-  'https://api.crowdpay.io',
+  // Legacy CrowdPay alias, opt-in via NEXT_PUBLIC_CROWDPAY_LEGACY_API_URL so a
+  // production build does not allow-list a host nothing calls
+  // (Savitura/Savitools#688).
+  ...legacyCrowdpayConnectOrigins(),
   'wss://*.stellar.org',
 ].join(' ');
 

@@ -40,12 +40,20 @@ describe('SandboxService', () => {
     });
 
     it('resolves custom networks when horizonUrl is provided', () => {
-      const endpoints = resolveStellarEndpoints('custom', {
-        horizonUrl: 'http://custom-node:8000',
-        friendbotUrl: 'http://custom-node:8000/friendbot',
-      });
-      expect(endpoints.network).toBe('custom');
-      expect(endpoints.horizonUrl).toBe('http://custom-node:8000');
+      // Hosted mode rejects caller-supplied overrides unless the operator
+      // configures an allowlist; this exercises the self-hosted path.
+      process.env.STELLAR_HOSTED_MODE = 'false';
+
+      try {
+        const endpoints = resolveStellarEndpoints('custom', {
+          horizonUrl: 'http://custom-node:8000',
+          friendbotUrl: 'http://custom-node:8000/friendbot',
+        });
+        expect(endpoints.network).toBe('custom');
+        expect(endpoints.horizonUrl).toBe('http://custom-node:8000');
+      } finally {
+        delete process.env.STELLAR_HOSTED_MODE;
+      }
     });
 
     it('strictly prohibits mainnet from being used in Sandbox', () => {

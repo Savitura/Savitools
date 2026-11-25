@@ -519,17 +519,18 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
       body: null,
     } as unknown as Response);
 
-    await expect(
-      service.proxyRequest('user-1', {
+    const error = await service
+      .proxyRequest('user-1', {
         provider: ApiKeyProvider.FLUXA,
         method: 'GET',
         path: '/v1/large-data',
-      } as any),
-    ).rejects.toThrow(/exceeds maximum size limit/);
+      } as any)
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(BadGatewayException);
+    expect((error as Error).message).toMatch(/exceeds maximum size limit/);
   });
 
   it('rejects response when streaming body exceeds MAX_RESPONSE_SIZE', async () => {
-    const _MAX_SIZE = 10 * 1024 * 1024; // 10MB
     const chunkSize = 1024 * 1024; // 1MB chunks
     const numChunks = 11; // 11MB total
 
@@ -565,14 +566,16 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
       },
     } as unknown as Response);
 
-    await expect(
-      service.proxyRequest('user-1', {
+    const error = await service
+      .proxyRequest('user-1', {
         provider: ApiKeyProvider.FLUXA,
         method: 'GET',
         path: '/v1/stream-data',
-      } as any),
-    ).rejects.toThrow(/exceeds maximum size limit/);
+      } as any)
+      .catch((err: unknown) => err);
 
+    expect(error).toBeInstanceOf(BadGatewayException);
+    expect((error as Error).message).toMatch(/exceeds maximum size limit/);
     expect(mockReader.cancel).toHaveBeenCalled();
   });
 
