@@ -54,8 +54,8 @@ describe('TypeORM Migration Up/Down Reversibility', () => {
     expect(runMigrations.length).toBeGreaterThan(0);
 
     // Verify table count or migration table state
-    const migrationRepository = dataSource.getMigrationMetadata();
-    const executedMigrations = await dataSource.showMigrations();
+    const _migrationRepository = dataSource.getMigrationMetadata();
+    const _executedMigrations = await dataSource.showMigrations();
     
     // Revert all applied migrations down one by one
     let revertedCount = 0;
