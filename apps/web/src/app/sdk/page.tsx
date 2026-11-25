@@ -21,11 +21,21 @@ function SdkGeneratorTool() {
   const [generatedCode, setGeneratedCode] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Incrementing this triggers a retry without changing selectedApi/selectedLang.
+  const [retryCount, setRetryCount] = React.useState(0);
 
   React.useEffect(() => {
+    // Guard against stale responses: if the effect re-runs (new selection or
+    // retry) before an in-flight fetch resolves, the cleanup sets this flag so
+    // the outdated response is silently dropped instead of overwriting state.
+    let cancelled = false;
+
     const fetchCode = async () => {
       setIsLoading(true);
       setError(null);
+      // Clear any previously displayed code immediately so a stale snapshot
+      // is never visible while the new request is in-flight.
+      setGeneratedCode('');
       try {
         const data = await apiFetch<{ code?: string }>('/sdkgen/generate', {
           method: 'POST',
@@ -34,18 +44,27 @@ function SdkGeneratorTool() {
             language: selectedLang.toLowerCase()
           })
         });
-        setGeneratedCode(data.code || '');
+        if (!cancelled) {
+          setGeneratedCode(data.code || '');
+        }
       } catch (err) {
-        console.error('Error fetching SDK code:', err);
-        setError(err instanceof Error ? err.message : 'Failed to generate SDK code');
-        setGeneratedCode('');
+        if (!cancelled) {
+          console.error('Error fetching SDK code:', err);
+          setError(err instanceof Error ? err.message : 'Failed to generate SDK code');
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
     
     fetchCode();
-  }, [selectedApi, selectedLang]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApi, selectedLang, retryCount]);
 
   const getInstallCommand = () => {
     switch (selectedLang) {
@@ -148,10 +167,7 @@ function SdkGeneratorTool() {
                     {error}
                   </p>
                   <button
-                    onClick={() => {
-                      setError(null);
-                      setSelectedApi(selectedApi);
-                    }}
+                    onClick={() => setRetryCount(c => c + 1)}
                     className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
                   >
                     Retry
