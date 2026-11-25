@@ -375,3 +375,66 @@ describe('compareSlippageScenarios — rejected input', () => {
     });
   });
 });
+
+describe('compareSlippageScenarios — high volatility and boundaries', () => {
+  it('handles an 80% adverse move for strict send', () => {
+    const result = compareSlippageScenarios({
+      direction: 'strict_send',
+      fixedAmountStroops: HUNDRED,
+      variableAmountStroops: HUNDRED,
+      slippageScenarios: [50, 79.99, 80, 90],
+      adverseMovePercent: 80,
+    });
+
+    expect(result.adverseVariableAmount).toBe('20.0000000');
+    expect(result.scenarios.map((scenario) => scenario.verdict)).toEqual([
+      'fail',
+      'fail',
+      'exact',
+      'pass',
+    ]);
+    expect(result.recommendedSlippagePercent).toBe(80);
+    expect(result.exceededByEveryScenario).toBe(false);
+  });
+
+  it('handles an 80% adverse move for strict receive', () => {
+    const result = compareSlippageScenarios({
+      direction: 'strict_receive',
+      fixedAmountStroops: HUNDRED,
+      variableAmountStroops: HUNDRED,
+      slippageScenarios: [50, 79.99, 80, 90],
+      adverseMovePercent: 80,
+    });
+
+    expect(result.adverseVariableAmount).toBe('180.0000000');
+    expect(result.scenarios.map((scenario) => scenario.verdict)).toEqual([
+      'fail',
+      'fail',
+      'exact',
+      'pass',
+    ]);
+    expect(result.recommendedSlippagePercent).toBe(80);
+  });
+
+  it('distinguishes tolerances immediately below, at, and above the adverse move', () => {
+    const result = compareSlippageScenarios({
+      direction: 'strict_send',
+      fixedAmountStroops: HUNDRED,
+      variableAmountStroops: HUNDRED,
+      slippageScenarios: [1.01, 0.99, 1],
+      adverseMovePercent: 1,
+    });
+
+    expect(result.scenarios.map((scenario) => scenario.slippagePercent)).toEqual([
+      0.99,
+      1,
+      1.01,
+    ]);
+    expect(result.scenarios.map((scenario) => scenario.verdict)).toEqual([
+      'fail',
+      'exact',
+      'pass',
+    ]);
+    expect(result.recommendedSlippagePercent).toBe(1);
+  });
+});
