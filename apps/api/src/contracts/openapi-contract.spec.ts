@@ -27,6 +27,7 @@ import {
   publicApiModules,
   resolveOpenApiOperation,
   validateOpenApiFixtures,
+  validateOpenApiOperationCoverage,
   type OpenApiDocumentLike,
 } from './openapi-contract';
 import { OPENAPI_MODULE_FIXTURES } from './openapi-fixtures';
@@ -130,6 +131,11 @@ describe('OpenAPI contract', () => {
     expect(diff.staleFixtures).toEqual([]);
     // Guard against an accidentally empty comparison.
     expect(OPENAPI_MODULE_FIXTURES.length).toBe(publicApiModules(routes).length);
+  });
+
+  it('enforces OpenAPI tag, summary, and error-response coverage across all routes', () => {
+    const coverageErrors = validateOpenApiOperationCoverage(document);
+    expect(coverageErrors).toEqual([]);
   });
 
   it('documents a success and a validation error for every public module', () => {

@@ -1,3 +1,16 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": [
+    "next/core-web-vitals"
+  ],
+  "rules": {
+    "no-console": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/components/error-boundary.tsx"],
+      "rules": {
+        "no-console": ["error", { "allow": ["error"] }]
+      }
+    }
+  ]
 }
