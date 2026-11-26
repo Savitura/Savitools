@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsIn,
   IsInt,
@@ -10,6 +11,15 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsBoundedJson,
+  MAX_OPERATIONS_PER_TRANSACTION,
+  DEFAULT_MAX_JSON_DEPTH,
+  DEFAULT_MAX_JSON_BYTES,
+} from '../validators/bounded-json.validator';
+
+export { MAX_OPERATIONS_PER_TRANSACTION, DEFAULT_MAX_JSON_DEPTH, DEFAULT_MAX_JSON_BYTES };
 
 export class TimeBoundsDto {
   @ApiProperty({ example: 0, description: 'Minimum unix time (0 = no lower bound)' })
@@ -127,8 +137,7 @@ export class BuildTransactionDto {
   fee?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Sequence number as a string. Omit to load the next sequence from Horizon.',
+    description: 'Sequence number as a string. Omit to load the next sequence from Horizon.',
   })
   @IsOptional()
   @IsString()
@@ -153,6 +162,14 @@ export class BuildTransactionDto {
 
   @ApiProperty({ description: 'Ordered array of operations (flattened fields)', isArray: true })
   @IsArray()
+  @ArrayMaxSize(MAX_OPERATIONS_PER_TRANSACTION, {
+    message: `operations cannot contain more than ${MAX_OPERATIONS_PER_TRANSACTION} operations`,
+  })
+  @Type(() => Object)
+  @IsBoundedJson({
+    maxDepth: DEFAULT_MAX_JSON_DEPTH,
+    maxBytes: DEFAULT_MAX_JSON_BYTES,
+  })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- operation fields are arbitrary JSON keyed by field name
   operations: any[];
 }

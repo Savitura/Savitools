@@ -1,7 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsIn,
   IsInt,
   IsOptional,
@@ -9,6 +11,20 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import {
+  IsBoundedJson,
+  MAX_OPERATIONS_PER_TRANSACTION,
+  MAX_SEQUENCE_STEPS,
+  DEFAULT_MAX_JSON_DEPTH,
+  DEFAULT_MAX_JSON_BYTES,
+} from '../validators/bounded-json.validator';
+
+export {
+  MAX_OPERATIONS_PER_TRANSACTION,
+  MAX_SEQUENCE_STEPS,
+  DEFAULT_MAX_JSON_DEPTH,
+  DEFAULT_MAX_JSON_BYTES,
+};
 
 export class OperationInputDto {
   @IsString()
@@ -29,12 +45,23 @@ export class SourceReferenceDto {
 }
 
 export class TransactionStepInputDto {
+  @IsDefined({ message: 'source is required' })
+  @IsBoundedJson({
+    maxDepth: DEFAULT_MAX_JSON_DEPTH,
+    maxBytes: DEFAULT_MAX_JSON_BYTES,
+  })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- either an account string or a {step, field} reference
   source: any;
 
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OperationInputDto)
+  @ArrayMaxSize(MAX_OPERATIONS_PER_TRANSACTION, {
+    message: `operations cannot contain more than ${MAX_OPERATIONS_PER_TRANSACTION} operations`,
+  })
+  @Type(() => Object)
+  @IsBoundedJson({
+    maxDepth: DEFAULT_MAX_JSON_DEPTH,
+    maxBytes: DEFAULT_MAX_JSON_BYTES,
+  })
   operations: OperationInputDto[];
 
   @IsOptional()
@@ -50,6 +77,9 @@ export class RunTransactionSequenceDto {
   stopOnFailure: boolean;
 
   @IsArray()
+  @ArrayMaxSize(MAX_SEQUENCE_STEPS, {
+    message: `steps cannot contain more than ${MAX_SEQUENCE_STEPS} steps`,
+  })
   @ValidateNested({ each: true })
   @Type(() => TransactionStepInputDto)
   steps: TransactionStepInputDto[];
