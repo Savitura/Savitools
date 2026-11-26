@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as nodeDns from 'node:dns/promises';
+import * as dnsPromises from 'dns/promises';
 import { Sep24DebuggerService } from './sep24-debugger.service';
 import { Sep24Operation } from './dto/start-session.dto';
 
@@ -10,9 +11,12 @@ describe('Sep24DebuggerService', () => {
 
   beforeEach(async () => {
     // Ensure DNS lookup resolves to a safe public IP so assertSafeServerTarget passes in tests
-    jest.spyOn(nodeDns, 'lookup').mockResolvedValue([
-      { address: '93.184.216.34', family: 4 },
-    ] as any);
+    jest
+      .spyOn(nodeDns, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any);
+    jest
+      .spyOn(dnsPromises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -245,9 +249,92 @@ WEB_AUTH_ENDPOINT = "https://anchor.example.com/auth"
     });
 
     it('throws NotFoundException when polling non-existent session', async () => {
-      await expect(service.pollStatus('non-existent-uuid')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.pollStatus('non-existent-uuid')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('SSRF guard & redirect protection', () => {
+    it.each(['127.0.0.1', '10.0.0.1', '192.168.1.1', '169.254.169.254', '::1', 'fc00::1'])(
+      'rejects anchorDomain pointing to private/loopback/metadata IP %s',
+      async (ip) => {
+        await expect(
+          service.startSession({
+            anchorDomain: ip,
+            assetCode: 'USDC',
+            operation: Sep24Operation.DEPOSIT,
+            jwt: 'valid-jwt',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      },
+    );
+
+    it('rejects anchorDomain when hostname resolves to a forbidden private IP', async () => {
+      jest
+        .spyOn(dnsPromises, 'lookup')
+        .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }] as any);
+
+      await expect(
+        service.startSession({
+          anchorDomain: 'internal.anchor.test',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-jwt',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects redirect to cloud metadata IP (169.254.169.254)', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        status: 302,
+        headers: new Headers({
+          location: 'http://169.254.169.254/latest/meta-data',
+        }),
+      } as any);
+
+      await expect(
+        service.startSession({
+          anchorDomain: 'anchor.example.com',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-jwt',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects redirect to loopback IP (127.0.0.1)', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        status: 302,
+        headers: new Headers({
+          location: 'http://127.0.0.1:8080/admin',
+        }),
+      } as any);
+
+      await expect(
+        service.startSession({
+          anchorDomain: 'anchor.example.com',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-jwt',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects excessive redirects exceeding MAX_SAFE_REDIRECTS', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        status: 302,
+        headers: new Headers({
+          location: 'https://anchor.example.com/loop',
+        }),
+      } as any);
+
+      await expect(
+        service.startSession({
+          anchorDomain: 'anchor.example.com',
+          assetCode: 'USDC',
+          operation: Sep24Operation.DEPOSIT,
+          jwt: 'valid-jwt',
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -22,11 +22,7 @@ export const MAX_SAFE_REDIRECTS = 5;
 export const MAX_WEBHOOK_REDIRECTS = MAX_SAFE_REDIRECTS;
 
 function ipv4ToInt(ip: string): number {
-  return (
-    ip
-      .split('.')
-      .reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0
-  );
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
 }
 
 function inIpv4Range(ip: string, cidr: string): boolean {
@@ -53,14 +49,15 @@ export const FORBIDDEN_IPV4_RANGES = [
 
 /** True if `ip` is a private, loopback, link-local, or otherwise non-public address. */
 export function isForbiddenIp(ip: string): boolean {
-  const version = isIP(ip);
+  const cleanIp = ip.startsWith('[') && ip.endsWith(']') ? ip.slice(1, -1) : ip;
+  const version = isIP(cleanIp);
 
   if (version === 4) {
-    return FORBIDDEN_IPV4_RANGES.some((range) => inIpv4Range(ip, range));
+    return FORBIDDEN_IPV4_RANGES.some((range) => inIpv4Range(cleanIp, range));
   }
 
   if (version === 6) {
-    const normalized = ip.toLowerCase();
+    const normalized = cleanIp.toLowerCase();
 
     if (normalized === '::1' || normalized === '::') return true;
     if (
@@ -94,8 +91,11 @@ export function isForbiddenIp(ip: string): boolean {
  * internal infrastructure through an otherwise-innocuous-looking hostname.
  */
 export async function assertPublicHostname(hostname: string): Promise<void> {
-  if (isIP(hostname)) {
-    if (isForbiddenIp(hostname)) {
+  const cleanHost =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+
+  if (isIP(cleanHost)) {
+    if (isForbiddenIp(cleanHost)) {
       throw new BadRequestException('Target host resolves to a non-public address');
     }
     return;
@@ -108,7 +108,7 @@ export async function assertPublicHostname(hostname: string): Promise<void> {
     throw new BadGatewayException(`Could not resolve host: ${hostname}`);
   }
 
-  if (records.length === 0 || records.some((record) => isForbiddenIp(record.address))) {
+  if (!records || records.length === 0 || records.some((record) => isForbiddenIp(record.address))) {
     throw new BadRequestException('Target host resolves to a non-public address');
   }
 }
@@ -184,12 +184,19 @@ export function assertRelativePath(path: string): void {
  * `file:`, and other schemes are rejected outright — and the host must not
  * resolve to a non-public address. Returns the parsed URL for convenience.
  */
-export async function assertSafeExternalUrl(rawUrl: string): Promise<URL> {
+export async function assertSafeExternalUrl(
+  rawUrl: string,
+  allowedSchemes: readonly string[] = ['stellar:'],
+): Promise<URL> {
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
     throw new BadRequestException(`Invalid URL: ${rawUrl}`);
+  }
+
+  if (allowedSchemes.includes(url.protocol)) {
+    return url;
   }
 
   await assertHttpDestination(url);

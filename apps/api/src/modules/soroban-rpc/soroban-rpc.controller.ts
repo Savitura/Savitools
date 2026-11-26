@@ -43,6 +43,7 @@ export class SorobanRpcController {
       method: dto.method,
       params: dto.params,
       network: dto.network,
+      rpcUrl: dto.rpcUrl,
     });
   }
 }

@@ -1,5 +1,6 @@
 import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as dnsPromises from 'dns/promises';
 import { SorobanRpcService } from './soroban-rpc.service';
 import {
   MAX_PARAMS_BYTES,
@@ -32,6 +33,9 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
   } as unknown as ConfigService;
 
   beforeEach(() => {
+    jest
+      .spyOn(dnsPromises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any);
     service = new SorobanRpcService(config);
     fetchSpy = jest.spyOn(global, 'fetch');
   });
@@ -60,9 +64,7 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
 
     it('exposes the catalog through the service', () => {
       expect(service.listMethods().methods).toEqual(SOROBAN_RPC_METHODS);
-      expect(service.getMethod('getLatestLedger')).toEqual(
-        findRpcMethod('getLatestLedger'),
-      );
+      expect(service.getMethod('getLatestLedger')).toEqual(findRpcMethod('getLatestLedger'));
       expect(() => service.getMethod('sendTransaction')).toThrow(NotFoundException);
     });
   });
@@ -79,9 +81,7 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
     it('rejects missing and malformed required parameters', () => {
       const spec = findRpcMethod('getTransaction')!;
       expect(() => validateRpcParams(spec, {})).toThrow('"getTransaction.hash" is required');
-      expect(() => validateRpcParams(spec, { hash: 'nope' })).toThrow(
-        '64 hexadecimal characters',
-      );
+      expect(() => validateRpcParams(spec, { hash: 'nope' })).toThrow('64 hexadecimal characters');
       expect(() => validateRpcParams(spec, { hash: 'a'.repeat(64) })).not.toThrow();
     });
 
@@ -96,17 +96,13 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
       expect(() => validateRpcParams(events, { order: 'asc' })).not.toThrow();
 
       const entries = findRpcMethod('getLedgerEntries')!;
-      expect(() =>
-        validateRpcParams(entries, { keys: new Array(201).fill('AAAA') }),
-      ).toThrow('at most 200 entries');
-      expect(() => validateRpcParams(entries, { keys: [1] })).toThrow(
-        'must be a string',
+      expect(() => validateRpcParams(entries, { keys: new Array(201).fill('AAAA') })).toThrow(
+        'at most 200 entries',
       );
+      expect(() => validateRpcParams(entries, { keys: [1] })).toThrow('must be a string');
 
       const oversized = `{"${'a'.repeat(MAX_PARAMS_BYTES)}": 1}`;
-      expect(() => validateRpcParams(events, JSON.parse(oversized))).toThrow(
-        'byte limit',
-      );
+      expect(() => validateRpcParams(events, JSON.parse(oversized))).toThrow('byte limit');
     });
   });
 
@@ -124,7 +120,11 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
       expect(body.method).toBe('getLatestLedger');
       expect(body.params).toEqual({});
       expect(typeof body.id).toBe('number');
-      expect(result).toMatchObject({ method: 'getLatestLedger', network: 'testnet', result: { ledger: 5 } });
+      expect(result).toMatchObject({
+        method: 'getLatestLedger',
+        network: 'testnet',
+        result: { ledger: 5 },
+      });
       expect(typeof result.tookMs).toBe('number');
       expect(result.error).toBeUndefined();
     });
@@ -157,7 +157,11 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
 
     it('surfaces JSON-RPC errors without throwing', async () => {
       fetchSpy.mockResolvedValue(
-        jsonResponse({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'Method not found' } }),
+        jsonResponse({
+          jsonrpc: '2.0',
+          id: 1,
+          error: { code: -32601, message: 'Method not found' },
+        }),
       );
 
       const result = await service.execute({ method: 'getHealth' });
@@ -170,17 +174,15 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
       await expect(service.execute({ method: 'sendTransaction' })).rejects.toThrow(
         NotFoundException,
       );
-      await expect(service.execute({ method: 'getLatestLedger', params: { nope: 1 } })).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.execute({ method: 'getLatestLedger', params: { nope: 1 } }),
+      ).rejects.toThrow(BadRequestException);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it('maps upstream HTTP failures and non-JSON bodies to 502', async () => {
       fetchSpy.mockResolvedValue(jsonResponse({}, { ok: false, status: 503 }));
-      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(
-        BadGatewayException,
-      );
+      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(BadGatewayException);
 
       fetchSpy.mockResolvedValue({
         ok: true,
@@ -189,20 +191,127 @@ describe('SorobanRpcService (Savitura/Savitools#358)', () => {
           throw new Error('not json');
         },
       } as unknown as Response);
-      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(
-        'non-JSON',
-      );
+      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow('non-JSON');
     });
 
     it('maps transport failures to 502', async () => {
       fetchSpy.mockRejectedValue(new Error('socket hang up'));
 
-      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(
-        BadGatewayException,
+      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(BadGatewayException);
+      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow('socket hang up');
+    });
+  });
+
+  describe('SSRF guard and user-supplied rpcUrl', () => {
+    it.each([
+      'http://127.0.0.1:8545',
+      'http://169.254.169.254/latest/meta-data',
+      'http://10.0.0.1:8000',
+      'http://192.168.1.50:8000',
+      'http://[::1]:8545',
+    ])(
+      'rejects user-supplied rpcUrl pointing to private/loopback/metadata IP %s',
+      async (rpcUrl) => {
+        await expect(
+          service.execute({
+            method: 'getLatestLedger',
+            rpcUrl,
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(fetchSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects user-supplied rpcUrl whose hostname resolves to private IP', async () => {
+      jest
+        .spyOn(dnsPromises, 'lookup')
+        .mockResolvedValueOnce([{ address: '172.16.0.10', family: 4 }] as any);
+
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+          rpcUrl: 'https://custom.rpc.test',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsupported URL protocols in user-supplied rpcUrl', async () => {
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+          rpcUrl: 'ftp://rpc.example.com',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+          rpcUrl: 'javascript:alert(1)',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects redirect to cloud metadata IP (169.254.169.254)', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        status: 302,
+        headers: new Headers({
+          location: 'http://169.254.169.254/latest/meta-data',
+        }),
+      } as unknown as Response);
+
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects redirect to loopback IP (127.0.0.1)', async () => {
+      fetchSpy.mockResolvedValueOnce({
+        status: 302,
+        headers: new Headers({
+          location: 'http://127.0.0.1:8080/admin',
+        }),
+      } as unknown as Response);
+
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects excessive redirects (> 5 hops)', async () => {
+      fetchSpy.mockResolvedValue({
+        status: 302,
+        headers: new Headers({
+          location: 'https://soroban-testnet.stellar.org/redirect-loop',
+        }),
+      } as unknown as Response);
+
+      await expect(
+        service.execute({
+          method: 'getLatestLedger',
+        }),
+      ).rejects.toThrow(BadGatewayException);
+    });
+
+    it('allows a safe user-supplied public rpcUrl', async () => {
+      fetchSpy.mockResolvedValueOnce(
+        jsonResponse({ jsonrpc: '2.0', id: 1, result: { ledger: 100 } }),
       );
-      await expect(service.execute({ method: 'getHealth' })).rejects.toThrow(
-        'socket hang up',
+
+      const result = await service.execute({
+        method: 'getLatestLedger',
+        rpcUrl: 'https://custom-public-rpc.example.com/rpc',
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://custom-public-rpc.example.com/rpc',
+        expect.any(Object),
       );
+      expect(result.result).toEqual({ ledger: 100 });
     });
   });
 });

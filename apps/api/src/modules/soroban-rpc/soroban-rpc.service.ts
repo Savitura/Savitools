@@ -128,28 +128,77 @@ export class SorobanRpcService {
     method: string;
     params?: Record<string, unknown>;
     network?: SorobanRpcNetwork;
+    rpcUrl?: string;
   }): Promise<ExecuteSorobanRpcResult> {
     const spec = this.getMethod(input.method);
     const params = validateRpcParams(spec, input.params);
     const network: SorobanRpcNetwork = input.network ?? 'testnet';
-    const url = this.rpcUrl(network);
+    const rawUrl = input.rpcUrl ?? this.rpcUrl(network);
+
+    let currentUrl: URL;
+    try {
+      currentUrl = new URL(rawUrl);
+    } catch {
+      throw new BadRequestException(`Invalid RPC URL: ${rawUrl}`);
+    }
+    if (currentUrl.protocol !== 'http:' && currentUrl.protocol !== 'https:') {
+      throw new BadRequestException(
+        `Unsupported URL protocol "${currentUrl.protocol}". Only http and https are allowed.`,
+      );
+    }
+    await assertPublicHostname(currentUrl.hostname);
+    this.assertEndpointAllowed(currentUrl.toString());
+
     const id = ++this.requestCounter;
+    const bodyStr = JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method: spec.name,
+      params,
+    });
 
     const startedAt = Date.now();
     let response: Response;
     try {
-      response = await fetch(url, {
+      let currentUrlStr = rawUrl;
+      response = await fetch(currentUrlStr, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          method: spec.name,
-          params,
-        }),
+        body: bodyStr,
         signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+        redirect: 'manual',
       });
+
+      let hops = 0;
+      while (
+        [301, 302, 303, 307, 308].includes(response.status) &&
+        response.headers.has('location')
+      ) {
+        if (++hops > MAX_SAFE_REDIRECTS) {
+          throw new BadGatewayException('Too many redirects from Soroban RPC endpoint');
+        }
+        const location = response.headers.get('location')!;
+        currentUrl = new URL(location, currentUrl);
+        currentUrlStr = currentUrl.toString();
+        if (currentUrl.protocol !== 'http:' && currentUrl.protocol !== 'https:') {
+          throw new BadRequestException(`Unsupported protocol in redirect: ${currentUrl.protocol}`);
+        }
+        await assertPublicHostname(currentUrl.hostname);
+        this.assertEndpointAllowed(currentUrlStr);
+
+        const nextMethod = response.status === 303 ? 'GET' : 'POST';
+        response = await fetch(currentUrlStr, {
+          method: nextMethod,
+          headers: nextMethod === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+          body: nextMethod === 'GET' ? undefined : bodyStr,
+          signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+          redirect: 'manual',
+        });
+      }
     } catch (error: unknown) {
+      if (error instanceof BadRequestException || error instanceof BadGatewayException) {
+        throw error;
+      }
       const reason = error instanceof Error ? error.message : String(error);
       throw new BadGatewayException(`Could not reach the Soroban RPC endpoint: ${reason}`);
     }

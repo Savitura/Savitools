@@ -11,6 +11,7 @@ import {
   assertPublicHostname,
   assertRelativePath,
   assertSafeDestination,
+  assertSafeExternalUrl,
   assertSafeWebhookDestination,
   isForbiddenIp,
 } from './ssrf-guard';
@@ -137,6 +138,53 @@ describe('assertSafeDestination', () => {
     await expect(
       assertSafeDestination(new URL('https://api.provider.com/v1/wallets'), allowedOrigins),
     ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('assertSafeExternalUrl', () => {
+  beforeEach(() => lookupMock.mockReset());
+
+  it('allows public https URL', async () => {
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    const url = await assertSafeExternalUrl('https://anchor.example.com/interactive');
+    expect(url.hostname).toBe('anchor.example.com');
+  });
+
+  it('allows stellar: URI by default', async () => {
+    const url = await assertSafeExternalUrl('stellar:pay?destination=GABC');
+    expect(url.protocol).toBe('stellar:');
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects stellar: URI when disallowed', async () => {
+    await expect(assertSafeExternalUrl('stellar:pay?destination=GABC', [])).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects private IP literals and metadata endpoints', async () => {
+    await expect(assertSafeExternalUrl('http://127.0.0.1/test')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(assertSafeExternalUrl('http://169.254.169.254/latest/meta-data')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(assertSafeExternalUrl('http://10.0.0.1/secret')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(assertSafeExternalUrl('http://[::1]/secret')).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects domains resolving to internal IPs', async () => {
+    lookupMock.mockResolvedValue([{ address: '192.168.1.1', family: 4 }]);
+    await expect(assertSafeExternalUrl('https://evil.internal.test')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects unsupported schemes like file: or javascript:', async () => {
+    await expect(assertSafeExternalUrl('javascript:alert(1)')).rejects.toThrow(BadRequestException);
+    await expect(assertSafeExternalUrl('file:///etc/passwd')).rejects.toThrow(BadRequestException);
   });
 });
 

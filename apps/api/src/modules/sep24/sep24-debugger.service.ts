@@ -1,17 +1,11 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodeDns from 'node:dns/promises';
-import * as nodeNet from 'node:net';
 import { randomUUID } from 'node:crypto';
 import {
-  Sep24Timeline,
-  TimelineEntry,
-} from './sep24-timeline';
+  assertSafeExternalUrl as assertSafeExternalUrlGuard,
+  MAX_SAFE_REDIRECTS,
+} from '../../common/ssrf-guard';
+import { Sep24Timeline, TimelineEntry } from './sep24-timeline';
 import { StartSessionDto, Sep24Operation } from './dto/start-session.dto';
 
 export type Sep24TransactionStatus =
@@ -58,11 +52,14 @@ export interface Sep24TransactionRecord {
   more_info_url?: string;
   message?: string;
   required_info?: {
-    fields?: Record<string, {
-      description?: string;
-      type?: string;
-      optional?: boolean;
-    }>;
+    fields?: Record<
+      string,
+      {
+        description?: string;
+        type?: string;
+        optional?: boolean;
+      }
+    >;
   };
   [key: string]: unknown;
 }
@@ -76,77 +73,14 @@ const DEFAULT_POLL_TIMEOUT_MS = 300000;
 const MAX_POLL_TIMEOUT_MS = 1800000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
-const ALLOWED_SCHEMES = new Set(['stellar:']);
-
-const PRIVATE_HOST_PATTERNS = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^172\.(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\./,
-  /^192\.168\./,
-  /^169\.254\./,
-  /^fc00:/i,
-  /^fd00:/i,
-  /^0\.0\.0\.0$/,
-  /^0x[0-9a-f]+$/i,
-  /^::1$/,
-  /^\[::1]$/,
-];
-
-function isPrivateIP(ip: string): boolean {
-  return PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(ip));
+export async function assertSafeExternalUrl(urlString: string): Promise<URL> {
+  return assertSafeExternalUrlGuard(urlString, ['stellar:']);
 }
 
-export function assertSafeExternalUrl(urlString: string): URL {
-  let url: URL;
-  try {
-    url = new URL(urlString);
-  } catch {
-    throw new BadRequestException(`Invalid URL: ${urlString}`);
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:' && !ALLOWED_SCHEMES.has(url.protocol)) {
-    throw new BadRequestException(
-      `Unsupported URL scheme '${url.protocol}'. Only http, https, and stellar are allowed.`,
-    );
-  }
-  return url;
-}
-
-async function assertSafeServerTarget(urlString: string): Promise<URL> {
-  const url = assertSafeExternalUrl(urlString);
+export async function assertSafeServerTarget(urlString: string): Promise<URL> {
+  const url = await assertSafeExternalUrlGuard(urlString, []);
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new BadRequestException(
-      'Server fetches only support http/https targets.',
-    );
-  }
-  const hostname = url.hostname;
-  if (isPrivateIP(hostname)) {
-    throw new BadRequestException(
-      `Refusing to fetch private/loopback host '${hostname}'.`,
-    );
-  }
-  let addresses: string[] = [];
-  try {
-    if (nodeNet.isIP(hostname) !== 0) {
-      addresses = [hostname];
-    } else {
-      const resolved = await nodeDns.lookup(hostname, { all: true });
-      addresses = resolved.map((entry: { address: string }) => entry.address);
-    }
-  } catch (err) {
-    throw new BadRequestException(
-      `Could not resolve host '${hostname}': ${(err as Error).message}`,
-    );
-  }
-  if (addresses.length === 0) {
-    throw new BadRequestException(`Could not resolve host '${hostname}'.`);
-  }
-  for (const address of addresses) {
-    if (isPrivateIP(address)) {
-      throw new BadRequestException(
-        `Refusing to fetch '${hostname}' which resolves to private address '${address}'.`,
-      );
-    }
+    throw new BadRequestException('Server fetches only support http/https targets.');
   }
   return url;
 }
@@ -158,11 +92,29 @@ export class Sep24DebuggerService {
 
   private http = {
     get: async <T>(url: string, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
+      let currentUrl = url;
+      let res = await fetch(currentUrl, {
         method: 'GET',
         headers: opts?.headers,
         signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+        redirect: 'manual',
       });
+      let hops = 0;
+      while ([301, 302, 303, 307, 308].includes(res.status) && res.headers.has('location')) {
+        if (++hops > MAX_SAFE_REDIRECTS) {
+          throw new BadRequestException(`Too many redirects (limit: ${MAX_SAFE_REDIRECTS})`);
+        }
+        const location = res.headers.get('location')!;
+        const nextUrl = new URL(location, currentUrl).toString();
+        await assertSafeServerTarget(nextUrl);
+        currentUrl = nextUrl;
+        res = await fetch(currentUrl, {
+          method: 'GET',
+          headers: opts?.headers,
+          signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+          redirect: 'manual',
+        });
+      }
       let data: any;
       if (opts?.responseType === 'text') {
         data = await res.text();
@@ -176,12 +128,36 @@ export class Sep24DebuggerService {
       return { status: res.status, data };
     },
     post: async <T>(url: string, body: any, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
+      let currentUrl = url;
+      const requestBody = typeof body === 'string' ? body : JSON.stringify(body);
+      let res = await fetch(currentUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
-        body: typeof body === 'string' ? body : JSON.stringify(body),
+        body: requestBody,
         signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+        redirect: 'manual',
       });
+      let hops = 0;
+      while ([301, 302, 303, 307, 308].includes(res.status) && res.headers.has('location')) {
+        if (++hops > MAX_SAFE_REDIRECTS) {
+          throw new BadRequestException(`Too many redirects (limit: ${MAX_SAFE_REDIRECTS})`);
+        }
+        const location = res.headers.get('location')!;
+        const nextUrl = new URL(location, currentUrl).toString();
+        await assertSafeServerTarget(nextUrl);
+        currentUrl = nextUrl;
+        const nextMethod = res.status === 303 ? 'GET' : 'POST';
+        res = await fetch(currentUrl, {
+          method: nextMethod,
+          headers:
+            nextMethod === 'GET'
+              ? opts?.headers
+              : { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
+          body: nextMethod === 'GET' ? undefined : requestBody,
+          signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
+          redirect: 'manual',
+        });
+      }
       let data: any;
       try {
         data = await res.json();
@@ -205,7 +181,10 @@ export class Sep24DebuggerService {
   }
 
   private normalizeDomain(domain: string): string {
-    const trimmed = domain.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    const trimmed = domain
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '');
     if (!trimmed) {
       throw new BadRequestException('anchorDomain must be a non-empty hostname');
     }
@@ -356,20 +335,16 @@ export class Sep24DebuggerService {
 
     await assertSafeServerTarget(interactiveEndpoint);
     const interactiveStart = Date.now();
-    const response = await this.http.post<Sep24TransactionResponse>(
-      interactiveEndpoint,
-      body,
-      {
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        timeout: 15000,
-        maxContentLength: MAX_RESPONSE_BYTES,
-        validateStatus: () => true,
+    const response = await this.http.post<Sep24TransactionResponse>(interactiveEndpoint, body, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
-    );
+      timeout: 15000,
+      maxContentLength: MAX_RESPONSE_BYTES,
+      validateStatus: () => true,
+    });
     const durationMs = Date.now() - interactiveStart;
     const status = response.status;
     const data = response.data;
@@ -434,7 +409,7 @@ export class Sep24DebuggerService {
     }
     const interactiveUrl = this.extractInteractiveUrl(transaction);
     if (interactiveUrl) {
-      assertSafeExternalUrl(interactiveUrl);
+      await assertSafeExternalUrl(interactiveUrl);
     }
     timeline.record({
       kind: 'interactive_url',
@@ -683,9 +658,7 @@ export class Sep24DebuggerService {
       status: httpStatus,
       durationMs,
       response: data,
-      message: terminal
-        ? `Terminal status '${normalized}'`
-        : `Status ${normalized}`,
+      message: terminal ? `Terminal status '${normalized}'` : `Status ${normalized}`,
       details: {
         requiredInfo: transaction.required_info?.fields,
         moreInfoUrl: transaction.more_info_url,

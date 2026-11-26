@@ -35,4 +35,13 @@ export class ExecuteSorobanRpcDto {
   @IsOptional()
   @IsIn(['testnet', 'mainnet'])
   network?: SorobanRpcNetwork;
+
+  @ApiPropertyOptional({
+    description:
+      'Custom Soroban RPC endpoint URL to invoke directly instead of using the network default.',
+    example: 'https://soroban-testnet.stellar.org',
+  })
+  @IsOptional()
+  @IsString()
+  rpcUrl?: string;
 }
