@@ -47,14 +47,14 @@ export class Watch {
   @Column({
     name: 'event_types',
     type: 'jsonb',
-    default: () => '\'["transaction","payment"]\'::jsonb',
+    default: ['transaction', 'payment'],
   })
   eventTypes!: WatchEventType[];
 
-  @Column({ name: 'alert_rules', type: 'jsonb', default: () => "'[]'::jsonb" })
+  @Column({ name: 'alert_rules', type: 'jsonb', default: [] })
   alertRules!: AlertRuleDefinition[];
 
-  @Column({ name: 'alert_state', type: 'jsonb', default: () => "'{}'::jsonb" })
+  @Column({ name: 'alert_state', type: 'jsonb', default: {} })
   alertState!: AlertRuleState;
 
   @Column({ name: 'last_evaluated_at', type: 'timestamptz', nullable: true })

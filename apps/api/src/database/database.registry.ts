@@ -41,6 +41,7 @@ import { CreateHorizonReplayHistory1798300000000 } from './migrations/1798300000
 import { AddApiKeyMaskedKey1790700000000 } from './migrations/1790700000000-add-api-key-masked-key';
 import { CreateLiquidityPools1790800000000 } from './migrations/1790800000000-create-liquidity-pools';
 import { CreateLedgerCloseStats1791000000000 } from './migrations/1791000000000-create-ledger-close-stats';
+import { SyncSchemaDrift1799000000000 } from './migrations/1799000000000-sync-schema-drift';
 
 /** A TypeORM migration constructor as passed to `DataSourceOptions.migrations`. */
 export type MigrationClass = new () => MigrationInterface;
@@ -106,4 +107,5 @@ export const ALL_MIGRATIONS: MigrationClass[] = [
   AddApiKeyMaskedKey1790700000000,
   CreateLiquidityPools1790800000000,
   CreateLedgerCloseStats1791000000000,
+  SyncSchemaDrift1799000000000,
 ];

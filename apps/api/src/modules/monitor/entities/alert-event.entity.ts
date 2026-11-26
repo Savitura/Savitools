@@ -52,7 +52,7 @@ export class AlertEvent {
   @Column({
     name: 'delivery_attempts',
     type: 'jsonb',
-    default: () => "'[]'::jsonb",
+    default: [],
   })
   deliveryAttempts!: DeliveryAttempt[];
 
