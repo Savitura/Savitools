@@ -49,16 +49,21 @@ function parseYamlContent(content) {
     // fall through to python3
   }
 
-  try {
-    const jsonStr = execFileSync(
-      'python3',
-      ['-c', 'import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))'],
-      { input: content, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
-    );
-    return JSON.parse(jsonStr);
-  } catch (error) {
-    throw new Error(`Failed to parse YAML content: ${error.message}`);
+  for (const pyCmd of ['python3', 'python', 'py']) {
+    try {
+      const jsonStr = execFileSync(
+        pyCmd,
+        ['-c', 'import yaml, json, sys; print(json.dumps(yaml.safe_load(sys.stdin.read())))'],
+        { input: content, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+      );
+      return JSON.parse(jsonStr);
+    } catch {
+      // try next python command
+    }
   }
+  throw new Error(
+    'Failed to parse YAML content: no working python command with yaml package found',
+  );
 }
 
 function parseArgs(argv) {
@@ -210,9 +215,11 @@ function generateCrowdPaySpecFromRoutes(routesDir) {
       throw new Error(`No route files found in ${routesDir}`);
     }
 
-    execFileSync('npx', ['-y', 'swagger-jsdoc', '-d', defPath, ...routeFiles, '-o', outPath], {
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    execFileSync(npxCmd, ['-y', 'swagger-jsdoc', '-d', defPath, ...routeFiles, '-o', outPath], {
       stdio: 'pipe',
-      timeout: 30_000,
+      timeout: 60_000,
+      shell: process.platform === 'win32',
     });
 
     const generated = JSON.parse(fs.readFileSync(outPath, 'utf8'));

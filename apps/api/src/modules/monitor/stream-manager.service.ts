@@ -627,11 +627,16 @@ export class StreamManager
   }
 
   private jsonRecord(value: Record<string, unknown>): Record<string, unknown> {
-    return JSON.parse(
-      JSON.stringify(value, (_key, entry: unknown) =>
-        typeof entry === "bigint" ? entry.toString() : entry,
-      ),
-    ) as Record<string, unknown>;
+    let serialised: string;
+    try {
+      serialised = JSON.stringify(value, (_key, entry: unknown) =>
+        typeof entry === 'bigint' ? entry.toString() : entry,
+      );
+    } catch (err) {
+      this.logger.warn(`jsonRecord: failed to serialize value – ${(err as Error).message}`);
+      return {};
+    }
+    return JSON.parse(serialised) as Record<string, unknown>;
   }
 
   private requiredString(value: unknown, field: string): string {

@@ -12,11 +12,24 @@ export class WatchRegistry {
     private readonly watchRepository: Repository<Watch>,
   ) {}
 
+  static readonly LOAD_BATCH_SIZE = 1_000;
+
   async load(): Promise<void> {
     this.watchesByKey.clear();
-    const watches = await this.watchRepository.find();
-    for (const watch of watches) {
-      this.add(watch);
+    let skip = 0;
+    while (true) {
+      const batch = await this.watchRepository.find({
+        order: { id: 'ASC' },
+        take: WatchRegistry.LOAD_BATCH_SIZE,
+        skip,
+      });
+      for (const watch of batch) {
+        this.add(watch);
+      }
+      if (batch.length < WatchRegistry.LOAD_BATCH_SIZE) {
+        break;
+      }
+      skip += WatchRegistry.LOAD_BATCH_SIZE;
     }
   }
 

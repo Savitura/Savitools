@@ -328,21 +328,38 @@ export function OrderbookTool() {
     router.push(`/composer?${params.toString()}`);
   };
 
+  const openTradeInInspectorAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      openTradeInInspectorAbortRef.current?.abort();
+    };
+  }, []);
+
   const openTradeInInspector = async (trade: TradeRow) => {
     if (!trade.operationId) return;
+    
+    // Abort any previous in-flight request
+    openTradeInInspectorAbortRef.current?.abort();
+    const controller = new AbortController();
+    openTradeInInspectorAbortRef.current = controller;
+
     try {
       const res = await fetch(
         `${horizonUrlFor(network)}/operations/${trade.operationId}`,
-        { signal: AbortSignal.timeout(10000) },
+        { signal: controller.signal },
       );
+      if (controller.signal.aborted) return;
       if (res.ok) {
         const data = (await res.json()) as { transaction_hash?: string };
+        if (controller.signal.aborted) return;
         if (data.transaction_hash) {
           router.push(`/inspector?hash=${data.transaction_hash}`);
           return;
         }
       }
-    } catch {
+    } catch (err) {
+      if (controller.signal.aborted) return;
       // fall through to the plain Inspector page below
     }
     router.push('/inspector');

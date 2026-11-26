@@ -2,7 +2,7 @@
  * Per-tool usage documentation content (see Savitura/Savitools#146).
  *
  * Every tool page on the site links to its `/docs/<slug>` page, and the
- * `/docs` index lists all ten. Each entry is kept in a consistent format:
+ * `/docs` index lists all fifteen. Each entry is kept in a consistent format:
  * overview → prerequisites → setup → usage steps → troubleshooting, so the
  * documentation is uniform in tone and structure.
  */
@@ -24,7 +24,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'inspector',
     name: 'Transaction Inspector',
     href: '/inspector',
-    tagline: 'Decode any transaction hash, Stellar address, or raw XDR into a human-readable breakdown.',
+    tagline:
+      'Decode any transaction hash, Stellar address, or raw XDR into a human-readable breakdown.',
     overview: [
       'The Transaction Inspector takes a Stellar transaction hash, a public key (G…), or a base64 XDR envelope and turns it into a readable breakdown: source account, sequence number, fees, memo, time bounds, and every operation with its result code and ledger effects.',
       'It is the fastest way to answer “what did this transaction actually do?” without scanning raw Horizon JSON.',
@@ -70,17 +71,20 @@ export const toolDocs: ToolDocs[] = [
     troubleshooting: [
       {
         issue: '“Transaction not found on testnet”',
-        cause: 'The hash is from a different network, or the transaction is very recent and not yet indexed.',
+        cause:
+          'The hash is from a different network, or the transaction is very recent and not yet indexed.',
         fix: 'Switch the network toggle to mainnet if the transaction was submitted there, or wait a few seconds and retry.',
       },
       {
         issue: '“Unrecognised input”',
-        cause: 'The pasted value is neither a 64-hex hash, a G… public key, nor a base64 XDR string.',
+        cause:
+          'The pasted value is neither a 64-hex hash, a G… public key, nor a base64 XDR string.',
         fix: 'Check for typos or stray whitespace. Hashes are exactly 64 hex characters.',
       },
       {
         issue: 'No operations shown',
-        cause: 'XDR decoded offline has no result codes or effects — those only exist after submission.',
+        cause:
+          'XDR decoded offline has no result codes or effects — those only exist after submission.',
         fix: 'This is expected for decoded envelopes. Result codes appear for transactions fetched by hash.',
       },
     ],
@@ -259,7 +263,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'path-payment-lab',
     name: 'Slippage Lab',
     href: '/simulator/path-payment-lab',
-    tagline: 'Price several slippage tolerances against one adverse rate move and see which would survive it.',
+    tagline:
+      'Price several slippage tolerances against one adverse rate move and see which would survive it.',
     overview: [
       'A path payment does not lock a rate. Your transaction carries a tolerance — destinationMin for strict send, sendMax for strict receive — and the payment fails if the live route cannot fill inside it. The Slippage Lab takes one asset pair, one amount, and up to ten tolerances, then prices every one of them against a single simulated adverse rate move.',
       'That turns “how much slippage is safe?” from a guess into a table: each row shows the value you would submit, what the route delivers once the move happens, how much headroom is left, and whether the payment clears. The narrowest tolerance that survives is called out as the recommendation, and the lab tells you when every tolerance you compared is too tight.',
@@ -309,17 +314,20 @@ export const toolDocs: ToolDocs[] = [
       },
       {
         issue: 'A row reads “exactly at the limit”',
-        cause: 'The tolerance and the adverse move landed on the same amount, so the headroom is exactly zero.',
+        cause:
+          'The tolerance and the adverse move landed on the same amount, so the headroom is exactly zero.',
         fix: 'Treat it as a failure. It clears only if the rate does not move by another stroop, which is not something to rely on.',
       },
       {
         issue: '400 routeIndex is out of range',
-        cause: 'The route selector points past the routes Horizon returned for that pair and amount.',
+        cause:
+          'The route selector points past the routes Horizon returned for that pair and amount.',
         fix: 'Run the lab once without changing the selector to see how many routes exist, then pick one of those.',
       },
       {
         issue: '400 No path found',
-        cause: 'There is no order-book or liquidity-pool route connecting the two assets at that amount.',
+        cause:
+          'There is no order-book or liquidity-pool route connecting the two assets at that amount.',
         fix: 'Try a different pair, or route through a liquid asset such as XLM or USDC by splitting the payment.',
       },
     ],
@@ -328,7 +336,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'multisig',
     name: 'Multisig Simulator',
     href: '/multisig',
-    tagline: 'Check whether the signatures collected so far clear the threshold, and name the signers still outstanding.',
+    tagline:
+      'Check whether the signatures collected so far clear the threshold, and name the signers still outstanding.',
     overview: [
       'A Stellar multisig is not “2 of 3 signers” — it is any subset of signers whose weights total at least the threshold. The Multisig Simulator makes that concrete. Enter the account’s signers and weights, tick the signatures you already hold, and see whether the operation is authorised, which of the low/medium/high weight classes are cleared, and exactly which signers still have to sign.',
       'It also reports the risks an operator would otherwise only discover on-chain: a threshold no set of signatures can reach, one signer whose weight alone clears the quorum, a configuration where every signer is needed, an outstanding required signer, and signers that could be dropped without weakening the account.',
@@ -372,12 +381,14 @@ export const toolDocs: ToolDocs[] = [
     troubleshooting: [
       {
         issue: 'Total weight is below the threshold',
-        cause: 'The threshold exceeds the sum of every signer weight, so no combination of signatures can ever authorise the operation.',
+        cause:
+          'The threshold exceeds the sum of every signer weight, so no combination of signatures can ever authorise the operation.',
         fix: 'Lower the threshold or add weight. This is a critical finding, not a rounding issue.',
       },
       {
         issue: 'A required signer must have weight 0',
-        cause: 'A master-weight-0 required signer is an account-existence guard, not a voting signer.',
+        cause:
+          'A master-weight-0 required signer is an account-existence guard, not a voting signer.',
         fix: 'Set its weight to 0 and tick Required. Its signature is still required; it just contributes no weight.',
       },
       {
@@ -396,7 +407,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'webhooks',
     name: 'Webhook Tester',
     href: '/webhooks',
-    tagline: 'Fire sample CrowdPay and Fluxa webhook payloads at your endpoint and inspect the response.',
+    tagline:
+      'Fire sample CrowdPay and Fluxa webhook payloads at your endpoint and inspect the response.',
     overview: [
       'The Webhook Tester sends realistic CrowdPay and Fluxa event payloads to your own endpoint so you can see exactly what your receiver gets, how fast, and what it returns.',
       'Every send is recorded in history and can be replayed with one click.',
@@ -620,7 +632,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'sdk',
     name: 'SDK Generator',
     href: '/sdk',
-    tagline: 'Generate copy-paste client code (TypeScript, Python, Go, cURL) from Fluxa/CrowdPay endpoints.',
+    tagline:
+      'Generate copy-paste client code (TypeScript, Python, Go, cURL) from Fluxa/CrowdPay endpoints.',
     overview: [
       'The SDK Generator produces ready-to-paste client code for the Fluxa and CrowdPay APIs in four languages: TypeScript, Python, Go, and cURL.',
       'Pick a spec and a language; the generator returns a full working snippet with install instructions.',
@@ -666,10 +679,7 @@ export const toolDocs: ToolDocs[] = [
       'Network Status shows a live dashboard of Stellar network health: current ledger sequence, seconds since last close, Horizon latency, and fee metrics (base fee, P90 recommendation).',
       'A 60-minute base-fee history chart helps spot congestion trends.',
     ],
-    prerequisites: [
-      'Network access to Horizon (via the API server).',
-      'No account required.',
-    ],
+    prerequisites: ['Network access to Horizon (via the API server).', 'No account required.'],
     setup: [
       'Open Network Status from the home page or go directly to /network.',
       'Toggle between mainnet and testnet to compare both networks.',
@@ -702,15 +712,16 @@ export const toolDocs: ToolDocs[] = [
     slug: 'rpc',
     name: 'Soroban RPC Console',
     href: '/rpc',
-    tagline: 'Call read-only Soroban RPC methods with schema-aware inputs and read the raw JSON-RPC response.',
+    tagline:
+      'Call read-only Soroban RPC methods with schema-aware inputs and read the raw JSON-RPC response.',
     overview: [
       'The Soroban RPC Console turns the Soroban JSON-RPC surface into a form. The API publishes a catalog of whitelisted, read-only methods together with each method\u2019s parameter schema, and the console renders that schema as typed inputs: hashes get validated as 64 hex characters, limits are enforced before anything is sent, and enum values become dropdowns.',
       'Every call is proxied by the API, which validates the parameters and then forwards exactly one JSON-RPC request to the configured endpoint. The browser never picks the host, and write methods such as sendTransaction are not exposed.',
     ],
     prerequisites: [
       'A running SaviTools API (the console reads its catalog from /api/v1/soroban-rpc/methods).',
-      'Network access from the API server to the configured Soroban RPC endpoint.',
-      'For mainnet calls, a reachable STELLAR_RPC_PUBLIC_URL (defaults to the public mainnet endpoint).',
+      'Network access from the API server to the configured Soroban RPC endpoint (STELLAR_RPC_URL for testnet, STELLAR_RPC_PUBLIC_URL for mainnet).',
+      'For reading contract storage entries and TTLs, access to the getLedgerEntries RPC method.',
     ],
     setup: [
       'Open the console from the home page or go directly to /rpc.',
@@ -751,7 +762,8 @@ export const toolDocs: ToolDocs[] = [
       },
       {
         issue: '"Could not reach the Soroban RPC endpoint"',
-        cause: 'The API server cannot connect to STELLAR_RPC_URL / STELLAR_RPC_PUBLIC_URL, or the endpoint timed out.',
+        cause:
+          'The API server cannot connect to STELLAR_RPC_URL / STELLAR_RPC_PUBLIC_URL, or the endpoint timed out.',
         fix: 'Check that the configured endpoint is reachable from the API host and responds within 15 seconds.',
       },
       {
@@ -765,7 +777,8 @@ export const toolDocs: ToolDocs[] = [
     slug: 'qr-handoff',
     name: 'QR Handoff',
     href: '/qr-handoff',
-    tagline: 'Move an unsigned or partially signed transaction across an air gap with checksummed animated QR frames.',
+    tagline:
+      'Move an unsigned or partially signed transaction across an air gap with checksummed animated QR frames.',
     overview: [
       'QR Handoff turns a base64 transaction envelope into a short animation of versioned QR frames. Every frame carries its index, the total frame count, the network, and two CRC32 checksums \u2014 one for the chunk and one for the complete payload \u2014 so the receiving device can scan frames out of order, drop duplicates, and refuse anything corrupt or from another session.',
       'Before an import is accepted the tool decodes the envelope and shows the network, source account, sequence, fee, operation count and signature count. A body that matches the transaction you already loaded is merged (new signatures are highlighted); a body that changed is blocked until you explicitly confirm the replacement.',
@@ -810,12 +823,14 @@ export const toolDocs: ToolDocs[] = [
     troubleshooting: [
       {
         issue: '"Camera permission was denied or no camera is available"',
-        cause: 'The browser blocked getUserMedia, the page is not in a secure context, or no camera exists.',
+        cause:
+          'The browser blocked getUserMedia, the page is not in a secure context, or no camera exists.',
         fix: 'Use the paste or file import below the video \u2014 it accepts the same transaction and runs the same checks.',
       },
       {
         issue: '"Frame checksum failed"',
-        cause: 'The scanned frame was corrupted in transit or is not one of this session\u2019s frames.',
+        cause:
+          'The scanned frame was corrupted in transit or is not one of this session\u2019s frames.',
         fix: 'Keep scanning; the frames already collected are kept. Point the camera at a single paused frame if it keeps failing.',
       },
       {
@@ -825,8 +840,88 @@ export const toolDocs: ToolDocs[] = [
       },
       {
         issue: '"The imported envelope changes the transaction body"',
-        cause: 'The incoming XDR differs from the one loaded locally (amount, destination, memo, fee \u2026).',
+        cause:
+          'The incoming XDR differs from the one loaded locally (amount, destination, memo, fee \u2026).',
         fix: 'Confirm the details, then tick the replace confirmation if the change is intended.',
+      },
+    ],
+  },
+  {
+    slug: 'soroban-expiration',
+    name: 'Soroban Storage & TTL Estimator',
+    href: '/soroban-expiration',
+    tagline:
+      'Estimate storage expiration dates, analyze TTL remaining, and calculate extension costs across persistent, temporary, and instance storage.',
+    overview: [
+      'The Soroban Storage & TTL Estimator calculates time-to-live (TTL) and expiration schedules for smart contract data entries on the Stellar network.',
+      'Soroban enforces a state archival model where contracts pay rent to maintain entries in ledger state. Storage entries are divided into three durabilities: Persistent (long-lived state, archived upon expiration and restorable via RestoreFootprintOp), Temporary (cheaper rent, deleted permanently upon expiration with no recovery option), and Instance (contract bytecode and instance state coupled to the contract itself).',
+      'This tool translates raw ledger sequence deltas into human-readable hours, days, and projected calendar expiration dates, while calculating accurate rent extension fees in stroops and XLM.',
+    ],
+    prerequisites: [
+      'A running SaviTools API server providing the expiration estimation endpoints.',
+      'Current ledger sequence number (obtainable via Soroban RPC getLatestLedger or Horizon /ledgers).',
+      'The entry’s liveUntilLedger (found in the Soroban RPC getLedgerEntries response for the target key).',
+      'Knowledge of the entry storage durability (Persistent, Temporary, or Instance) and approximate byte size for rent fee estimation.',
+      'For network lookups, configured RPC/Horizon endpoints (STELLAR_HORIZON_URL, STELLAR_HORIZON_MAINNET_URL, and STELLAR_RPC_URL).',
+    ],
+    setup: [
+      'Open the Soroban Storage & TTL Estimator from the home page or go directly to /soroban-expiration.',
+      'Optionally switch between the Expiration Estimator and TTL Extension Cost tabs depending on your objective.',
+    ],
+    usage: [
+      {
+        title: 'Estimate storage entry expiration',
+        steps: [
+          'Select the "Expiration Estimator" tab.',
+          'Enter the Current Ledger sequence number (e.g. 1000000) or check the live ledger from the network.',
+          'Enter the Live Until Ledger sequence from your contract storage entry.',
+          'Select the Storage Type: Persistent, Temporary, or Instance.',
+          'Click "Estimate Expiration" to compute remaining ledgers, seconds, hours, days, and projected calendar expiration date.',
+          'Review the status badge (Healthy, Warning, Critical, or Expired) and the actionable protocol recommendation.',
+        ],
+      },
+      {
+        title: 'Calculate TTL extension costs',
+        steps: [
+          'Select the "TTL Extension Cost" tab.',
+          'Enter the Current TTL remaining in ledgers.',
+          'Specify the number of ledgers to extend (e.g. 172800 for ~10 days, 518400 for ~30 days, or 1555200 for ~90 days).',
+          'Provide the entry size in bytes (default: 1024 bytes) to calculate rent footprint fees.',
+          'Select the storage durability to apply appropriate rent fee multipliers (temporary storage receives a 50% discount).',
+          'Click "Calculate Extension Cost" to view the extended lifetime in days and total estimated fee in stroops and XLM.',
+        ],
+      },
+      {
+        title: 'Determine state archival and recovery strategy',
+        steps: [
+          'For Persistent storage nearing expiration (<7 days critical threshold), submit an ExtendFootprintTTLOp transaction before it expires.',
+          'If a Persistent entry has already expired, use RestoreFootprintOp to restore it from archive before submitting an ExtendFootprintTTLOp.',
+          'For Temporary storage, ensure extensions occur before expiration; once expired, temporary data is permanently purged and cannot be restored.',
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        issue: '“Ledger numbers must be non-negative”',
+        cause: 'Negative integers were supplied for currentLedger or liveUntilLedger.',
+        fix: 'Enter valid positive ledger sequence numbers.',
+      },
+      {
+        issue: '“Entry has expired and cannot be recovered”',
+        cause:
+          'Temporary storage entry reached TTL = 0. Soroban permanently prunes temporary entries without archiving them.',
+        fix: 'Temporary data cannot be restored. Recreate or re-initialize the entry, or use Persistent storage if durability is required.',
+      },
+      {
+        issue: '“RPC or Horizon endpoint unreachable”',
+        cause:
+          'The API server cannot connect to the configured STELLAR_HORIZON_URL or Soroban RPC endpoint.',
+        fix: 'Verify your network connection and ensure STELLAR_HORIZON_URL, STELLAR_HORIZON_MAINNET_URL, and STELLAR_RPC_URL are set to active endpoints.',
+      },
+      {
+        issue: '“Live until ledger is earlier than current ledger”',
+        cause: 'The entry expired in a past ledger sequence.',
+        fix: 'The tool marks this as expired. For persistent storage, initiate a RestoreFootprintOp transaction.',
       },
     ],
   },

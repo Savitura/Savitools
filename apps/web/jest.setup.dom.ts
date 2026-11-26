@@ -10,7 +10,7 @@ if (typeof globalThis.TextEncoder === 'undefined') {
 
 // jsdom does not implement `scrollIntoView`, which the command palette calls on
 // the active option to keep it scrolled into view while arrowing through items.
-if (!Element.prototype.scrollIntoView) {
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 

@@ -345,6 +345,7 @@ describe('MonitorDigestService & Quiet Hours', () => {
             orderBy: jest.fn().mockReturnThis(),
             setLock: jest.fn().mockReturnThis(),
             setOnLocked: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
             getMany: jest.fn(async () => {
               if (claimed) return [];
               claimed = true;
@@ -402,6 +403,7 @@ describe('MonitorDigestService & Quiet Hours', () => {
             orderBy: jest.fn().mockReturnThis(),
             setLock: jest.fn().mockReturnThis(),
             setOnLocked: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
             getMany: jest.fn(async () => [crashedClaimAlert]),
             update: jest.fn().mockReturnThis(),
             set: jest.fn().mockReturnThis(),

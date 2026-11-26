@@ -112,14 +112,16 @@ describe('ComposerService', () => {
         sourceAccount: source,
         network: 'testnet',
         sequenceNumber: '1',
-        operations: [{
-          type: 'liquidity_pool_deposit',
-          liquidityPoolId: poolId,
-          maxAmountA: '1.0000000',
-          maxAmountB: '2',
-          minPrice: { n: '1', d: '2' },
-          maxPrice: { n: '2', d: '1' },
-        }],
+        operations: [
+          {
+            type: 'liquidity_pool_deposit',
+            liquidityPoolId: poolId,
+            maxAmountA: '1.0000000',
+            maxAmountB: '2',
+            minPrice: { n: '1', d: '2' },
+            maxPrice: { n: '2', d: '1' },
+          },
+        ],
       });
 
       const operation = new Transaction(result.xdr, Networks.TESTNET).operations[0] as any;
@@ -141,13 +143,15 @@ describe('ComposerService', () => {
         sourceAccount: source,
         network: 'testnet',
         sequenceNumber: '1',
-        operations: [{
-          type: 'liquidity_pool_withdraw',
-          liquidityPoolId: poolId,
-          amount: '3.0000000',
-          minAmountA: '0',
-          minAmountB: '1.2500000',
-        }],
+        operations: [
+          {
+            type: 'liquidity_pool_withdraw',
+            liquidityPoolId: poolId,
+            amount: '3.0000000',
+            minAmountA: '0',
+            minAmountB: '1.2500000',
+          },
+        ],
       });
 
       const operation = new Transaction(result.xdr, Networks.TESTNET).operations[0] as any;
@@ -160,38 +164,68 @@ describe('ComposerService', () => {
     });
 
     it('rejects malformed pool IDs, excessive precision, and invalid price ratios', () => {
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_withdraw', liquidityPoolId: 'bad', amount: '1',
-        minAmountA: '0', minAmountB: '0',
-      })).toThrow('liquidityPoolId');
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_withdraw',
+          liquidityPoolId: 'bad',
+          amount: '1',
+          minAmountA: '0',
+          minAmountB: '0',
+        }),
+      ).toThrow('liquidityPoolId');
 
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_withdraw', liquidityPoolId: 'c'.repeat(64), amount: '1',
-        minAmountA: '0.00000001', minAmountB: '0',
-      })).toThrow('minAmountA');
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_withdraw',
+          liquidityPoolId: 'c'.repeat(64),
+          amount: '1',
+          minAmountA: '0.00000001',
+          minAmountB: '0',
+        }),
+      ).toThrow('minAmountA');
 
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_deposit', liquidityPoolId: 'd'.repeat(64),
-        maxAmountA: '1', maxAmountB: '1',
-        minPrice: { n: '0', d: '1' }, maxPrice: { n: '2', d: '1' },
-      })).toThrow('minPrice');
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_deposit',
+          liquidityPoolId: 'd'.repeat(64),
+          maxAmountA: '1',
+          maxAmountB: '1',
+          minPrice: { n: '0', d: '1' },
+          maxPrice: { n: '2', d: '1' },
+        }),
+      ).toThrow('minPrice');
 
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_deposit', liquidityPoolId: 'e'.repeat(64),
-        maxAmountA: '1', maxAmountB: '1',
-        minPrice: { n: '3', d: '1' }, maxPrice: { n: '2', d: '1' },
-      })).toThrow('minPrice must be less than or equal to maxPrice');
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_deposit',
+          liquidityPoolId: 'e'.repeat(64),
+          maxAmountA: '1',
+          maxAmountB: '1',
+          minPrice: { n: '3', d: '1' },
+          maxPrice: { n: '2', d: '1' },
+        }),
+      ).toThrow('minPrice must be less than or equal to maxPrice');
     });
 
     it('accepts the maximum Stellar amount and rejects values above it', () => {
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_withdraw', liquidityPoolId: 'f'.repeat(64),
-        amount: '922337203685.4775807', minAmountA: '0', minAmountB: '0',
-      })).not.toThrow();
-      expect(() => service.mapOperation({
-        type: 'liquidity_pool_withdraw', liquidityPoolId: 'f'.repeat(64),
-        amount: '922337203685.4775808', minAmountA: '0', minAmountB: '0',
-      })).toThrow('amount exceeds the maximum Stellar amount');
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_withdraw',
+          liquidityPoolId: 'f'.repeat(64),
+          amount: '922337203685.4775807',
+          minAmountA: '0',
+          minAmountB: '0',
+        }),
+      ).not.toThrow();
+      expect(() =>
+        service.mapOperation({
+          type: 'liquidity_pool_withdraw',
+          liquidityPoolId: 'f'.repeat(64),
+          amount: '922337203685.4775808',
+          minAmountA: '0',
+          minAmountB: '0',
+        }),
+      ).toThrow('amount exceeds the maximum Stellar amount');
     });
   });
 
@@ -280,9 +314,7 @@ describe('ComposerService', () => {
     });
 
     it('rejects an unknown precondition type', async () => {
-      await expect(buildWithPreconditions([{ type: 'nope' }])).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(buildWithPreconditions([{ type: 'nope' }])).rejects.toThrow(BadRequestException);
     });
 
     it('preserves the default timeout when preconditions are omitted', async () => {
@@ -488,13 +520,15 @@ describe('ComposerService', () => {
         networkPassphrase: Networks.TESTNET,
         fee: '100',
       })
-        .addOperation(Operation.liquidityPoolDeposit({
-          liquidityPoolId: 'a'.repeat(64),
-          maxAmountA: '1',
-          maxAmountB: '1',
-          minPrice: { n: 3, d: 1 },
-          maxPrice: { n: 2, d: 1 },
-        }))
+        .addOperation(
+          Operation.liquidityPoolDeposit({
+            liquidityPoolId: 'a'.repeat(64),
+            maxAmountA: '1',
+            maxAmountB: '1',
+            minPrice: { n: 3, d: 1 },
+            maxPrice: { n: 2, d: 1 },
+          }),
+        )
         .setTimeout(30)
         .build();
       const submitSpy = jest.spyOn(Horizon.Server.prototype, 'submitTransaction');
@@ -579,11 +613,13 @@ describe('ComposerService', () => {
         networkPassphrase: Networks.TESTNET,
         fee: '100',
       })
-        .addOperation(Operation.payment({
-          destination,
-          asset: Asset.native(),
-          amount: '100',
-        }))
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: '100',
+          }),
+        )
         .setTimeout(30)
         .build();
 
@@ -597,17 +633,17 @@ describe('ComposerService', () => {
       expect(result.stateDiff).toBeDefined();
       expect(Array.isArray(result.stateDiff)).toBe(true);
       expect(result.stateDiff!.length).toBe(2); // Source and destination
-      
+
       const sourceDiff = result.stateDiff!.find((d) => d.account === source.publicKey());
       const destDiff = result.stateDiff!.find((d) => d.account === destination);
-      
+
       expect(sourceDiff).toBeDefined();
       expect(sourceDiff?.balanceChanges.length).toBeGreaterThan(0);
       expect(sourceDiff?.balanceChanges[0].change).toContain('-100');
       expect(destDiff).toBeDefined();
       expect(destDiff?.balanceChanges.length).toBeGreaterThan(0);
       expect(destDiff?.balanceChanges[0].change).toContain('+100');
-      
+
       expect(result.summary).toBeDefined();
       expect(result.summary!.accountsAffected).toBe(2);
       expect(result.summary!.balanceChanges).toBe(2);
@@ -620,10 +656,12 @@ describe('ComposerService', () => {
         networkPassphrase: Networks.TESTNET,
         fee: '100',
       })
-        .addOperation(Operation.createAccount({
-          destination: newAccount,
-          startingBalance: '10',
-        }))
+        .addOperation(
+          Operation.createAccount({
+            destination: newAccount,
+            startingBalance: '10',
+          }),
+        )
         .setTimeout(30)
         .build();
 
@@ -634,7 +672,7 @@ describe('ComposerService', () => {
 
       expect(result.success).toBe(true);
       expect(result.stateDiff!.length).toBe(1); // Only new account
-      
+
       const newAccountDiff = result.stateDiff!.find((d) => d.account === newAccount);
       expect(newAccountDiff).toBeDefined();
       expect(newAccountDiff?.balanceChanges.length).toBeGreaterThan(0);
@@ -648,16 +686,20 @@ describe('ComposerService', () => {
         networkPassphrase: Networks.TESTNET,
         fee: '100',
       })
-        .addOperation(Operation.payment({
-          destination,
-          asset: Asset.native(),
-          amount: '50',
-        }))
-        .addOperation(Operation.payment({
-          destination,
-          asset: Asset.native(),
-          amount: '30',
-        }))
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: '50',
+          }),
+        )
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: '30',
+          }),
+        )
         .setTimeout(30)
         .build();
 
@@ -668,8 +710,8 @@ describe('ComposerService', () => {
 
       expect(result.success).toBe(true);
       expect(result.summary).toBeDefined();
-      expect(result.summary!.balanceChanges).toBe(3); // 2 for dest, 1 for source
-      
+      expect(result.summary!.balanceChanges).toBe(4); // 2 for dest, 2 for source
+
       const destDiff = result.stateDiff!.find((d) => d.account === destination);
       expect(destDiff).toBeDefined();
       expect(destDiff?.balanceChanges.length).toBe(2); // Two payment operations

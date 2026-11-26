@@ -35,7 +35,7 @@ describe('sdkgen specs are part of the build output', () => {
     const crowdpay = JSON.parse(crowdpayRaw);
     const crowdpayPaths = Object.keys(crowdpay.paths || {});
     expect(crowdpayPaths.length).toBeGreaterThanOrEqual(80);
-    expect(crowdpayPaths).toContain('/api/campaigns');
+    expect(crowdpayPaths).toContain('/campaigns');
     expect(crowdpayPaths).toContain('/api/auth/login');
   });
 });

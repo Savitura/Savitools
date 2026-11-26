@@ -128,14 +128,11 @@ describe('OrderbookService', () => {
       expect(result.asks[1].cumulativeAmount).toBe('450.0000000');
       expect(result.asks[2].cumulativeAmount).toBe('470.0000000');
 
-      expect(mockRedisClient.zAdd).toHaveBeenCalledWith(
-        'orderbook:active_pairs:testnet',
-        [
-          expect.objectContaining({
-            value: expect.stringContaining('XLM|USDC'),
-          }),
-        ],
-      );
+      expect(mockRedisClient.zAdd).toHaveBeenCalledWith('orderbook:active_pairs:testnet', [
+        expect.objectContaining({
+          value: expect.stringContaining('XLM|USDC'),
+        }),
+      ]);
     });
 
     it('gives a low liquidity score for a thin book', async () => {
@@ -193,7 +190,7 @@ describe('OrderbookService', () => {
       });
 
       await expect(service.getOrderbook('XLM', 'USDC:ISSUER', 'testnet')).rejects.toThrow(
-        'Horizon error (503): <html> temporarily unavailable</html>',
+        'Horizon error (503): <html>temporarily unavailable</html>',
       );
     });
   });
@@ -388,7 +385,12 @@ describe('OrderbookService', () => {
     it('returns mapped trade rows with ledger, close time, assets, amounts, accounts, side, and type', async () => {
       global.fetch = jest.fn().mockResolvedValue(
         horizonRecordsResponse([
-          tradeRecord({ id: '200-0', paging_token: '200-0', ledger: 200, trade_type: 'liquidity_pool' }),
+          tradeRecord({
+            id: '200-0',
+            paging_token: '200-0',
+            ledger: 200,
+            trade_type: 'liquidity_pool',
+          }),
         ]),
       );
 
@@ -418,9 +420,7 @@ describe('OrderbookService', () => {
     });
 
     it('queries mainnet Horizon when network is mainnet', async () => {
-      const fetchSpy = jest
-        .fn()
-        .mockResolvedValue(horizonRecordsResponse([]));
+      const fetchSpy = jest.fn().mockResolvedValue(horizonRecordsResponse([]));
       global.fetch = fetchSpy;
 
       await service.getTrades({ ...pair, network: 'mainnet' });
@@ -458,7 +458,12 @@ describe('OrderbookService', () => {
         );
       global.fetch = fetchMock;
 
-      const result = await service.getTrades({ ...pair, network: 'testnet', limit: 2, side: 'sell' });
+      const result = await service.getTrades({
+        ...pair,
+        network: 'testnet',
+        limit: 2,
+        side: 'sell',
+      });
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(result.trades).toHaveLength(2);
@@ -470,8 +475,19 @@ describe('OrderbookService', () => {
     it('applies the account filter server-side', async () => {
       global.fetch = jest.fn().mockResolvedValue(
         horizonRecordsResponse([
-          tradeRecord({ id: '1-0', paging_token: '1-0', base_account: 'GOTHER', counter_account: 'GELSE' }),
-          tradeRecord({ id: '1-1', paging_token: '1-1', base_is_seller: false, base_account: BASE_ACCOUNT, counter_account: COUNTER_ACCOUNT }),
+          tradeRecord({
+            id: '1-0',
+            paging_token: '1-0',
+            base_account: 'GOTHER',
+            counter_account: 'GELSE',
+          }),
+          tradeRecord({
+            id: '1-1',
+            paging_token: '1-1',
+            base_is_seller: false,
+            base_account: BASE_ACCOUNT,
+            counter_account: COUNTER_ACCOUNT,
+          }),
         ]),
       );
 
@@ -492,8 +508,16 @@ describe('OrderbookService', () => {
       const inWindowSeconds = Math.floor(Date.parse('2026-01-10T12:00:00Z') / 1000);
       global.fetch = jest.fn().mockResolvedValue(
         horizonRecordsResponse([
-          tradeRecord({ id: '1-0', paging_token: '1-0', ledger_close_time: '2026-01-10T12:00:00Z' }),
-          tradeRecord({ id: '1-1', paging_token: '1-1', ledger_close_time: '2026-01-10T11:00:00Z' }),
+          tradeRecord({
+            id: '1-0',
+            paging_token: '1-0',
+            ledger_close_time: '2026-01-10T12:00:00Z',
+          }),
+          tradeRecord({
+            id: '1-1',
+            paging_token: '1-1',
+            ledger_close_time: '2026-01-10T11:00:00Z',
+          }),
         ]),
       );
 
@@ -513,12 +537,14 @@ describe('OrderbookService', () => {
     });
 
     it('returns a stable cursor when the page limit is reached', async () => {
-      global.fetch = jest.fn().mockResolvedValue(
-        horizonRecordsResponse([
-          tradeRecord({ id: '1-0', paging_token: '1-0' }),
-          tradeRecord({ id: '1-1', paging_token: '1-1' }),
-        ]),
-      );
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          horizonRecordsResponse([
+            tradeRecord({ id: '1-0', paging_token: '1-0' }),
+            tradeRecord({ id: '1-1', paging_token: '1-1' }),
+          ]),
+        );
 
       const result = await service.getTrades({ ...pair, network: 'testnet', limit: 2 });
 
@@ -575,9 +601,9 @@ describe('OrderbookService', () => {
         text: async () => 'upstream timeout',
       });
 
-      await expect(
-        service.getTrades({ ...pair, network: 'testnet' }),
-      ).rejects.toThrow('Horizon error (504)');
+      await expect(service.getTrades({ ...pair, network: 'testnet' })).rejects.toThrow(
+        'Horizon error (504)',
+      );
     });
   });
 
@@ -591,7 +617,12 @@ describe('OrderbookService', () => {
     it('fills a buy completely at the best ask with zero price impact', async () => {
       mockBook(horizonOrderBookResponse());
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'buy', amount: '100' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'buy',
+        amount: '100',
+      });
 
       expect(result.status).toBe('filled');
       expect(result.filledAmount).toBe('100.0000000');
@@ -614,7 +645,12 @@ describe('OrderbookService', () => {
         ],
       });
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'buy', amount: '500' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'buy',
+        amount: '500',
+      });
 
       expect(result.status).toBe('partial');
       expect(result.filledAmount).toBe('450.0000000');
@@ -632,7 +668,12 @@ describe('OrderbookService', () => {
     it('never fills beyond available depth', async () => {
       mockBook(horizonOrderBookResponse());
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'buy', amount: '9999' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'buy',
+        amount: '9999',
+      });
 
       expect(result.status).toBe('partial');
       expect(result.filledAmount).toBe('470.0000000');
@@ -643,7 +684,12 @@ describe('OrderbookService', () => {
     it('walks bids in descending price order for a sell', async () => {
       mockBook(horizonOrderBookResponse());
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'sell', amount: '250' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'sell',
+        amount: '250',
+      });
 
       expect(result.status).toBe('filled');
       expect(result.filledAmount).toBe('250.0000000');
@@ -663,7 +709,12 @@ describe('OrderbookService', () => {
         asks: [{ price: '0.3333333', amount: '3.0000000' }],
       });
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'buy', amount: '3' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'buy',
+        amount: '3',
+      });
 
       expect(result.status).toBe('filled');
       expect(result.filledAmount).toBe('3.0000000');
@@ -675,7 +726,12 @@ describe('OrderbookService', () => {
     it('returns an explicit unfilled result when the side has no depth', async () => {
       mockBook({ bids: [], asks: [] });
 
-      const result = await service.getQuote({ ...pair, network: 'testnet', side: 'buy', amount: '10' });
+      const result = await service.getQuote({
+        ...pair,
+        network: 'testnet',
+        side: 'buy',
+        amount: '10',
+      });
 
       expect(result.status).toBe('unfilled');
       expect(result.filledAmount).toBe('0.0000000');

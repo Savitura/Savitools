@@ -32,7 +32,7 @@ export class HorizonReplay {
   @Column('jsonb', { nullable: true })
   response: Record<string, any> | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   errorMessage: string | null;
 
   @Column()
@@ -42,10 +42,10 @@ export class HorizonReplay {
   @Index()
   createdAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   @Index()
   transactionHash: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   requestId: string | null;
 }

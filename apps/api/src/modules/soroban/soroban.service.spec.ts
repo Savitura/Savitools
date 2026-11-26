@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException } from '@nestjs/common';
 import { SorobanService } from './soroban.service';
-import { EstimateExpirationDto, ExtendTtlEstimateDto, StorageType } from './dto/estimate-expiration.dto';
+import {
+  EstimateExpirationDto,
+  ExtendTtlEstimateDto,
+  StorageType,
+} from './dto/estimate-expiration.dto';
 
 describe('SorobanService', () => {
   let service: SorobanService;
@@ -224,7 +228,7 @@ describe('SorobanService', () => {
       const temporaryResult = service.estimateTtlExtension(temporaryDto);
 
       expect(temporaryResult.estimatedCost.stroops).toBeLessThan(
-        persistentResult.estimatedCost.stroops
+        persistentResult.estimatedCost.stroops,
       );
     });
 
