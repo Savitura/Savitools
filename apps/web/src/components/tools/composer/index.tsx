@@ -14,6 +14,22 @@ import { useCommandPalette } from '@/components/command-palette';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ComposerToolbar } from './composer-toolbar';
+import { SourceAccountInput } from './source-account-input';
+import { SequenceRunner } from './sequence-runner';
+import {
+  loadComposerWorkspaces,
+  saveComposerWorkspaces,
+} from './workspace-storage';
+import type {
+  ComposedOperation,
+  PreconditionDraft,
+  Workspace,
+} from './composer-types';
+export type {
+  ComposedOperation,
+  PreconditionDraft,
+  Workspace,
+} from './composer-types';
 import { OperationPalette } from './operation-palette';
 import { OperationList } from './operation-list';
 import { OperationForm } from './operation-form';
@@ -53,209 +69,8 @@ import {
   ListOrdered,
 } from 'lucide-react';
 
-export interface ComposedOperation {
-  id: string;
-  type: string;
-  fields: Record<string, unknown>;
-}
-
-export interface PreconditionDraft {
-  kind: PreconditionKind;
-  fields: PreconditionFields;
-}
-
-export interface Workspace {
-  id: string;
-  ownerId: string;
-  name: string;
-  composerState: {
-    sourceAccount: string;
-    memo: string;
-    operations: ComposedOperation[];
-    preconditions?: PreconditionDraft | null;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
 function newId(): string {
   return Math.random().toString(36).slice(2, 9);
-}
-
-function SourceAccountInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label
-        htmlFor="source-account-input"
-        className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
-      >
-        Source Account <span className="text-rose-400">*</span>
-      </label>
-      <input
-        id="source-account-input"
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="G... (56-character Stellar public key)"
-        maxLength={56}
-        className="w-full rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50 transition-colors"
-      />
-    </div>
-  );
-}
-
-function SequenceRunner({
-  operations,
-  clearOperations,
-  sourceAccount,
-  memo,
-  network,
-}: {
-  operations: ComposedOperation[];
-  clearOperations: () => void;
-  sourceAccount: string;
-  memo: string;
-  network: string;
-}) {
-  const [steps, setSteps] = useState<ComposedOperation[][]>([]);
-  const [stopOnFailure, setStopOnFailure] = useState(true);
-  const [results, setResults] = useState<
-    Array<{ step: number; hash?: string; status: string; next?: string }>
-  >([]);
-  const [running, setRunning] = useState(false);
-
-  const addStep = () => {
-    if (operations.length === 0) return;
-    setSteps((prev) => [...prev, operations]);
-    clearOperations();
-  };
-
-  const removeStep = (index: number) => {
-    setSteps((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const run = async () => {
-    const allSteps = steps.length > 0 ? steps : operations.length > 0 ? [operations] : [];
-    if (allSteps.length === 0) return;
-    setRunning(true);
-    setResults([]);
-    let currentSource = sourceAccount;
-    for (let i = 0; i < allSteps.length; i++) {
-      const ops = allSteps[i];
-      try {
-        const apiNetwork: 'testnet' | 'mainnet' = network === 'mainnet' ? 'mainnet' : 'testnet';
-        const payload = {
-          sourceAccount: currentSource.trim(),
-          memo: memo.trim() || undefined,
-          operations: ops.map((op) => ({ type: op.type, ...op.fields })),
-          network: apiNetwork,
-        };
-        const built = await buildTransaction(payload);
-        const sim = (await simulateTransaction({ xdr: built.xdr, network: apiNetwork })) as any;
-        const status = sim?.success ? 'success' : 'failed';
-        setResults((prev) => [
-          ...prev,
-          { step: i + 1, hash: sim?.hash, status, next: sim?.nextSequence },
-        ]);
-        if (stopOnFailure && !sim?.success) break;
-        currentSource = sim?.nextSource || currentSource;
-      } catch (e) {
-        setResults((prev) => [...prev, { step: i + 1, status: 'error', next: undefined }]);
-        if (stopOnFailure) break;
-      }
-    }
-    setRunning(false);
-  };
-
-  return (
-    <div className="rounded-xl border border-border/60 bg-card/30 p-4">
-      <h2 className="text-lg font-semibold">Transaction Sequence</h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        Build multiple transactions that run in order with automatic sequence numbers.
-      </p>
-
-      {steps.length === 0 && operations.length === 0 ? (
-        <p className="text-sm text-muted-foreground mb-3">
-          No steps yet. Use the builder to compose an operation set, then click &quot;Add
-          Step&quot;.
-        </p>
-      ) : null}
-
-      <div className="flex flex-col gap-2 mb-3">
-        {steps.map((step, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2"
-          >
-            <span className="text-xs font-medium">
-              Step {i + 1}: {step.length} op(s)
-            </span>
-            <button
-              onClick={() => removeStep(i)}
-              className="text-xs text-rose-400 hover:text-rose-300"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
-        {operations.length > 0 && (
-          <button
-            onClick={addStep}
-            className="text-xs bg-secondary rounded-lg px-3 py-2 hover:bg-secondary/80"
-          >
-            Add current ops as Step {steps.length + 1}
-          </button>
-        )}
-      </div>
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={stopOnFailure}
-          onChange={(e) => setStopOnFailure(e.target.checked)}
-          className="rounded border-border"
-        />
-        Stop on failure
-      </label>
-
-      <button
-        onClick={() => void run()}
-        disabled={running || (steps.length === 0 && operations.length === 0)}
-        className="mt-3 bg-violet-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {running ? 'Running…' : 'Run Sequence'}
-      </button>
-
-      {results.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {results.map((r, i) => (
-            <div
-              key={i}
-              className="text-xs bg-background/50 rounded-lg px-3 py-2 flex justify-between"
-            >
-              <span>Step {r.step}</span>
-              <span>Status: {r.status}</span>
-              <span className="font-mono">{r.hash ?? r.next ?? ''}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function loadSavedWorkspaces(): Workspace[] {
-  const loaded = safeGetItem<unknown>(BROWSER_STORAGE_KEYS.LEGACY_COMPOSER_WORKSPACES, []);
-  if (!Array.isArray(loaded)) return [];
-  return loaded.filter(
-    (ws): ws is Workspace =>
-      typeof ws === 'object' &&
-      ws !== null &&
-      typeof (ws as Workspace).id === 'string' &&
-      typeof (ws as Workspace).name === 'string' &&
-      typeof (ws as Workspace).composerState === 'object' &&
-      (ws as Workspace).composerState !== null,
-  );
 }
 
 export function ComposerTool() {
@@ -491,6 +306,11 @@ export function ComposerTool() {
   // Workspace persistence (localStorage)
   // ---------------------------------------------------------------------------
   useEffect(() => {
+    setWorkspaces(loadComposerWorkspaces());
+  }, []);
+
+  useEffect(() => {
+    saveComposerWorkspaces(workspaces);
     safeSetItem(BROWSER_STORAGE_KEYS.LEGACY_COMPOSER_WORKSPACES, workspaces);
   }, [workspaces]);
 

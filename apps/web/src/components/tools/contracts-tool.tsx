@@ -22,6 +22,14 @@ import {
   type AbiCatalogEntry,
   type DeployedContract,
 } from '@/lib/api';
+import {
+  loadContractHistory,
+  saveContractHistory,
+} from '@/lib/contract-history';
+
+const STELLAR_EXPERT_URL = 'https://stellar.expert/explorer/testnet/contract';
+
+export { loadContractHistory as loadHistory, saveContractHistory as saveHistory };
 import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from '@/lib/browser-storage';
 
 const STELLAR_EXPERT_URL = 'https://stellar.expert/explorer/testnet/contract';
@@ -385,7 +393,7 @@ function AbiDiffPanel() {
 }
 
 export function ContractsTool() {
-  const [contracts, setContracts] = useState<DeployedContract[]>(loadHistory);
+  const [contracts, setContracts] = useState<DeployedContract[]>(loadContractHistory);
   const [wasmFile, setWasmFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [constructorArgs, setConstructorArgs] = useState('');
@@ -474,7 +482,7 @@ export function ContractsTool() {
 
       const updated = [newContract, ...contracts];
       setContracts(updated);
-      saveHistory(updated);
+      saveContractHistory(updated);
       setSelectedContract(result.contractId);
       setDeployProgress('');
     } catch (err) {
@@ -522,7 +530,7 @@ export function ContractsTool() {
   const removeContract = (contractId: string) => {
     const updated = contracts.filter((c) => c.contractId !== contractId);
     setContracts(updated);
-    saveHistory(updated);
+    saveContractHistory(updated);
     if (selectedContract === contractId) {
       setSelectedContract(null);
     }

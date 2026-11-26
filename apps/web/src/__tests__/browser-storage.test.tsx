@@ -9,6 +9,11 @@
   clearGuestStorage,
 } from '@/lib/browser-storage';
 import { readGuestWorkspace, writeGuestWorkspace } from '@/lib/workspace-storage';
+import {
+  loadContractHistory,
+  saveContractHistory,
+  CONTRACT_HISTORY_LIMIT,
+} from '@/lib/contract-history';
 
 describe('browser-storage utility and retention behavior', () => {
   beforeEach(() => {
@@ -60,6 +65,30 @@ describe('browser-storage utility and retention behavior', () => {
   });
 
   describe('safeGetItem and safeSetItem', () => {
+    it('keeps contract history usable when localStorage is unavailable', () => {
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('SecurityError');
+      });
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('SecurityError');
+      });
+
+      expect(loadContractHistory()).toEqual([]);
+      expect(saveContractHistory([{ contractId: 'C1' } as any])).toBe(false);
+    });
+
+    it('bounds contract history and safely reads corrupted payloads', () => {
+      const contracts = Array.from({ length: CONTRACT_HISTORY_LIMIT + 5 }, (_, index) => ({
+        contractId: `C${index}`,
+      }));
+
+      expect(saveContractHistory(contracts as any)).toBe(true);
+      expect(loadContractHistory()).toHaveLength(CONTRACT_HISTORY_LIMIT);
+
+      window.localStorage.setItem(BROWSER_STORAGE_KEYS.CONTRACTS_HISTORY, '{bad-json');
+      expect(loadContractHistory()).toEqual([]);
+    });
+
     it('stores and retrieves complex JSON structures safely', () => {
       const payload = { id: 'ws-1', name: 'Test', operations: [{ type: 'payment', amount: '50' }] };
       const writeResult = safeSetItem('savitools:test', payload);
