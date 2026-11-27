@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  HttpStatus,
-  Logger,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Logger, Post } from '@nestjs/common';
 
 /**
  * Maximum number of characters accepted from each string field in a CSP report.
@@ -57,9 +50,7 @@ export function normaliseCspBody(
 ): NormalisedCspViolation {
   return {
     blockedUri: truncate(body?.blockedURL ?? body?.['blocked-uri']),
-    effectiveDirective: truncate(
-      body?.effectiveDirective ?? body?.['effective-directive'],
-    ),
+    effectiveDirective: truncate(body?.effectiveDirective ?? body?.['effective-directive']),
     documentUri: truncate(body?.documentURL ?? body?.['document-uri']),
     disposition: truncate(body?.disposition),
     statusCode: coerceNumber(body?.statusCode ?? body?.['status-code']),
@@ -67,9 +58,7 @@ export function normaliseCspBody(
     columnNumber: coerceNumber(body?.columnNumber ?? body?.['column-number']),
     sourceFile: truncate(body?.sourceFile ?? body?.['source-file']),
     sample: truncate(body?.sample ?? body?.['script-sample']),
-    originalPolicy: truncate(
-      body?.originalPolicy ?? body?.['original-policy'],
-    ),
+    originalPolicy: truncate(body?.originalPolicy ?? body?.['original-policy']),
     referrer: truncate(body?.referrer),
   };
 }
@@ -100,11 +89,7 @@ export class CspReportController {
     if (Array.isArray(body)) {
       // Reporting API (Level 1): [{ type, url, body }]
       for (const report of body) {
-        if (
-          report &&
-          typeof report === 'object' &&
-          report.type === 'csp-violation'
-        ) {
+        if (report && typeof report === 'object' && report.type === 'csp-violation') {
           this.log(normaliseCspBody(report.body), report.url);
         }
       }
@@ -116,10 +101,7 @@ export class CspReportController {
   }
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
-  private log(
-    violation: NormalisedCspViolation,
-    reportUrl: string | undefined,
-  ): void {
+  private log(violation: NormalisedCspViolation, reportUrl: string | undefined): void {
     this.logger.warn('CSP violation', {
       ...violation,
       ...(reportUrl !== undefined && { reportUrl: truncate(reportUrl) }),

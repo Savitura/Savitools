@@ -166,6 +166,47 @@ jobs:
       - name: Verify bundled external SDK generator specs are current
         run: npm run specs:check
 
+      # Healthcheck exit codes and maintenance-script CLI flags (#670, #672)
+      - name: Test maintenance scripts (healthcheck, seed, SDK specs CLI)
+        run: npm run test:scripts
+
+  migration-drift:
+    name: Migration Drift Check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: savitools
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d savitools"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/savitools
+        run: npm run migration:run --workspace @savitools/api
+
+      - name: Check entity-to-migration schema drift
+        env:
+          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/savitools
+        run: npm run migration:check --workspace @savitools/api
+
   docker-build:
     name: Docker Build & Smoke (API)
     runs-on: ubuntu-latest

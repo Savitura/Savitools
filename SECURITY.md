@@ -24,8 +24,8 @@ SaviTools implements the following security measures:
 ### API Protection
 
 - **CORS**: Restricted origins via `WEB_ORIGIN` environment variable
-- **Rate Limiting**: Configurable via `THROTTLE_LIMIT` and `THROTTLE_TTL`; auth routes (login/register/password reset) use a tighter 5 req/min per-IP override, with an additional per-email cap on forgot-password
-- **Proxy trust**: Set `TRUST_PROXY` (hop count or CIDR list) so rate limiting keys on the real client IP behind a reverse proxy
+- **Rate Limiting & Rate-Limit Tiers**: Configurable via `THROTTLE_LIMIT` (default 100 req/window) and `THROTTLE_TTL` (default 60,000ms window); auth routes (login, register, password reset) use a tighter 5 req/min per-IP override, with an additional per-email cap on forgot-password. Responses include standard rate-limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`)
+- **Proxy trust & ThrottlerBehindProxyGuard**: Set `TRUST_PROXY` (hop count, boolean, single IP, CIDR list, or comma-separated IPs/CIDRs) so Fastify configures its `trustProxy` option correctly. `ThrottlerBehindProxyGuard` derives the client IP by inspecting Fastify's resolved `req.ip` (populated from `X-Forwarded-For` when `TRUST_PROXY` is active) rather than trusting socket addresses or collapsing proxies via `req.ips[0]`. When deploying behind reverse proxies (Nginx, Cloudflare, Railway), ensure your proxy correctly appends/overwrites client IP headers (`X-Forwarded-For`) and that `TRUST_PROXY` matches your proxy hop count or trusted proxy CIDRs to prevent client IP spoofing or shared rate-limit buckets.
 - **Security headers**: `@fastify/helmet` on API responses (`X-Content-Type-Options`, `X-Frame-Options`, CSP, HSTS in production). CSP is relaxed only for `/api/docs` in non-production
 - **Schema safety**: TypeORM `synchronize` is limited to `development`/`test`; deployments apply migrations (`RUN_MIGRATIONS` or `migration:run`)
 - **Input Validation**: All API inputs are validated using class-validator

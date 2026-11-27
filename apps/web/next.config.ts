@@ -11,8 +11,7 @@ const isProd = process.env.NODE_ENV === 'production';
  * NEXT_PUBLIC_API_URL is set by the deployment environment.  The trailing
  * slash is stripped so concatenation stays predictable.
  */
-const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001')
-  .replace(/\/$/, '');
+const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '');
 const cspReportEndpoint = `${apiBase}/api/v1/csp-report`;
 
 /**
@@ -27,8 +26,6 @@ const connectSrc = [
   'https://horizon.stellar.org',
   'https://friendbot.stellar.org',
   ...playgroundConnectOrigins(),
-  // Legacy CrowdPay alias that older deployments still point at.
-  'https://api.crowdpay.io',
   'wss://*.stellar.org',
 ].join(' ');
 

@@ -52,10 +52,7 @@ import {
   apiErrorMessage,
 } from '@/lib/api';
 import { NETWORK_DETECTION_TIMEOUT_MS } from '@/lib/network-detection';
-import {
-  NetworkProfileFormatError,
-  parseNetworkProfile,
-} from '@/lib/network-profile-format';
+import { NetworkProfileFormatError, parseNetworkProfile } from '@/lib/network-profile-format';
 
 const MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';

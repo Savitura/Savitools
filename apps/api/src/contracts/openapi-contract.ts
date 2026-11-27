@@ -84,7 +84,12 @@ const OPENAPI_METHODS: readonly OpenApiHttpMethod[] = [
 ];
 
 /** Modules that expose no feature input of their own. */
-export const NON_FEATURE_API_MODULES: readonly string[] = ['health', 'metrics'];
+export const NON_FEATURE_API_MODULES: readonly string[] = [
+  'health',
+  'ready',
+  'metrics',
+  'csp-report',
+];
 
 /** Converts a Nest route (`/watches/:id`) to an OpenAPI path (`/watches/{id}`). */
 export function normalizeOpenApiPath(path: string): string {

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "node init && nest build",
-    "dev": "node init && nest start --watch",
-    "start": "node init && node dist/main",
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit",
@@ -13,7 +13,8 @@
     "test:openapi": "jest --runInBand openapi-contract",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migration:run": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
-    "migration:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert"
+    "migration:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
+    "migration:check": "ts-node src/database/check-migration-drift.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

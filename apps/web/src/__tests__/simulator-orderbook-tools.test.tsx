@@ -19,7 +19,9 @@ jest.mock('@/lib/api', () => ({
 }));
 
 jest.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }: any) => <div data-testid="recharts-container">{children}</div>,
+  ResponsiveContainer: ({ children }: any) => (
+    <div data-testid="recharts-container">{children}</div>
+  ),
   AreaChart: ({ children }: any) => <div>{children}</div>,
   Area: () => null,
   LineChart: ({ children }: any) => <div>{children}</div>,
@@ -39,7 +41,12 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
     it('renders simulator inputs and runs path payment simulation', async () => {
       const mockSimulatedPath: api.SimulatedPath = {
         source_asset: { type: 'native', code: 'XLM', label: 'XLM' },
-        destination_asset: { type: 'credit_alphanum4', code: 'USDC', issuer: 'GISSUER', label: 'USDC' },
+        destination_asset: {
+          type: 'credit_alphanum4',
+          code: 'USDC',
+          issuer: 'GISSUER',
+          label: 'USDC',
+        },
         source_amount: '10.5000000',
         destination_amount: '1.0000000',
         path: [],
@@ -70,7 +77,7 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
           expect.objectContaining({
             amount: '25',
             direction: 'strict_send',
-          })
+          }),
         );
       });
 
@@ -81,7 +88,9 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
     });
 
     it('handles simulation errors gracefully', async () => {
-      (api.findSimulatorPaths as jest.Mock).mockRejectedValue(new Error('Horizon pathfinding timeout'));
+      (api.findSimulatorPaths as jest.Mock).mockRejectedValue(
+        new Error('Horizon pathfinding timeout'),
+      );
 
       render(<SimulatorTool />);
 
@@ -142,10 +151,10 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
       bestAsk: '0.1260000',
       liquidityScore: 85,
       bids: [
-        { price: '0.1250000', amount: '1000.00', cumulativeAmount: 1000, cumulativePercent: 50 },
+        { price: '0.1250000', amount: '1000.00', cumulativeAmount: '1000', cumulativePercent: 50 },
       ],
       asks: [
-        { price: '0.1260000', amount: '800.00', cumulativeAmount: 800, cumulativePercent: 40 },
+        { price: '0.1260000', amount: '800.00', cumulativeAmount: '800', cumulativePercent: 40 },
       ],
       lastUpdated: 1700000000,
     };
@@ -191,7 +200,11 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
     it('renders error state when orderbook fetch fails', async () => {
       (api.getOrderbook as jest.Mock).mockRejectedValue(new Error('Failed to reach Horizon node'));
       (api.getOrderbookHistory as jest.Mock).mockResolvedValue([]);
-      (api.getTrades as jest.Mock).mockResolvedValue({ trades: [], hasMore: false, nextCursor: null });
+      (api.getTrades as jest.Mock).mockResolvedValue({
+        trades: [],
+        hasMore: false,
+        nextCursor: null,
+      });
 
       render(<OrderbookTool />);
 
@@ -203,7 +216,11 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
     it('simulates order fill quote', async () => {
       (api.getOrderbook as jest.Mock).mockResolvedValue(mockOrderbookResult);
       (api.getOrderbookHistory as jest.Mock).mockResolvedValue([]);
-      (api.getTrades as jest.Mock).mockResolvedValue({ trades: [], hasMore: false, nextCursor: null });
+      (api.getTrades as jest.Mock).mockResolvedValue({
+        trades: [],
+        hasMore: false,
+        nextCursor: null,
+      });
       (api.getOrderQuote as jest.Mock).mockResolvedValue({
         selling: 'XLM',
         buying: 'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',

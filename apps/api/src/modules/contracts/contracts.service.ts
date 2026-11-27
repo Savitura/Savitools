@@ -32,7 +32,7 @@ import {
   Address,
   StrKey,
   xdr,
-} from "@stellar/stellar-sdk";
+} from '@stellar/stellar-sdk';
 
 export const GIT_CLONE_TIMEOUT_MS = 30_000;
 export const CONTRACTS_GIT_IMPORT_QUEUE = 'contracts-git-import';
@@ -57,7 +57,13 @@ interface GitImportJobData {
   artifactPath: string;
 }
 
-function parseRedisConnection(redisUrl: string): { host: string; port: number; username?: string; password?: string; tls?: Record<string, never> } {
+function parseRedisConnection(redisUrl: string): {
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  tls?: Record<string, never>;
+} {
   const parsed = new URL(redisUrl);
   return {
     host: parsed.hostname,
@@ -76,7 +82,10 @@ const MAINNET_NETWORK_NAMES = new Set(['mainnet', 'public', 'pubnet']);
  * network name or passphrase (Savitura/Savitools#425).
  */
 export function assertTestNetworkOnly(network: string, networkPassphrase: string): void {
-  if (MAINNET_NETWORK_NAMES.has(network.trim().toLowerCase()) || networkPassphrase === Networks.PUBLIC) {
+  if (
+    MAINNET_NETWORK_NAMES.has(network.trim().toLowerCase()) ||
+    networkPassphrase === Networks.PUBLIC
+  ) {
     throw new ConfigurationError(
       'Contract deploy/invoke is testnet-only: STELLAR_NETWORK / STELLAR_NETWORK_PASSPHRASE must not point at the public network, because DEPLOYER_SECRET_KEY is shared by all allowlisted users',
     );
@@ -108,50 +117,50 @@ export class ContractsService {
     private readonly configService: ConfigService,
     @Optional() private readonly metricsService?: MetricsService,
   ) {
-    const rpcUrl = this.configService.getOrThrow<string>("STELLAR_RPC_URL");
-    const network = this.configService.get<string>(
-      "STELLAR_NETWORK",
-      "testnet",
-    );
+    const rpcUrl = this.configService.getOrThrow<string>('STELLAR_RPC_URL');
+    const network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
 
     const networkPassphrase =
-      this.configService.get<string>("STELLAR_NETWORK_PASSPHRASE") ||
-      (network.toLowerCase() === "futurenet" ? Networks.FUTURENET : Networks.TESTNET);
+      this.configService.get<string>('STELLAR_NETWORK_PASSPHRASE') ||
+      (network.toLowerCase() === 'futurenet' ? Networks.FUTURENET : Networks.TESTNET);
 
     // DEPLOYER_SECRET_KEY is one account shared by every allowlisted user, so it
     // must never hold real XLM: refuse to start against the public network
     // instead of letting a misconfigured env spend mainnet funds.
     assertTestNetworkOnly(network, networkPassphrase);
 
-    const isProduction = this.configService.get<string>("NODE_ENV") === "production";
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
-    if (isProduction && rpcUrl.startsWith("http://")) {
-      throw new ConfigurationError(
-        "Plaintext RPC (http) is not allowed for production signing",
-      );
+    if (isProduction && rpcUrl.startsWith('http://')) {
+      throw new ConfigurationError('Plaintext RPC (http) is not allowed for production signing');
     }
 
     this.isProduction = isProduction;
 
     const configuredGitHosts = this.configService.get<string>('WASM_GIT_ALLOWED_HOSTS');
     this.allowedGitHosts = configuredGitHosts
-      ? configuredGitHosts.split(',').map((host) => host.trim().toLowerCase()).filter((host) => host.length > 0)
+      ? configuredGitHosts
+          .split(',')
+          .map((host) => host.trim().toLowerCase())
+          .filter((host) => host.length > 0)
       : DEFAULT_WASM_GIT_ALLOWED_HOSTS;
 
     this.rpcServer = new rpc.Server(rpcUrl, { allowHttp: !isProduction });
 
-    const secretKey = this.configService.getOrThrow<string>(
-      "DEPLOYER_SECRET_KEY",
-    );
+    const secretKey = this.configService.getOrThrow<string>('DEPLOYER_SECRET_KEY');
     this.deployer = Keypair.fromSecret(secretKey);
 
     this.networkPassphrase = networkPassphrase;
 
     const configuredLimit = this.configService.get<string>('MAX_WASM_FILE_SIZE');
-    this.maxFileSize = configuredLimit ? parseInt(configuredLimit, 10) || 5 * 1024 * 1024 : 5 * 1024 * 1024;
+    this.maxFileSize = configuredLimit
+      ? parseInt(configuredLimit, 10) || 5 * 1024 * 1024
+      : 5 * 1024 * 1024;
 
     const configuredGitTimeoutMs = this.configService.get<string>('GIT_CLONE_TIMEOUT_MS');
-    this.gitCloneTimeoutMs = configuredGitTimeoutMs ? parseInt(configuredGitTimeoutMs, 10) || GIT_CLONE_TIMEOUT_MS : GIT_CLONE_TIMEOUT_MS;
+    this.gitCloneTimeoutMs = configuredGitTimeoutMs
+      ? parseInt(configuredGitTimeoutMs, 10) || GIT_CLONE_TIMEOUT_MS
+      : GIT_CLONE_TIMEOUT_MS;
 
     const redisUrl = this.configService.get<string>('REDIS_URL');
     if (redisUrl) {
@@ -165,9 +174,13 @@ export class ContractsService {
         },
       });
       this.gitImportQueueEvents = new QueueEvents(CONTRACTS_GIT_IMPORT_QUEUE, { connection });
-      this.gitImportWorker = new Worker<GitImportJobData, Buffer>(CONTRACTS_GIT_IMPORT_QUEUE, async (job) => {
-        return this.fetchWasmFromGitDirect(job.data.repoUrl, job.data.artifactPath);
-      }, { connection });
+      this.gitImportWorker = new Worker<GitImportJobData, Buffer>(
+        CONTRACTS_GIT_IMPORT_QUEUE,
+        async (job) => {
+          return this.fetchWasmFromGitDirect(job.data.repoUrl, job.data.artifactPath);
+        },
+        { connection },
+      );
       this.gitImportQueue.on('error', (error) => {
         this.logger.warn(`Git import queue error: ${error.message}`);
       });
@@ -194,7 +207,9 @@ export class ContractsService {
     }
 
     if (wasmBuffer.length > this.maxFileSize) {
-      throw new BadRequestException(`WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`);
+      throw new BadRequestException(
+        `WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`,
+      );
     }
 
     const calculatedSha256 = crypto.createHash('sha256').update(wasmBuffer).digest('hex');
@@ -202,7 +217,7 @@ export class ContractsService {
     if (checksum) {
       if (checksum.toLowerCase() !== calculatedSha256.toLowerCase()) {
         throw new UnprocessableEntityException(
-          `Checksum verification failed: expected ${checksum}, got ${calculatedSha256}`
+          `Checksum verification failed: expected ${checksum}, got ${calculatedSha256}`,
         );
       }
     }
@@ -254,9 +269,7 @@ export class ContractsService {
     }
   }
 
-  private async assertSafeWasmUrl(
-    parsedUrl: URL,
-  ): Promise<void> {
+  private async assertSafeWasmUrl(parsedUrl: URL): Promise<void> {
     const allowHttp = !this.isProduction;
     if (parsedUrl.protocol !== 'https:' && !(allowHttp && parsedUrl.protocol === 'http:')) {
       throw new BadRequestException(`Unsupported WASM URL protocol: ${parsedUrl.protocol}`);
@@ -278,9 +291,7 @@ export class ContractsService {
     }
 
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'git:') {
-      throw new BadRequestException(
-        `Unsupported Git repository URL protocol: ${parsed.protocol}`,
-      );
+      throw new BadRequestException(`Unsupported Git repository URL protocol: ${parsed.protocol}`);
     }
 
     if (!parsed.hostname) {
@@ -302,7 +313,11 @@ export class ContractsService {
       throw new BadRequestException('WASM artifact path is required');
     }
 
-    if (path.isAbsolute(artifactPath) || artifactPath.startsWith('\\') || /^[a-zA-Z]:/.test(artifactPath)) {
+    if (
+      path.isAbsolute(artifactPath) ||
+      artifactPath.startsWith('\\') ||
+      /^[a-zA-Z]:/.test(artifactPath)
+    ) {
       throw new BadRequestException('WASM artifact path must be relative');
     }
 
@@ -345,7 +360,11 @@ export class ContractsService {
       execFile('git', args, options, (error) => {
         if (error) {
           if (error.message.includes('ENOENT')) {
-            reject(new BadRequestException('Git is not installed in this environment; Git-based WASM import is unavailable'));
+            reject(
+              new BadRequestException(
+                'Git is not installed in this environment; Git-based WASM import is unavailable',
+              ),
+            );
             return;
           }
           reject(new BadRequestException(`Git command failed: ${error.message}`));
@@ -373,9 +392,13 @@ export class ContractsService {
     } catch (err: unknown) {
       if (err instanceof NotFoundException || err instanceof BadRequestException) throw err;
       if ((err as { code?: string })?.code === 'ENOENT') {
-        throw new BadRequestException('Git is not installed in this environment; Git-based WASM import is unavailable');
+        throw new BadRequestException(
+          'Git is not installed in this environment; Git-based WASM import is unavailable',
+        );
       }
-      throw new BadRequestException(`Failed to fetch WASM from Git repository: ${err instanceof Error ? err.message : String(err)}`);
+      throw new BadRequestException(
+        `Failed to fetch WASM from Git repository: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -443,9 +466,7 @@ export class ContractsService {
       }
 
       if (!response.ok) {
-        throw new BadRequestException(
-          `Failed to download WASM from URL: HTTP ${response.status}`,
-        );
+        throw new BadRequestException(`Failed to download WASM from URL: HTTP ${response.status}`);
       }
 
       const contentLength = Number(response.headers.get('content-length') || '0');
@@ -491,7 +512,10 @@ export class ContractsService {
         source: 'url',
       });
 
-      this.wasmUrlCache.set(resolvedUrl, { contentHash: metadata.contentHash, cachedAt: Date.now() });
+      this.wasmUrlCache.set(resolvedUrl, {
+        contentHash: metadata.contentHash,
+        cachedAt: Date.now(),
+      });
       this.pruneUrlCache();
 
       return { buffer: wasmBuffer, metadata };
@@ -553,32 +577,30 @@ export class ContractsService {
       wasmBuffer = (await this.fetchWasmFromUrl(wasmBuffer)).buffer;
     }
     if (!wasmBuffer || wasmBuffer.length === 0) {
-      throw new BadRequestException("WASM file is empty");
+      throw new BadRequestException('WASM file is empty');
     }
 
     if (wasmBuffer.length > this.maxFileSize) {
-      throw new BadRequestException(`WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`);
+      throw new BadRequestException(
+        `WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`,
+      );
     }
 
-    const scVals: xdr.ScVal[] = (constructorArgs ?? []).map((arg) =>
-      nativeToScVal(arg),
-    );
+    const scVals: xdr.ScVal[] = (constructorArgs ?? []).map((arg) => nativeToScVal(arg));
 
     const wasmHashBytes = hash(wasmBuffer);
 
     this.logger.log(`Uploading WASM (${wasmBuffer.length} bytes)...`);
     await this.uploadWasm(wasmBuffer);
 
-    this.logger.log(
-      `Creating contract from WASM hash ${wasmHashBytes.toString("hex")}...`,
-    );
+    this.logger.log(`Creating contract from WASM hash ${wasmHashBytes.toString('hex')}...`);
     const salt = Keypair.random().xdrPublicKey().value();
     const contractId = this.computeContractId(salt);
     const createTxHash = await this.createContract(wasmHashBytes, salt, scVals);
 
     return {
       contractId,
-      wasmHash: wasmHashBytes.toString("hex"),
+      wasmHash: wasmHashBytes.toString('hex'),
       txHash: createTxHash,
     };
   }
@@ -588,7 +610,9 @@ export class ContractsService {
       throw new BadRequestException('WASM file is empty');
     }
     if (wasmBuffer.length > this.maxFileSize) {
-      throw new BadRequestException(`WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`);
+      throw new BadRequestException(
+        `WASM file exceeds maximum size of ${this.maxFileSize / (1024 * 1024)}MB`,
+      );
     }
 
     // Check init auth / format basic validation (WASM magic header)
@@ -634,9 +658,17 @@ export class ContractsService {
       saltBuffer = Keypair.random().xdrPublicKey().value();
     }
 
-    const creatorAddress = admin && StrKey.isValidEd25519PublicKey(admin) ? new Address(admin) : new Address(this.deployer.publicKey());
+    const creatorAddress =
+      admin && StrKey.isValidEd25519PublicKey(admin)
+        ? new Address(admin)
+        : new Address(this.deployer.publicKey());
     const contractId = this.computeContractIdWithAddress(creatorAddress, saltBuffer);
-    const createTxHash = await this.createCustomContractWithAddress(creatorAddress, wasmHashBytes, saltBuffer, scVals);
+    const createTxHash = await this.createCustomContractWithAddress(
+      creatorAddress,
+      wasmHashBytes,
+      saltBuffer,
+      scVals,
+    );
 
     return {
       contractId,
@@ -646,7 +678,7 @@ export class ContractsService {
   }
 
   private async uploadWasm(wasmBuffer: Buffer): Promise<string> {
-    const account = await this.timeRpc("get_account", () =>
+    const account = await this.timeRpc('get_account', () =>
       this.rpcServer.getAccount(this.deployer.publicKey()),
     );
 
@@ -658,15 +690,15 @@ export class ContractsService {
       .setTimeout(30)
       .build();
 
-    const prepared = await this.timeRpc("prepare_transaction", () =>
+    const prepared = await this.timeRpc('prepare_transaction', () =>
       this.rpcServer.prepareTransaction(tx),
     );
     prepared.sign(this.deployer);
 
-    const sendResult = await this.timeRpc("send_transaction", () =>
+    const sendResult = await this.timeRpc('send_transaction', () =>
       this.rpcServer.sendTransaction(prepared),
     );
-    const result = await this.timeRpc("poll_transaction", () =>
+    const result = await this.timeRpc('poll_transaction', () =>
       this.rpcServer.pollTransaction(sendResult.hash, {
         attempts: 30,
       }),
@@ -674,7 +706,7 @@ export class ContractsService {
 
     if (result.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
       throw new BadRequestException(
-        `WASM upload failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? "Transaction failed on ledger" : "Transaction not found after polling"}`,
+        `WASM upload failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? 'Transaction failed on ledger' : 'Transaction not found after polling'}`,
       );
     }
 
@@ -709,9 +741,7 @@ export class ContractsService {
     salt: Buffer,
     constructorArgs: xdr.ScVal[],
   ): Promise<string> {
-    await this.timeRpc("get_account", () =>
-      this.rpcServer.getAccount(this.deployer.publicKey()),
-    );
+    await this.timeRpc('get_account', () => this.rpcServer.getAccount(this.deployer.publicKey()));
     const address = new Address(this.deployer.publicKey());
     return this.createCustomContractWithAddress(address, wasmHash, salt, constructorArgs);
   }
@@ -739,15 +769,15 @@ export class ContractsService {
       .setTimeout(30)
       .build();
 
-    const prepared = await this.timeRpc("prepare_transaction", () =>
+    const prepared = await this.timeRpc('prepare_transaction', () =>
       this.rpcServer.prepareTransaction(tx),
     );
     prepared.sign(this.deployer);
 
-    const sendResult = await this.timeRpc("send_transaction", () =>
+    const sendResult = await this.timeRpc('send_transaction', () =>
       this.rpcServer.sendTransaction(prepared),
     );
-    const result = await this.timeRpc("poll_transaction", () =>
+    const result = await this.timeRpc('poll_transaction', () =>
       this.rpcServer.pollTransaction(sendResult.hash, {
         attempts: 30,
       }),
@@ -755,7 +785,7 @@ export class ContractsService {
 
     if (result.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
       throw new BadRequestException(
-        `Contract creation failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? "Transaction failed on ledger" : "Transaction not found after polling"}`,
+        `Contract creation failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? 'Transaction failed on ledger' : 'Transaction not found after polling'}`,
       );
     }
 
@@ -768,13 +798,13 @@ export class ContractsService {
     args: unknown[],
   ): Promise<{ result: unknown; txHash: string }> {
     if (!StrKey.isValidContract(contractId)) {
-      throw new BadRequestException("Invalid contract ID format");
+      throw new BadRequestException('Invalid contract ID format');
     }
 
     this.assertInvocationAllowed(contractId, functionName);
 
     const scVals: xdr.ScVal[] = args.map((arg) => nativeToScVal(arg));
-    const account = await this.timeRpc("get_account", () =>
+    const account = await this.timeRpc('get_account', () =>
       this.rpcServer.getAccount(this.deployer.publicKey()),
     );
 
@@ -792,15 +822,15 @@ export class ContractsService {
       .setTimeout(30)
       .build();
 
-    const prepared = await this.timeRpc("prepare_transaction", () =>
+    const prepared = await this.timeRpc('prepare_transaction', () =>
       this.rpcServer.prepareTransaction(tx),
     );
     prepared.sign(this.deployer);
 
-    const sendResult = await this.timeRpc("send_transaction", () =>
+    const sendResult = await this.timeRpc('send_transaction', () =>
       this.rpcServer.sendTransaction(prepared),
     );
-    const result = await this.timeRpc("poll_transaction", () =>
+    const result = await this.timeRpc('poll_transaction', () =>
       this.rpcServer.pollTransaction(sendResult.hash, {
         attempts: 30,
       }),
@@ -809,13 +839,11 @@ export class ContractsService {
     if (result.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
       this.metricsService?.recordContractInvocation(functionName, false);
       throw new BadRequestException(
-        `Invocation failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? "Transaction failed on ledger" : "Transaction not found after polling"}`,
+        `Invocation failed: ${result.status === rpc.Api.GetTransactionStatus.FAILED ? 'Transaction failed on ledger' : 'Transaction not found after polling'}`,
       );
     }
 
-    const returnValue = result.returnValue
-      ? scValToNative(result.returnValue)
-      : null;
+    const returnValue = result.returnValue ? scValToNative(result.returnValue) : null;
     this.metricsService?.recordContractInvocation(functionName, true);
 
     return {
@@ -829,7 +857,9 @@ export class ContractsService {
     const allowedFunctionsRaw = this.configService.get<string>('CONTRACT_INVOKE_ALLOWED_FUNCTIONS');
 
     if (!allowedContractsRaw || !allowedFunctionsRaw) {
-      throw new ForbiddenException('Contract invocations are not permitted (allowlist not configured)');
+      throw new ForbiddenException(
+        'Contract invocations are not permitted (allowlist not configured)',
+      );
     }
 
     const contractsList = this.parseAllowlist('CONTRACT_INVOKE_ALLOWED_CONTRACTS');
@@ -841,9 +871,9 @@ export class ContractsService {
   }
 
   private parseAllowlist(configKey: string): string[] {
-    const raw = this.configService.get<string>(configKey, "");
+    const raw = this.configService.get<string>(configKey, '');
     return raw
-      .split(",")
+      .split(',')
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
   }
@@ -852,7 +882,7 @@ export class ContractsService {
     return this.metricsService
       ? this.metricsService.timeSorobanRpc(
           operation,
-          this.configService.get<string>("STELLAR_NETWORK", "testnet"),
+          this.configService.get<string>('STELLAR_NETWORK', 'testnet'),
           fn,
         )
       : fn();
@@ -862,16 +892,16 @@ export class ContractsService {
     contractId: string,
   ): Promise<{ contractId: string; wasmHash: string; network: string }> {
     if (!StrKey.isValidContract(contractId)) {
-      throw new BadRequestException("Invalid contract ID format");
+      throw new BadRequestException('Invalid contract ID format');
     }
 
     const network = this.configService.get<string>('STELLAR_NETWORK', 'testnet');
 
     try {
-      const wasm = await this.timeRpc("get_contract_wasm", () =>
+      const wasm = await this.timeRpc('get_contract_wasm', () =>
         this.rpcServer.getContractWasmByContractId(contractId),
       );
-      const wasmHash = wasm ? hash(wasm).toString("hex") : "";
+      const wasmHash = wasm ? hash(wasm).toString('hex') : '';
 
       return {
         contractId,
@@ -922,8 +952,7 @@ export class ContractsService {
     if (!found || found.expiresAt < Date.now()) {
       this.abiCatalogs.delete(id);
       throw new NotFoundException(
-        `No ABI catalog attached to contract ${contractId}` +
-          (wasmId ? ` / WASM ${wasmId}` : ''),
+        `No ABI catalog attached to contract ${contractId}` + (wasmId ? ` / WASM ${wasmId}` : ''),
       );
     }
     return found.entry;
@@ -935,7 +964,12 @@ export class ContractsService {
     functionName: string,
     args: unknown[],
     wasmId?: string,
-  ): Array<{ name: string; type: string; xdrBase64: string; decoded: { type: string; value: unknown } }> {
+  ): Array<{
+    name: string;
+    type: string;
+    xdrBase64: string;
+    decoded: { type: string; value: unknown };
+  }> {
     const entry = this.getAbi(contractId, wasmId);
     const method = entry.methods.find((m) => m.name === functionName);
     if (!method) {

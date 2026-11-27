@@ -1,5 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
+
 /**
  * Enforces "at most one default (unnamed) workspace per user per tool".
  *
@@ -12,8 +13,10 @@ import { MigrationInterface, QueryRunner } from "typeorm";
  * their (user_id, tool) group before the index is created, otherwise the index
  * creation itself would fail on a database that already has duplicates.
  */
-export class WorkspaceDefaultUniqueIndex1786400000000 implements MigrationInterface {
-  name = "WorkspaceDefaultUniqueIndex1786400000000";
+export class WorkspaceDefaultUniqueIndex1786400000000
+  implements MigrationInterface
+{
+  name = 'WorkspaceDefaultUniqueIndex1786400000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
     // Keep the earliest default workspace per (user_id, tool); delete the rest.
