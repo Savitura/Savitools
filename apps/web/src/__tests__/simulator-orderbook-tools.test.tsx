@@ -151,10 +151,10 @@ describe('Simulator and Orderbook Tools (Issue #602)', () => {
       bestAsk: '0.1260000',
       liquidityScore: 85,
       bids: [
-        { price: '0.1250000', amount: '1000.00', cumulativeAmount: 1000, cumulativePercent: 50 },
+        { price: '0.1250000', amount: '1000.00', cumulativeAmount: '1000', cumulativePercent: 50 },
       ],
       asks: [
-        { price: '0.1260000', amount: '800.00', cumulativeAmount: 800, cumulativePercent: 40 },
+        { price: '0.1260000', amount: '800.00', cumulativeAmount: '800', cumulativePercent: 40 },
       ],
       lastUpdated: 1700000000,
     };

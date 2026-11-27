@@ -6,6 +6,10 @@
 
 SaviTools is the official developer console in the [Savitura](https://savitura.com) ecosystem, purpose-built for [Fluxa](https://github.com/Savitura/Fluxa) payment infrastructure. It provides interactive API playgrounds, webhook testing, SDK generation, and SEP debugging against hosted sandboxes — without needing a terminal, Rust toolchain, or deep protocol knowledge.
 
+### Deployment & Reverse Proxy Rate-Limiting
+
+When deploying `apps/api` behind reverse proxies (such as Nginx, Cloudflare, or Railway), configure `TRUST_PROXY` (e.g., `TRUST_PROXY=1` or your proxy's CIDR) to allow `ThrottlerBehindProxyGuard` and Fastify to correctly derive client IPs from `X-RateLimit-*` and `X-Forwarded-For` headers.
+
 > **Live Deployment (Testnet Only)**: [https://savitools.savitura.com](https://savitools.savitura.com)  
 > **Live API**: [https://savitools-api.savitura.com](https://savitools-api.savitura.com)  
 > **Status**: Public testnet preview. Mainnet signing is strictly locked out across all tools (Composer, Wallet Sandbox, and API).
@@ -373,17 +377,6 @@ Complete guides and API reference for integrating with SaviTools:
 
 | Resource                                                                   | Purpose                                                                      |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **[API Reference](docs/api-reference.md)**                                 | Complete endpoint catalog with examples, parameters, and error codes         |
-| **[Quickstart Guide](docs/quickstart.md)**                                 | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes  |
-| **[Ledger Monitor Load Test](docs/ledger-monitor-load-test.md)**           | Recorded result from the one-hour, 50-connection SSE load test               |
-| **[Playground Host Smoke Check](docs/playground-host-smoke.md)**           | Read-only release check for the public production/testnet API bases          |
-| **[OpenAPI Contract Gate](docs/openapi-contract.md)**                      | CI check that keeps the generated OpenAPI document aligned with API routes   |
-| **[Browser & Wallet Compatibility](docs/browser-wallet-compatibility.md)** | Supported browsers, Freighter assumptions, and degraded behavior             |
-| **[Redis-degraded troubleshooting](docs/troubleshooting-redis.md)**        | Symptoms and recovery when local Redis is down                               |
-| **[Browser Storage & Retention](docs/browser-storage-and-retention.md)**   | Key taxonomy, quota limits, eviction policies, and degradation behavior      |
-| **[Swagger UI](/api/docs)**                                                | Interactive API explorer (available in dev/staging; disabled in production)  |
-| Resource                                                                   | Purpose                                                                      |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | **[Architecture Map](docs/architecture-map.md)**                           | System topology: web tools, 26 API modules, and shared integration contracts |
 | **[API Reference](docs/api-reference.md)**                                 | Complete endpoint catalog with examples, parameters, and error codes         |
 | **[Quickstart Guide](docs/quickstart.md)**                                 | End-to-end walkthrough: generate keypair → fund → send payment in 5 minutes  |
@@ -391,6 +384,7 @@ Complete guides and API reference for integrating with SaviTools:
 | **[Playground Host Smoke Check](docs/playground-host-smoke.md)**           | Read-only release check for the public production/testnet API bases          |
 | **[OpenAPI Contract Gate](docs/openapi-contract.md)**                      | CI check that keeps the generated OpenAPI document aligned with API routes   |
 | **[Browser & Wallet Compatibility](docs/browser-wallet-compatibility.md)** | Supported browsers, Freighter assumptions, and degraded behavior             |
+| **[Redis-degraded troubleshooting](docs/troubleshooting-redis.md)**        | Symptoms and recovery when local Redis is down                               |
 | **[Browser Storage & Retention](docs/browser-storage-and-retention.md)**   | Key taxonomy, quota limits, eviction policies, and degradation behavior      |
 | **[Swagger UI](/api/docs)**                                                | Interactive API explorer (available in dev/staging; disabled in production)  |
 

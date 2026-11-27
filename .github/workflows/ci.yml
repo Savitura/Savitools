@@ -166,6 +166,10 @@ jobs:
       - name: Verify bundled external SDK generator specs are current
         run: npm run specs:check
 
+      # Healthcheck exit codes and maintenance-script CLI flags (#670, #672)
+      - name: Test maintenance scripts (healthcheck, seed, SDK specs CLI)
+        run: npm run test:scripts
+
   migration-drift:
     name: Migration Drift Check
     runs-on: ubuntu-latest

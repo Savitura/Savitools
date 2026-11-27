@@ -54,6 +54,55 @@ async function loadHeaders(env = 'test'): Promise<Record<string, string>> {
 }
 
 describe('Security Headers', () => {
+  it.each(['development', 'production'])(
+    'preserves required connect-src origins in %s',
+    async (env) => {
+      const headers = await loadHeaders(env);
+      const csp = headers['content-security-policy'];
+      const connectSrc = csp.split('; ').find((directive) => directive.startsWith('connect-src '));
+      const { playgroundConnectOrigins } = await import('../lib/playground-origins');
+
+      expect(connectSrc?.split(' ').slice(1)).toEqual(
+        expect.arrayContaining([
+          "'self'",
+          'https://horizon-testnet.stellar.org',
+          'https://horizon.stellar.org',
+          'https://friendbot.stellar.org',
+          'wss://*.stellar.org',
+          ...playgroundConnectOrigins(),
+        ]),
+      );
+      expect(headers['permissions-policy']).toContain('camera=(self)');
+      expect(headers['x-content-type-options']).toBe('nosniff');
+    },
+  );
+
+  it.each([undefined, 'https://api.crowdpay.io/v1'])(
+    'allows the legacy CrowdPay origin only when configured (%s)',
+    async (configuredUrl) => {
+      const key = 'NEXT_PUBLIC_CROWDPAY_API_URL';
+      const previous = process.env[key];
+      if (configuredUrl === undefined) delete process.env[key];
+      else process.env[key] = configuredUrl;
+
+      try {
+        const headers = await loadHeaders('production');
+        for (const name of ['content-security-policy', 'content-security-policy-report-only']) {
+          const connectSrc = headers[name]
+            .split('; ')
+            .find((directive) => directive.startsWith('connect-src '));
+          expect(connectSrc).toBeDefined();
+          expect(connectSrc?.split(' ').includes('https://api.crowdpay.io')).toBe(
+            configuredUrl !== undefined,
+          );
+        }
+      } finally {
+        if (previous === undefined) delete process.env[key];
+        else process.env[key] = previous;
+      }
+    },
+  );
+
   it('serves every required header on all routes', async () => {
     const headers = await loadHeaders();
 

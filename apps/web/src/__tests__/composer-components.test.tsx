@@ -104,6 +104,8 @@ describe('Composer Subcomponents (Issue #600)', () => {
         fee: '100',
         hash: '0123456789abcdef',
         operationResults: ['op_success'],
+        resultCodes: null,
+        ledger: null,
       };
 
       render(<SimulateResult result={res} loading={false} error={null} />);
@@ -116,11 +118,17 @@ describe('Composer Subcomponents (Issue #600)', () => {
 
   describe('OperationPalette', () => {
     const mockOps: OperationManifestEntry[] = [
-      { type: 'payment', label: 'Payment', description: 'Send assets to another account' },
+      {
+        type: 'payment',
+        label: 'Payment',
+        description: 'Send assets to another account',
+        fields: [],
+      },
       {
         type: 'create_account',
         label: 'Create Account',
         description: 'Create and fund a new account',
+        fields: [],
       },
     ];
 
@@ -214,11 +222,13 @@ describe('Composer Subcomponents (Issue #600)', () => {
       const onResult = jest.fn();
       const mockResult: composerApi.FeeBumpResult = {
         xdr: 'AAAAAFEEBUMP==',
+        type: 'fee_bump',
+        network: 'testnet',
         feeSource: 'GBFEE',
         baseFee: '5000',
         innerHash: 'innertxhash1234567890',
         hash: 'outertxhash1234567890',
-        fee: 5000,
+        fee: '5000',
         operationCount: 1,
       };
       (composerApi.buildFeeBump as jest.Mock).mockResolvedValue(mockResult);

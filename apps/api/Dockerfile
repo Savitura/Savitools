@@ -34,7 +34,7 @@ RUN npm ci --omit=dev --workspace=@savitools/api --include-workspace-root=false 
 # assets (asserted in the builder stage), and SdkgenService reads them relative
 # to its compiled module.
 COPY --from=builder /app/apps/api/dist apps/api/dist
-COPY apps/api/docker-healthcheck.mjs docker-healthcheck.mjs
+COPY scripts/docker-healthcheck.mjs docker-healthcheck.mjs
 
 RUN addgroup -g 1001 nodejs && \
     adduser -u 1001 -G nodejs -s /bin/sh -D nestjs

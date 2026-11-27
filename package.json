@@ -7,14 +7,15 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "node init && turbo dev",
-    "build": "node init && turbo build",
+    "dev": "turbo dev",
+    "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:openapi": "npm run test:openapi --workspace @savitools/api",
     "specs:generate": "node scripts/generate-sdk-specs.mjs",
     "specs:check": "node scripts/generate-sdk-specs.mjs --check",
+    "test:scripts": "node --test scripts/docker-healthcheck.test.mjs scripts/maintenance-scripts.test.mjs",
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
