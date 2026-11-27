@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  BadGatewayException,
   Injectable,
   Logger,
   NotFoundException,
+  GatewayTimeoutException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodeDns from 'node:dns/promises';
@@ -75,6 +77,8 @@ export interface Sep24TransactionResponse {
 const DEFAULT_POLL_TIMEOUT_MS = 300000;
 const MAX_POLL_TIMEOUT_MS = 1800000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const DEFAULT_HTTP_TIMEOUT_MS = 15000;
+const MAX_HTTP_TIMEOUT_MS = 60000;
 
 const ALLOWED_SCHEMES = new Set(['stellar:']);
 
@@ -158,11 +162,19 @@ export class Sep24DebuggerService {
 
   private http = {
     get: async <T>(url: string, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: opts?.headers,
-        signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'GET',
+          headers: opts?.headers,
+          signal: AbortSignal.timeout(opts?.timeout ?? DEFAULT_HTTP_TIMEOUT_MS),
+        });
+      } catch (err) {
+        if ((err as Error)?.name === 'TimeoutError' || (err as Error)?.name === 'AbortError') {
+          throw new GatewayTimeoutException(`Upstream request timed out: ${url}`);
+        }
+        throw new BadGatewayException(`Upstream request failed: ${(err as Error)?.message}`);
+      }
       let data: any;
       if (opts?.responseType === 'text') {
         data = await res.text();
@@ -176,12 +188,20 @@ export class Sep24DebuggerService {
       return { status: res.status, data };
     },
     post: async <T>(url: string, body: any, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
-        body: typeof body === 'string' ? body : JSON.stringify(body),
-        signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+          signal: AbortSignal.timeout(opts?.timeout ?? DEFAULT_HTTP_TIMEOUT_MS),
+        });
+      } catch (err) {
+        if ((err as Error)?.name === 'TimeoutError' || (err as Error)?.name === 'AbortError') {
+          throw new GatewayTimeoutException(`Upstream request timed out: ${url}`);
+        }
+        throw new BadGatewayException(`Upstream request failed: ${(err as Error)?.message}`);
+      }
       let data: any;
       try {
         data = await res.json();

@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, Injectable } from '@nestjs/common';
+import { TransactionBuilder } from '@stellar/stellar-sdk';
 import {
   StellarTestnetService,
   type Balance,
 } from '../stellar/stellar-testnet.service';
 
 export type { Balance };
+
+/** Stellar testnet network passphrase (public, well-known constant). */
+const TESTNET_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 /**
  * Testnet wallet behind the Wallet page.
@@ -60,7 +64,18 @@ export class WalletService {
    * signed transaction, so callers that need them can decode the envelope.
    */
   async sendPayment(signedXdr: string) {
-    const result = await this.stellar.submitSignedTransaction(signedXdr);
+    const transaction = TransactionBuilder.fromXDR(
+      signedXdr,
+      TESTNET_NETWORK_PASSPHRASE,
+    );
+
+    const result = await this.server
+      .submitTransaction(transaction)
+      .catch((err: unknown) => {
+        throw new BadGatewayException(
+          `Horizon rejected the transaction: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     return {
       success: true,

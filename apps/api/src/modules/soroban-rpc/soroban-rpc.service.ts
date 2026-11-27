@@ -1,6 +1,14 @@
-import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  GatewayTimeoutException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { resolveStellarRpcUrl, type StellarEndpointEnv } from '../../config/stellar-endpoints';
+import {
+  resolveStellarRpcUrl,
+  type StellarEndpointEnv,
+} from '../../config/stellar-endpoints';
 import {
   findRpcMethod,
   listRpcMethods,
@@ -9,7 +17,12 @@ import {
 } from './soroban-rpc.methods';
 import type { SorobanRpcNetwork } from './dto/execute-soroban-rpc.dto';
 
-/** Upstream budget for a single JSON-RPC call; the console shows it as `tookMs`. */
+/**
+ * Upstream budget for a single JSON-RPC call, enforced via `AbortSignal.timeout`
+ * for both the request and the body read. Timeouts map to
+ * `GatewayTimeoutException`; other network failures map to `BadGatewayException`.
+ * The console shows the elapsed time as `tookMs`.
+ */
 const RPC_TIMEOUT_MS = 15_000;
 
 /**
@@ -73,7 +86,9 @@ export class SorobanRpcService {
   private rpcEnv(): StellarEndpointEnv {
     return {
       STELLAR_RPC_URL: this.config.get<string | undefined>('STELLAR_RPC_URL'),
-      STELLAR_RPC_PUBLIC_URL: this.config.get<string | undefined>('STELLAR_RPC_PUBLIC_URL'),
+      STELLAR_RPC_PUBLIC_URL: this.config.get<string | undefined>(
+        'STELLAR_RPC_PUBLIC_URL',
+      ),
     };
   }
 
@@ -111,7 +126,10 @@ export class SorobanRpcService {
   }
 
   private rpcUrl(network: SorobanRpcNetwork): string {
-    const url = resolveStellarRpcUrl(this.rpcEnv(), network === 'mainnet' ? 'public' : 'testnet');
+    const url = resolveStellarRpcUrl(
+      this.rpcEnv(),
+      network === 'mainnet' ? 'public' : 'testnet',
+    );
     this.assertEndpointAllowed(url);
     return url;
   }
@@ -150,16 +168,35 @@ export class SorobanRpcService {
         signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
       });
     } catch (error: unknown) {
+      if (isTimeoutError(error)) {
+        throw new GatewayTimeoutException(
+          `Soroban RPC endpoint did not respond within ${RPC_TIMEOUT_MS} ms`,
+        );
+      }
       const reason = error instanceof Error ? error.message : String(error);
-      throw new BadGatewayException(`Could not reach the Soroban RPC endpoint: ${reason}`);
+      throw new BadGatewayException(
+        `Could not reach the Soroban RPC endpoint: ${reason}`,
+      );
     }
     const tookMs = Date.now() - startedAt;
 
     if (!response.ok) {
-      throw new BadGatewayException(`Soroban RPC responded with HTTP ${response.status}`);
+      throw new BadGatewayException(
+        `Soroban RPC responded with HTTP ${response.status}`,
+      );
     }
 
-    const payload = (await response.json().catch(() => null)) as JsonRpcPayload | null;
+    let payload: JsonRpcPayload | null;
+    try {
+      payload = (await response.json()) as JsonRpcPayload | null;
+    } catch (error: unknown) {
+      if (isTimeoutError(error)) {
+        throw new GatewayTimeoutException(
+          `Soroban RPC endpoint did not respond within ${RPC_TIMEOUT_MS} ms`,
+        );
+      }
+      payload = null;
+    }
     if (!payload || typeof payload !== 'object') {
       throw new BadGatewayException('Soroban RPC returned a non-JSON response');
     }
@@ -172,7 +209,9 @@ export class SorobanRpcService {
         error: {
           code: payload.error.code ?? -1,
           message: payload.error.message ?? 'Unknown JSON-RPC error',
-          ...(payload.error.data === undefined ? {} : { data: payload.error.data }),
+          ...(payload.error.data === undefined
+            ? {}
+            : { data: payload.error.data }),
         },
       };
     }
@@ -184,4 +223,12 @@ export class SorobanRpcService {
       result: payload.result ?? null,
     };
   }
+}
+
+/** True when an error was raised by an `AbortSignal.timeout` firing. */
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
+  );
 }

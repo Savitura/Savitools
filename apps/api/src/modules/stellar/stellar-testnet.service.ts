@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  GatewayTimeoutException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import {
   Account,
   Asset,
@@ -76,6 +82,14 @@ export interface PaymentRequest {
 
 const FRIENDBOT_TIMEOUT_MS = 30000;
 const FRIENDBOT_STARTING_BALANCE = '10,000 XLM';
+
+/** True when an error is an AbortSignal timeout (TimeoutError or AbortError). */
+function isTimeoutError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    (err.name === 'TimeoutError' || err.name === 'AbortError')
+  );
+}
 
 /**
  * Stellar network operations shared by the wallet and sandbox modules.
@@ -238,17 +252,34 @@ export class StellarTestnetService {
         signal: AbortSignal.timeout(FRIENDBOT_TIMEOUT_MS),
       });
     } catch (err: unknown) {
+      if (isTimeoutError(err)) {
+        this.logger.error(
+          `Friendbot request timed out for ${publicKey} on ${network} after ${FRIENDBOT_TIMEOUT_MS} ms`,
+        );
+        throw new GatewayTimeoutException(
+          `Friendbot did not respond within ${FRIENDBOT_TIMEOUT_MS} ms for network "${network}" at ${friendbotUrl}.`,
+        );
+      }
       const message = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(
         `Friendbot request failed for ${publicKey} on ${network}: ${message}`,
       );
-      throw new BadRequestException(
+      throw new BadGatewayException(
         `Friendbot is unavailable for network "${network}" at ${friendbotUrl}. Ensure your local Stellar quickstart container is running and Friendbot is enabled, or use a network profile with an accessible Friendbot. (${message})`,
       );
     }
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
+      let body = '';
+      try {
+        body = await response.text();
+      } catch (err: unknown) {
+        if (isTimeoutError(err)) {
+          throw new GatewayTimeoutException(
+            `Friendbot did not finish responding within ${FRIENDBOT_TIMEOUT_MS} ms for network "${network}" at ${friendbotUrl}.`,
+          );
+        }
+      }
       this.logger.error(
         `Friendbot error for ${publicKey} on ${network}: ${response.status} ${body}`,
       );
@@ -269,7 +300,17 @@ export class StellarTestnetService {
       };
     }
 
-    const json = (await response.json().catch(() => ({}))) as { hash?: string };
+    let json: { hash?: string };
+    try {
+      json = (await response.json()) as { hash?: string };
+    } catch (err: unknown) {
+      if (isTimeoutError(err)) {
+        throw new GatewayTimeoutException(
+          `Friendbot did not finish responding within ${FRIENDBOT_TIMEOUT_MS} ms for network "${network}" at ${friendbotUrl}.`,
+        );
+      }
+      json = {};
+    }
     return { ok: true, hash: json.hash ?? null };
   }
 
@@ -333,139 +374,19 @@ export class StellarTestnetService {
     });
   }
 
-  assertPositiveAmount(amount: string): void {
-    const parsed = parseFloat(amount);
-    if (isNaN(parsed) || parsed <= 0) {
-      throw new BadRequestException('Amount must be a positive number');
-    }
-  }
-
-  /** "XLM" or "CODE:ISSUER", with the rejection copy both pages show. */
-  parseAsset(assetString: string): Asset {
-    if (assetString === 'XLM') {
+  /**
+   * Parse an asset string (`native` or `CODE:ISSUER`) into an SDK Asset.
+   */
+  parseAsset(asset: string): Asset {
+    if (asset === 'native' || asset === 'XLM') {
       return Asset.native();
     }
-
-    const parts = assetString.split(':');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    const [code, issuer] = asset.split(':');
+    if (!code || !issuer) {
       throw new BadRequestException(
-        `Invalid asset format: "${assetString}". Use "XLM" or "CODE:ISSUER"`,
+        `Invalid asset "${asset}". Use "native" or "CODE:ISSUER".`,
       );
     }
-
-    return new Asset(parts[0], parts[1]);
-  }
-
-  async loadSourceAccount(
-    publicKey: string,
-    network: string = 'testnet',
-    overrides?: any,
-  ): Promise<Account> {
-    const srv = this.serverFor(network, overrides);
-    try {
-      return await srv.loadAccount(publicKey);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(
-        `Failed to load source account ${publicKey} on ${network}: ${message}`,
-      );
-      throw new BadRequestException(`Failed to load source account: ${message}`);
-    }
-  }
-
-  /** Validate, build, sign and submit a payment on the selected network; returns Horizon's result. */
-  async submitPayment(
-    request: PaymentRequest,
-    network: string = 'testnet',
-    overrides?: any,
-  ): Promise<SubmittedTransaction> {
-    const endpoints = resolveStellarEndpoints(network, overrides);
-    const srv = this.serverFor(network, overrides);
-
-    const sourceKeypair = this.keypairFromSecret(request.sourceSecret);
-    this.assertDestination(request.destination);
-    this.assertPositiveAmount(request.amount);
-    // Required before the account load: a bad asset format is a request error
-    // and must not cost a Horizon round trip.
-    const asset = this.parseAsset(request.asset);
-
-    const sourceAccount = await this.loadSourceAccount(
-      sourceKeypair.publicKey(),
-      network,
-      overrides,
-    );
-
-    let builder = new TransactionBuilder(sourceAccount, {
-      fee: BASE_FEE,
-      networkPassphrase: endpoints.passphrase,
-    }).addOperation(this.buildPaymentOperation(request, asset));
-
-    if (request.memo) {
-      try {
-        builder = builder.addMemo(Memo.text(request.memo));
-      } catch {
-        throw new BadRequestException('Invalid memo format');
-      }
-    }
-
-    let transaction: StellarSdk.Transaction;
-    try {
-      transaction = builder.setTimeout(30).build();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      throw new BadRequestException(`Failed to build transaction: ${message}`);
-    }
-
-    transaction.sign(sourceKeypair);
-
-    try {
-      return (await srv.submitTransaction(
-        transaction,
-      )) as unknown as SubmittedTransaction;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`Transaction submission failed on ${network}: ${message}`);
-      throw new BadRequestException(`Payment failed: ${message}`);
-    }
-  }
-
-  /**
-   * Submit a client-signed transaction envelope.
-   *
-   * The signing key never leaves the caller's device, so the API only ever
-   * handles the signed XDR. The envelope must already carry at least one
-   * signature; an unsigned envelope is rejected before touching the network.
-   */
-  async submitSignedTransaction(
-    signedXdr: string,
-    network: string = 'testnet',
-    overrides?: any,
-  ): Promise<SubmittedTransaction> {
-    const endpoints = resolveStellarEndpoints(network, overrides);
-    const srv = this.serverFor(network, overrides);
-
-    let transaction: StellarSdk.Transaction;
-    try {
-      transaction = new StellarSdk.Transaction(signedXdr, endpoints.passphrase);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      throw new BadRequestException(`Invalid signed transaction XDR: ${message}`);
-    }
-
-    if (!transaction.signatures || transaction.signatures.length === 0) {
-      throw new BadRequestException(
-        'Signed transaction XDR must include at least one signature.',
-      );
-    }
-
-    try {
-      return (await srv.submitTransaction(
-        transaction,
-      )) as unknown as SubmittedTransaction;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`Transaction submission failed on ${network}: ${message}`);
-      throw new BadRequestException(`Payment failed: ${message}`);
-    }
+    return new Asset(code, issuer);
   }
 }

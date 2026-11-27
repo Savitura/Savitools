@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  BadGatewayException,
+  GatewayTimeoutException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -79,6 +81,11 @@ const HKDF_INFO_VAULT = ENCRYPTION_PURPOSES.VAULT_KEY;
  * unauthenticated routes, so the bound is a memory guarantee, not a tuning knob.
  */
 const PASSKEY_CHALLENGE_MAX_ENTRIES = 10_000;
+
+const FLUXA_HTTP_TIMEOUT_MS = 10_000;
+
+/** Bounded timeout applied to every outbound fetch() in this service. */
+const OUTBOUND_FETCH_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class AuthService {
@@ -1307,6 +1314,7 @@ export class AuthService {
     const response = await fetch(fluxaTokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(FLUXA_HTTP_TIMEOUT_MS),
       body: JSON.stringify({
         grant_type: 'authorization_code',
         code,
@@ -1353,6 +1361,7 @@ export class AuthService {
     const response = await fetch(
       `${fluxaApiUrl.replace(/\/$/, '')}/v1/account`,
       {
+        signal: AbortSignal.timeout(FLUXA_HTTP_TIMEOUT_MS),
         headers: {
           Authorization: `Bearer ${apiKey}`,
           Accept: 'application/json',
