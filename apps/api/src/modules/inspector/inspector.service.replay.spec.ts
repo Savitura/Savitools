@@ -101,7 +101,7 @@ describe('InspectorService - Horizon Replay', () => {
 
       mockAxios.mockResolvedValueOnce(mockResponse);
 
-      const result = await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
+      const _result = await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
 
       expect(mockAxios).toHaveBeenCalledWith({
         method: 'GET',
@@ -197,7 +197,7 @@ describe('InspectorService - Horizon Replay', () => {
 
       mockAxios.mockRejectedValueOnce(mockError);
 
-      await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
+      const _result = await service.replayHorizonRequest(dto, mockUserId, mockWorkspaceId);
 
       expect(horizonReplayRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
