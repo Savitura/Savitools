@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { StellarTestnetService, type Balance } from '../stellar/stellar-testnet.service';
+import {
+  StellarTestnetService,
+  type Balance,
+} from '../stellar/stellar-testnet.service';
 import { PaymentDto } from './dto/payment.dto';
 import { resolveStellarEndpoints } from '../stellar/stellar-endpoints';
 
@@ -51,7 +54,9 @@ export interface SandboxTopUpResponse {
  */
 @Injectable()
 export class SandboxService {
-  constructor(private readonly stellar: StellarTestnetService = new StellarTestnetService()) {}
+  constructor(
+    private readonly stellar: StellarTestnetService = new StellarTestnetService(),
+  ) {}
 
   /** Horizon client for the selected network. */
   private getServer(network: string = 'testnet', overrides?: any) {

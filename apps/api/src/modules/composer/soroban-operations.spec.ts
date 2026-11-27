@@ -144,7 +144,7 @@ describe('ComposerService - Soroban Operations', () => {
       const result = await service.validateSorobanArguments(
         'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
         'transfer',
-        ['GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'],
+        ['GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'],
       );
 
       expect(result.valid).toBe(true);
@@ -233,7 +233,7 @@ describe('ComposerService - Soroban Operations', () => {
 
       await expect(
         serviceWithoutContracts.getContractAbi(
-          'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
+          'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4',
         ),
       ).rejects.toThrow('Contract ABI functionality is not available');
     });
