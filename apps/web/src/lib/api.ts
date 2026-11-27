@@ -1,3 +1,16 @@
+// NOTE: This monolithic module is being split into `lib/api/`:
+//   - lib/api/client.ts      shared fetch, auth headers, refresh, error normalization
+//   - lib/api/auth.ts        authentication, sessions, passkeys, vault, connected accounts
+//   - lib/api/contracts.ts   contract endpoints
+//   - lib/api/monitor.ts     monitor endpoints
+//   - lib/api/simulator.ts   simulator endpoints
+//   - lib/api/federation.ts  federation endpoints
+//   - lib/api/playground.ts  playground endpoints
+//   - lib/api/index.ts       barrel re-exporting everything for backward compatibility
+//
+// Import from `@/lib/api` (or `./api`) so consumers keep working unchanged.
+// The contents below are retained until each domain module has been migrated.
+
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -1375,8 +1388,7 @@ export interface SandboxFundResult {
 
 export interface SandboxResetResult {
   publicKey: string;
-  reset?: boolean;
-  toppedUp?: boolean;
+  reset: boolean;
   network: string;
   startingBalance: string;
   txHash: string | null;
@@ -1413,7 +1425,7 @@ export async function sandboxFund(publicKey: string, network: string = 'testnet'
 }
 
 export async function sandboxResetAccount(publicKey: string, network: string = 'testnet') {
-  return apiFetch<SandboxResetResult>('/sandbox/top-up', {
+  return apiFetch<SandboxResetResult>('/sandbox/reset', {
     method: 'POST',
     body: JSON.stringify({ publicKey, network }),
   });
