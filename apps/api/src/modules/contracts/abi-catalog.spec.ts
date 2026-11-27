@@ -90,9 +90,7 @@ describe('buildAbiCatalog (#219)', () => {
     const oversized = JSON.parse(
       `{"methods":[{"name":"m0","args":[{"name":"pad","type":"String"}]}],"padding":"${'x'.repeat(600 * 1024)}"}`,
     );
-    expect(() => buildAbiCatalog(CONTRACT_ID, oversized)).toThrow(
-      /maximum accepted size/,
-    );
+    expect(() => buildAbiCatalog(CONTRACT_ID, oversized)).toThrow(/maximum accepted size/);
   });
 
   it('rejects __proto__ keys so a pollution payload cannot reach the catalog', () => {
@@ -101,6 +99,85 @@ describe('buildAbiCatalog (#219)', () => {
     ) as unknown as Record<string, unknown>;
     expect(() => buildAbiCatalog(CONTRACT_ID, payload)).toThrow(BadRequestException);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe('buildAbiCatalog type resolution (#712)', () => {
+  it('resolves supported types case-insensitively and canonicalizes aliases', () => {
+    const entry = buildAbiCatalog(CONTRACT_ID, {
+      methods: [
+        {
+          name: 'resolved',
+          args: [
+            { name: 'owner', type: 'address' },
+            { name: 'flag', type: 'boolEAN' },
+            { name: 'amount', type: 'i128' },
+            { name: 'total', type: 'U64' },
+            { name: 'maybe', type: 'option<Address>' },
+          ],
+          return: 'void',
+        },
+      ],
+      events: [],
+    });
+
+    expect(entry.methods[0].arguments).toEqual([
+      { name: 'owner', type: 'Address' },
+      { name: 'flag', type: 'Bool' },
+      { name: 'amount', type: 'I128' },
+      { name: 'total', type: 'U64' },
+      { name: 'maybe', type: 'Option' },
+    ]);
+  });
+
+  it('rejects nested vec, map, and struct argument types as unsupported', () => {
+    let thrown: unknown;
+    try {
+      buildAbiCatalog(CONTRACT_ID, {
+        methods: [
+          {
+            name: 'batch',
+            args: [
+              { name: 'items', type: 'Vec<Map<Symbol, i128>>' },
+              { name: 'record', type: 'Struct<TransferRecord>' },
+            ],
+          },
+        ],
+        events: [],
+      });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(UnprocessableEntityException);
+    const response = (thrown as UnprocessableEntityException).getResponse() as {
+      errors: Array<{ field: string; message: string }>;
+    };
+    expect(response.errors).toHaveLength(2);
+    expect(response.errors.map((e) => e.field)).toEqual([
+      'schema.methods[0].args.items.type',
+      'schema.methods[0].args.record.type',
+    ]);
+    for (const error of response.errors) {
+      expect(error.message).toMatch(/unsupported type/i);
+    }
+  });
+
+  it('preserves nested struct and vec return types verbatim', () => {
+    const entry = buildAbiCatalog(CONTRACT_ID, {
+      methods: [
+        { name: 'accounts', args: [], return: 'Vec<Address>' },
+        { name: 'balances', args: [], return: 'Map<Symbol, i128>' },
+        { name: 'record', args: [], return: 'TransferRecord' },
+      ],
+      events: [],
+    });
+
+    expect(entry.methods.map((m) => m.returnType)).toEqual([
+      'Vec<Address>',
+      'Map<Symbol, i128>',
+      'TransferRecord',
+    ]);
   });
 });
 
