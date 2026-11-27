@@ -18,10 +18,10 @@ describe('isSensitiveKey', () => {
     'X-API-Key',
     'cookie',
     'set-cookie',
-    'x-auth-token',   // matches /token/i
-    'x-secret',       // matches /secret/i
-    'x-signature',    // matches /signature/i
-    'x-private-key',  // matches /private/i and /key/i
+    'x-auth-token', // matches /token/i
+    'x-secret', // matches /secret/i
+    'x-signature', // matches /signature/i
+    'x-private-key', // matches /private/i and /key/i
     'password',
     'jwt',
   ])('flags %s as sensitive', (header) => {
@@ -110,7 +110,8 @@ describe('redactHeaders', () => {
 
 describe('redactString', () => {
   it('redacts a bare JWT', () => {
-    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
     expect(redactString(jwt)).toBe(REDACTED);
   });
 
@@ -140,6 +141,12 @@ describe('redactValue', () => {
     expect(redactValue('sk_live_abc', 'x-api-key')).toBe(REDACTED);
   });
 
+  it('handles nested objects recursively', () => {
+    const obj = { a: { b: { password: 'secretpassword' } } };
+    const res = redactValue(obj) as Record<string, unknown>;
+    expect((res.a as Record<string, Record<string, string>>).b.password).toBe(REDACTED);
+  });
+
   it('redacts a string value under authorization key', () => {
     expect(redactValue('Bearer tok', 'authorization')).toBe(REDACTED);
   });
@@ -149,10 +156,10 @@ describe('redactValue', () => {
       user: 'alice',
       auth: { authorization: 'Bearer tok', userId: 'u1' },
     };
-    const result = redactValue(input) as any;
+    const result = redactValue(input) as Record<string, unknown>;
     expect(result.user).toBe('alice');
-    expect(result.auth.authorization).toBe(REDACTED);
-    expect(result.auth.userId).toBe('u1');
+    expect((result.auth as Record<string, string>).authorization).toBe(REDACTED);
+    expect((result.auth as Record<string, string>).userId).toBe('u1');
   });
 
   it('redacts the whole value when key hint is sensitive (before array traversal)', () => {
@@ -160,6 +167,14 @@ describe('redactValue', () => {
     // regardless of its type — the key hint takes priority over deep traversal.
     const result = redactValue(['tok1', 'tok2'], 'token');
     expect(result).toBe(REDACTED);
+  });
+
+  it('handles circular references safely without throwing', () => {
+    const circular: Record<string, unknown> = { name: 'circular' };
+    circular.self = circular;
+    const result = redactValue(circular) as Record<string, unknown>;
+    expect(result.name).toBe('circular');
+    expect(result.self).toBeDefined();
   });
 
   it('passes through null and undefined', () => {
@@ -176,9 +191,7 @@ describe('redactUrl', () => {
   });
 
   it('preserves origin and pathname', () => {
-    expect(redactUrl('https://anchor.example.com/auth')).toBe(
-      'https://anchor.example.com/auth',
-    );
+    expect(redactUrl('https://anchor.example.com/auth')).toBe('https://anchor.example.com/auth');
   });
 
   it('returns a placeholder for unparseable input', () => {

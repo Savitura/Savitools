@@ -1,26 +1,19 @@
-import {
-  BadRequestException,
-  NotFoundException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
-import { FederationService, TOML_MAX_BYTES } from './federation.service';
+import { BadRequestException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import { FederationService, RequestTimeoutError, TOML_MAX_BYTES } from './federation.service';
 
 const lookupMock = jest.fn();
 jest.mock('dns/promises', () => ({
   lookup: (...args: unknown[]) => lookupMock(...args),
 }));
 
-const VALID_KEY =
-  'GDJ47UQJNT6UOMV3CLNZ43XGDKOUM3UHV7V3FF3W4KMIRRNICNSS2N2H';
+const VALID_KEY = 'GDJ47UQJNT6UOMV3CLNZ43XGDKOUM3UHV7V3FF3W4KMIRRNICNSS2N2H';
 
 function mockFetch(
-  responses: Record<
-    string,
-    { ok: boolean; status?: number; json?: unknown; text?: string }
-  >,
+  responses: Record<string, { ok: boolean; status?: number; json?: unknown; text?: string }>,
 ) {
-  global.fetch = jest.fn().mockImplementation(
-    (input: string | URL | Request, _init?: RequestInit) => {
+  global.fetch = jest
+    .fn()
+    .mockImplementation((input: string | URL | Request, _init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       for (const [pattern, resp] of Object.entries(responses)) {
         if (url.includes(pattern)) {
@@ -38,14 +31,14 @@ function mockFetch(
         json: () => Promise.resolve({}),
         text: () => Promise.resolve(''),
       });
-    },
-  );
+    });
 }
 
 describe('FederationService', () => {
   let service: FederationService;
 
   beforeEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
     lookupMock.mockReset();
     lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
@@ -53,11 +46,13 @@ describe('FederationService', () => {
     service = new FederationService();
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe('resolveFederation', () => {
     it('rejects invalid input', async () => {
-      await expect(service.resolveFederation('not-valid!!!')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.resolveFederation('not-valid!!!')).rejects.toThrow(BadRequestException);
     });
 
     it('reverse-looks up a public key via Stellar federation', async () => {
@@ -130,9 +125,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.resolveFederation('example.com')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.resolveFederation('example.com')).rejects.toThrow(NotFoundException);
     });
 
     it('handles federation lookup returning non-200', async () => {
@@ -143,9 +136,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.resolveFederation(VALID_KEY)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.resolveFederation(VALID_KEY)).rejects.toThrow(NotFoundException);
     });
 
     it('strips protocol prefix from domain input', async () => {
@@ -176,7 +167,9 @@ describe('FederationService', () => {
         issuer: VALID_KEY,
         reason: null,
       });
-      await expect(service.getAssetMetadata('assets.example', 'USDC', VALID_KEY)).resolves.toMatchObject({
+      await expect(
+        service.getAssetMetadata('assets.example', 'USDC', VALID_KEY),
+      ).resolves.toMatchObject({
         code: 'USDC',
         issuer: VALID_KEY,
         name: 'USD Coin',
@@ -184,15 +177,25 @@ describe('FederationService', () => {
     });
 
     it('returns deterministic invalid results for undeclared issuers and rejects malformed requests', async () => {
-      mockFetch({ 'assets.example/.well-known/stellar.toml': { ok: true, text: 'ACCOUNTS = []\n' } });
+      mockFetch({
+        'assets.example/.well-known/stellar.toml': { ok: true, text: 'ACCOUNTS = []\n' },
+      });
       await expect(service.validateHomeDomain('assets.example', VALID_KEY)).resolves.toMatchObject({
         valid: false,
         reason: 'issuer_not_declared',
       });
-      await expect(service.validateHomeDomain('not a domain', VALID_KEY)).rejects.toThrow(BadRequestException);
-      await expect(service.validateHomeDomain('https://assets.example/path', VALID_KEY)).rejects.toThrow(BadRequestException);
-      await expect(service.getAssetMetadata('assets.example', 'BAD CODE', VALID_KEY)).rejects.toThrow(BadRequestException);
-      await expect(service.getAssetMetadata('assets.example', 'USDC', VALID_KEY)).rejects.toThrow(NotFoundException);
+      await expect(service.validateHomeDomain('not a domain', VALID_KEY)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(
+        service.validateHomeDomain('https://assets.example/path', VALID_KEY),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.getAssetMetadata('assets.example', 'BAD CODE', VALID_KEY),
+      ).rejects.toThrow(BadRequestException);
+      await expect(service.getAssetMetadata('assets.example', 'USDC', VALID_KEY)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('reports a mismatch when a structured account declares a different home domain', async () => {
@@ -250,20 +253,12 @@ describe('FederationService', () => {
       const result = await service.getToml('stellar.org');
 
       expect(result.version).toBe('1.0.0');
-      expect(result.networkPassphrase).toBe(
-        'Public Global Stellar Network ; September 2015',
-      );
-      expect(result.federationServer).toBe(
-        'https://stellar.org/federation',
-      );
+      expect(result.networkPassphrase).toBe('Public Global Stellar Network ; September 2015');
+      expect(result.federationServer).toBe('https://stellar.org/federation');
       expect(result.transferServer).toBe('https://stellar.org/api');
       expect(result.webAuthEndpoint).toBe('https://stellar.org/auth');
-      expect(result.transferServerSep0024).toBe(
-        'https://stellar.org/sep24',
-      );
-      expect(result.directPaymentServer).toBe(
-        'https://stellar.org/sep31',
-      );
+      expect(result.transferServerSep0024).toBe('https://stellar.org/sep24');
+      expect(result.directPaymentServer).toBe('https://stellar.org/sep31');
       expect(result.accounts).toHaveLength(1);
       expect(result.accounts[0].PUBLIC_KEY).toContain('GBRPY');
       expect(result.currencies).toHaveLength(1);
@@ -271,9 +266,7 @@ describe('FederationService', () => {
       expect(result.currencies[0].display_decimals).toBe(7);
       expect(result.validators).toHaveLength(1);
       expect(result.validators[0].NAME).toBe('SDF #1');
-      expect(result.documentation?.PRINCIPALS_NAME).toBe(
-        'Stellar Development Foundation',
-      );
+      expect(result.documentation?.PRINCIPALS_NAME).toBe('Stellar Development Foundation');
       expect(result.fetchLatencyMs).toBeGreaterThanOrEqual(0);
       expect(result.validationWarnings).toEqual([]);
     });
@@ -290,15 +283,11 @@ describe('FederationService', () => {
 
       const result = await service.getToml('example.com');
 
-      expect(result.validationWarnings).toContain(
-        'Missing required SEP-1 field: ACCOUNTS',
-      );
+      expect(result.validationWarnings).toContain('Missing required SEP-1 field: ACCOUNTS');
     });
 
     it('throws BadRequestException for invalid domain', async () => {
-      await expect(service.getToml('not a domain!!!')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.getToml('not a domain!!!')).rejects.toThrow(BadRequestException);
     });
 
     it('throws NotFoundException for missing stellar.toml', async () => {
@@ -309,9 +298,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.getToml('missing.com')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getToml('missing.com')).rejects.toThrow(NotFoundException);
     });
 
     it('throws BadRequestException for malformed TOML', async () => {
@@ -322,9 +309,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.getToml('bad.com')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.getToml('bad.com')).rejects.toThrow(BadRequestException);
     });
 
     it('handles inline comments and multi-line strings', async () => {
@@ -359,9 +344,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.getToml('huge.com')).rejects.toThrow(
-        PayloadTooLargeException,
-      );
+      await expect(service.getToml('huge.com')).rejects.toThrow(PayloadTooLargeException);
     });
 
     it('rejects deeply nested TOML with a controlled 400', async () => {
@@ -379,16 +362,13 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.getToml('deep.com')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.getToml('deep.com')).rejects.toThrow(
-        /nesting depth/i,
-      );
+      await expect(service.getToml('deep.com')).rejects.toThrow(BadRequestException);
+      await expect(service.getToml('deep.com')).rejects.toThrow(/nesting depth/i);
     });
 
     it('cannot pollute Object.prototype via a pollution payload', async () => {
-      const pollution = '[[CURRENCIES]]\nCODE="USDC"\nISSUER="GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"\n__proto__ = { "polluted": true }\n';
+      const pollution =
+        '[[CURRENCIES]]\nCODE="USDC"\nISSUER="GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"\n__proto__ = { "polluted": true }\n';
 
       mockFetch({
         'evil.com/.well-known/stellar.toml': {
@@ -399,12 +379,12 @@ describe('FederationService', () => {
 
       // Parser rejects the illegal key (or silently drops it) — either way
       // Object.prototype must remain unpolluted.
-      await expect(service.getToml('evil.com')).resolves.toBeDefined().catch(() => {});
+      await expect(service.getToml('evil.com'))
+        .resolves.toBeDefined()
+        .catch(() => {});
 
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-      expect(
-        (Object.prototype as unknown as Record<string, unknown>).polluted,
-      ).toBeUndefined();
+      expect((Object.prototype as unknown as Record<string, unknown>).polluted).toBeUndefined();
     });
 
     it('rejects malformed TOML with a controlled 400', async () => {
@@ -415,9 +395,7 @@ describe('FederationService', () => {
         },
       });
 
-      await expect(service.getToml('broken.com')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.getToml('broken.com')).rejects.toThrow(BadRequestException);
     });
 
     it('keeps SSRF validation active around the fetch', async () => {
@@ -463,10 +441,9 @@ describe('FederationService', () => {
     });
 
     it('returns yellow probe when endpoint is declared but returns non-200', async () => {
-      const tomlContent = [
-        'ACCOUNTS = []',
-        'WEB_AUTH_ENDPOINT="https://anchor.com/auth"',
-      ].join('\n');
+      const tomlContent = ['ACCOUNTS = []', 'WEB_AUTH_ENDPOINT="https://anchor.com/auth"'].join(
+        '\n',
+      );
 
       mockFetch({
         'partial.com/.well-known/stellar.toml': {
@@ -484,13 +461,11 @@ describe('FederationService', () => {
     });
 
     it('returns yellow probe when endpoint throws a network error', async () => {
-      const tomlContent = [
-        'ACCOUNTS = []',
-        'TRANSFER_SERVER="https://anchor.com/api"',
-      ].join('\n');
+      const tomlContent = ['ACCOUNTS = []', 'TRANSFER_SERVER="https://anchor.com/api"'].join('\n');
 
-      global.fetch = jest.fn().mockImplementation(
-        (input: string | URL | Request, _init?: RequestInit) => {
+      global.fetch = jest
+        .fn()
+        .mockImplementation((input: string | URL | Request, _init?: RequestInit) => {
           const url = typeof input === 'string' ? input : input.toString();
           if (url.includes('stellar.toml')) {
             return Promise.resolve({
@@ -501,8 +476,7 @@ describe('FederationService', () => {
             });
           }
           return Promise.reject(new Error('timeout'));
-        },
-      );
+        });
 
       const result = await service.getSepSupport('timeout.com');
 
@@ -525,15 +499,9 @@ describe('FederationService', () => {
 
       expect(result.seps.find((s) => s.number === 1)?.supported).toBe(true);
       expect(result.seps.find((s) => s.number === 6)?.supported).toBe(false);
-      expect(result.seps.find((s) => s.number === 10)?.supported).toBe(
-        false,
-      );
-      expect(result.seps.find((s) => s.number === 24)?.supported).toBe(
-        false,
-      );
-      expect(result.seps.find((s) => s.number === 31)?.supported).toBe(
-        false,
-      );
+      expect(result.seps.find((s) => s.number === 10)?.supported).toBe(false);
+      expect(result.seps.find((s) => s.number === 24)?.supported).toBe(false);
+      expect(result.seps.find((s) => s.number === 31)?.supported).toBe(false);
     });
 
     it('returns all red when TOML cannot be fetched', async () => {
@@ -572,12 +540,23 @@ describe('FederationService', () => {
       const starts: string[] = [];
       let releaseInfo!: () => void;
       let releaseWebAuth!: () => void;
-      const info = new Promise<Response>((resolve) => { releaseInfo = () => resolve({ ok: true } as Response); });
-      const webAuth = new Promise<Response>((resolve) => { releaseWebAuth = () => resolve({ ok: true } as Response); });
+      const info = new Promise<Response>((resolve) => {
+        releaseInfo = () => resolve({ ok: true } as Response);
+      });
+      const webAuth = new Promise<Response>((resolve) => {
+        releaseWebAuth = () => resolve({ ok: true } as Response);
+      });
       global.fetch = jest.fn().mockImplementation((input: string | URL | Request) => {
         const url = input.toString();
         if (url.includes('stellar.toml')) {
-          return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('ACCOUNTS=[]\nTRANSFER_SERVER="https://anchor.com/api"\nWEB_AUTH_ENDPOINT="https://anchor.com/auth"') });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () =>
+              Promise.resolve(
+                'ACCOUNTS=[]\nTRANSFER_SERVER="https://anchor.com/api"\nWEB_AUTH_ENDPOINT="https://anchor.com/auth"',
+              ),
+          });
         }
         if (url.endsWith('/info')) {
           starts.push('info');
@@ -605,14 +584,32 @@ describe('FederationService', () => {
               ? 100
               : undefined,
       } as never);
-      global.fetch = jest.fn().mockImplementation((input: string | URL | Request) => {
-        const url = input.toString();
-        if (url.includes('stellar.toml')) {
-          return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('ACCOUNTS=[]\nTRANSFER_SERVER="https://anchor.com/api"\nWEB_AUTH_ENDPOINT="https://anchor.com/auth"') });
-        }
-        if (url.endsWith('/info')) return new Promise(() => undefined);
-        return Promise.resolve({ ok: true, status: 200 });
-      });
+      global.fetch = jest
+        .fn()
+        .mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+          const url = input.toString();
+          if (url.includes('stellar.toml')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              text: () =>
+                Promise.resolve(
+                  'ACCOUNTS=[]\nTRANSFER_SERVER="https://anchor.com/api"\nWEB_AUTH_ENDPOINT="https://anchor.com/auth"',
+                ),
+            });
+          }
+          if (url.endsWith('/info')) {
+            return new Promise((_, reject) => {
+              const signal = init?.signal;
+              if (signal?.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal?.addEventListener('abort', () => reject(signal?.reason));
+            });
+          }
+          return Promise.resolve({ ok: true, status: 200 });
+        });
 
       const request = timeoutService.getSepSupport('probe-timeout.com');
       await jest.advanceTimersByTimeAsync(0);
@@ -625,9 +622,7 @@ describe('FederationService', () => {
     });
 
     it('throws BadRequestException for invalid domain', async () => {
-      await expect(service.getSepSupport('not valid!!!')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.getSepSupport('not valid!!!')).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -646,11 +641,20 @@ describe('FederationService', () => {
     it('coalesces concurrent cache misses for the same domain', async () => {
       let release!: () => void;
       const response = new Promise<Response>((resolve) => {
-        release = () => resolve({ ok: true, status: 200, text: () => Promise.resolve('ACCOUNTS=[]') } as Response);
+        release = () =>
+          resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve('ACCOUNTS=[]'),
+          } as Response);
       });
       global.fetch = jest.fn().mockReturnValue(response);
 
-      const requests = [service.getToml('flight.com'), service.getToml('FLIGHT.COM'), service.getToml('flight.com.')];
+      const requests = [
+        service.getToml('flight.com'),
+        service.getToml('FLIGHT.COM'),
+        service.getToml('flight.com.'),
+      ];
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(global.fetch).toHaveBeenCalledTimes(1);
       release();
@@ -713,8 +717,7 @@ describe('FederationService', () => {
 
       expect(result.endpoint).toBe('https://anchor.example/sep24');
       expect(result.url).toBe(
-        'https://anchor.example/sep24/?asset_code=USDC&amount=10' +
-          `&account=${VALID_KEY}`,
+        'https://anchor.example/sep24/?asset_code=USDC&amount=10' + `&account=${VALID_KEY}`,
       );
     });
 
@@ -930,20 +933,28 @@ describe('FederationService', () => {
 
     it('classifies a server timeout as timeout failure', async () => {
       const timeoutService = new FederationService({
-        get: (key: string) =>
-          key === 'FEDERATION_PROBE_TIMEOUT_MS' ? 10 : undefined,
+        get: (key: string) => (key === 'FEDERATION_PROBE_TIMEOUT_MS' ? 10 : undefined),
       } as never);
-      global.fetch = jest.fn().mockImplementation((input: string | URL | Request) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('stellar.toml')) {
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            text: () => Promise.resolve(COMPLIANT_TOML),
+      global.fetch = jest
+        .fn()
+        .mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input.toString();
+          if (url.includes('stellar.toml')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              text: () => Promise.resolve(COMPLIANT_TOML),
+            });
+          }
+          return new Promise((_, reject) => {
+            const signal = init?.signal;
+            if (signal?.aborted) {
+              reject(signal.reason);
+              return;
+            }
+            signal?.addEventListener('abort', () => reject(signal?.reason));
           });
-        }
-        return new Promise(() => undefined); // never resolves
-      });
+        });
 
       const report = await timeoutService.getServerDiagnostics('slow.example');
 
@@ -1039,6 +1050,299 @@ describe('FederationService', () => {
       await expect(service.getServerDiagnostics('not a domain!!!')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('fetch timeout and cancellation handling (#566)', () => {
+    interface FederationServiceInternal {
+      fetchWithTimeout(
+        urlStr: string,
+        timeout?: number,
+        parentSignal?: AbortSignal,
+        redirectChain?: string[],
+      ): Promise<Response>;
+      postJsonWithTimeout(
+        url: string,
+        body: Record<string, string>,
+        headers: Record<string, string>,
+        timeout: number,
+        parentSignal?: AbortSignal,
+      ): Promise<Response>;
+      getJsonWithTimeout(
+        url: string,
+        headers: Record<string, string>,
+        timeout: number,
+        parentSignal?: AbortSignal,
+      ): Promise<Response>;
+    }
+
+    let internalService: FederationServiceInternal;
+
+    beforeEach(() => {
+      internalService = service as unknown as FederationServiceInternal;
+    });
+
+    function createMockFetch(
+      handler?: (url: string, init?: RequestInit) => Promise<Response> | Response,
+    ) {
+      return jest.fn().mockImplementation((input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const signal = init?.signal;
+        let customPromise: Promise<Response> | Response | undefined;
+        if (handler) {
+          customPromise = handler(url, init);
+        }
+        if (signal?.aborted) {
+          return Promise.reject(signal.reason ?? new Error('Aborted'));
+        }
+        return new Promise<Response>((resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(signal?.reason ?? new Error('Aborted'));
+          });
+          if (customPromise) {
+            Promise.resolve(customPromise).then(resolve, reject);
+          }
+        });
+      });
+    }
+
+    describe('timeout cancellation', () => {
+      it('aborts fetchWithTimeout when configured timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.fetchWithTimeout('https://fed.example/test', 20);
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal).toBeDefined();
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('aborts postJsonWithTimeout when timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.postJsonWithTimeout(
+          'https://fed.example/post',
+          { test: 'data' },
+          { 'Content-Type': 'application/json' },
+          20,
+        );
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('aborts getJsonWithTimeout when timeout expires', async () => {
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.getJsonWithTimeout(
+          'https://fed.example/get',
+          { Accept: 'application/json' },
+          20,
+        );
+
+        await expect(promise).rejects.toThrow(RequestTimeoutError);
+        expect(passedSignal?.aborted).toBe(true);
+      });
+
+      it('cleans up timeout timer when request settles early', async () => {
+        const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve('ok'),
+          json: () => Promise.resolve({ ok: true }),
+          headers: new Headers(),
+        });
+
+        await internalService.fetchWithTimeout('https://fed.example/fast', 5000);
+
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+        clearTimeoutSpy.mockRestore();
+      });
+    });
+
+    describe('parent-abort cancellation', () => {
+      it('aborts underlying fetch when parent signal is aborted in-flight', async () => {
+        const parentController = new AbortController();
+        let passedSignal: AbortSignal | null | undefined;
+        let fetchStarted!: () => void;
+        const fetchStartedPromise = new Promise<void>((resolve) => {
+          fetchStarted = resolve;
+        });
+
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          fetchStarted();
+          return new Promise(() => undefined);
+        });
+
+        const promise = internalService.fetchWithTimeout(
+          'https://fed.example/long',
+          5000,
+          parentController.signal,
+        );
+
+        await fetchStartedPromise;
+        const customReason = new Error('Parent aborted');
+        parentController.abort(customReason);
+
+        await expect(promise).rejects.toThrow('Parent aborted');
+        expect(passedSignal?.aborted).toBe(true);
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts immediately when parent signal is already aborted', async () => {
+        const parentController = new AbortController();
+        const customReason = new Error('Already aborted');
+        parentController.abort(customReason);
+
+        let passedSignal: AbortSignal | null | undefined;
+        global.fetch = createMockFetch((_url, init) => {
+          passedSignal = init?.signal;
+          return Promise.resolve({ ok: true } as Response);
+        });
+
+        const promise = internalService.fetchWithTimeout(
+          'https://fed.example/preaborted',
+          5000,
+          parentController.signal,
+        );
+
+        await expect(promise).rejects.toThrow('Already aborted');
+        expect(passedSignal?.aborted).toBe(true);
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts postJsonWithTimeout when parent signal aborts', async () => {
+        const parentController = new AbortController();
+        global.fetch = createMockFetch(() => new Promise(() => undefined));
+
+        const promise = internalService.postJsonWithTimeout(
+          'https://fed.example/post',
+          { a: '1' },
+          {},
+          5000,
+          parentController.signal,
+        );
+
+        parentController.abort(new Error('User cancelled POST'));
+
+        await expect(promise).rejects.toThrow('User cancelled POST');
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+
+      it('aborts getJsonWithTimeout when parent signal aborts', async () => {
+        const parentController = new AbortController();
+        global.fetch = createMockFetch(() => new Promise(() => undefined));
+
+        const promise = internalService.getJsonWithTimeout(
+          'https://fed.example/get',
+          {},
+          5000,
+          parentController.signal,
+        );
+
+        parentController.abort(new Error('User cancelled GET'));
+
+        await expect(promise).rejects.toThrow('User cancelled GET');
+        await promise.catch((err: unknown) => {
+          expect(err).not.toBeInstanceOf(RequestTimeoutError);
+        });
+      });
+    });
+
+    describe('regression and error handling', () => {
+      it('successfully completes fetchWithTimeout on valid response', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ success: true }),
+          headers: new Headers(),
+        });
+
+        const res = await internalService.fetchWithTimeout('https://fed.example/success', 5000);
+        expect(res.ok).toBe(true);
+        expect(res.status).toBe(200);
+      });
+
+      it('preserves request init options in fetchWithTimeout', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+        });
+
+        await internalService.fetchWithTimeout('https://fed.example/options', 5000);
+
+        expect(global.fetch).toHaveBeenCalledWith(
+          'https://fed.example/options',
+          expect.objectContaining({
+            headers: { Accept: '*/*' },
+            redirect: 'manual',
+            signal: expect.any(AbortSignal),
+          }),
+        );
+      });
+
+      it('enforces SSRF protection before issuing fetch', async () => {
+        await expect(
+          internalService.fetchWithTimeout('https://127.0.0.1/ssrf', 5000),
+        ).rejects.toThrow();
+      });
+
+      it('rejects unsupported protocols before issuing fetch', async () => {
+        await expect(
+          internalService.fetchWithTimeout('ftp://fed.example/test', 5000),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('follows redirects while passing the combined signal', async () => {
+        const redirectResponse = {
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: 'https://fed.example/final' }),
+        };
+        const finalResponse = {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+        };
+
+        global.fetch = jest
+          .fn()
+          .mockResolvedValueOnce(redirectResponse)
+          .mockResolvedValueOnce(finalResponse);
+
+        const redirectChain: string[] = [];
+        const res = await internalService.fetchWithTimeout(
+          'https://fed.example/start',
+          5000,
+          undefined,
+          redirectChain,
+        );
+
+        expect(res.ok).toBe(true);
+        expect(redirectChain).toEqual(['https://fed.example/start', 'https://fed.example/final']);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+      });
     });
   });
 });

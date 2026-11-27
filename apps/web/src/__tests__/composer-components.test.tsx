@@ -21,7 +21,7 @@ jest.mock('@hello-pangea/dnd', () => ({
         dragHandleProps: {},
         innerRef: null,
       },
-      { isDragging: false }
+      { isDragging: false },
     ),
 }));
 
@@ -81,7 +81,14 @@ describe('Composer Subcomponents (Issue #600)', () => {
 
     it('renders error state and retry button on failure', () => {
       const onRetry = jest.fn();
-      render(<SimulateResult result={null} loading={false} error="Transaction rejected by Horizon" onRetry={onRetry} />);
+      render(
+        <SimulateResult
+          result={null}
+          loading={false}
+          error="Transaction rejected by Horizon"
+          onRetry={onRetry}
+        />,
+      );
 
       expect(screen.getByText('Simulation failed')).toBeInTheDocument();
       expect(screen.getAllByText('Transaction rejected by Horizon')[0]).toBeInTheDocument();
@@ -97,6 +104,8 @@ describe('Composer Subcomponents (Issue #600)', () => {
         fee: '100',
         hash: '0123456789abcdef',
         operationResults: ['op_success'],
+        resultCodes: null,
+        ledger: null,
       };
 
       render(<SimulateResult result={res} loading={false} error={null} />);
@@ -109,8 +118,18 @@ describe('Composer Subcomponents (Issue #600)', () => {
 
   describe('OperationPalette', () => {
     const mockOps: OperationManifestEntry[] = [
-      { type: 'payment', label: 'Payment', description: 'Send assets to another account' },
-      { type: 'create_account', label: 'Create Account', description: 'Create and fund a new account' },
+      {
+        type: 'payment',
+        label: 'Payment',
+        description: 'Send assets to another account',
+        fields: [],
+      },
+      {
+        type: 'create_account',
+        label: 'Create Account',
+        description: 'Create and fund a new account',
+        fields: [],
+      },
     ];
 
     it('renders available operations and handles selection', () => {
@@ -137,7 +156,7 @@ describe('Composer Subcomponents (Issue #600)', () => {
           onSelect={jest.fn()}
           onRemove={jest.fn()}
           onReorder={jest.fn()}
-        />
+        />,
       );
       expect(screen.getByText('Transaction is empty')).toBeInTheDocument();
     });
@@ -157,7 +176,7 @@ describe('Composer Subcomponents (Issue #600)', () => {
           onSelect={onSelect}
           onRemove={onRemove}
           onReorder={jest.fn()}
-        />
+        />,
       );
 
       expect(screen.getByText('payment')).toBeInTheDocument();
@@ -193,7 +212,9 @@ describe('Composer Subcomponents (Issue #600)', () => {
       const buildBtn = screen.getByRole('button', { name: /^Build Fee Bump$/i });
       fireEvent.click(buildBtn);
 
-      expect(screen.getByText(/Inner XDR, fee source, and base fee are all required/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Inner XDR, fee source, and base fee are all required/i),
+      ).toBeInTheDocument();
       expect(onResult).not.toHaveBeenCalled();
     });
 
@@ -201,11 +222,13 @@ describe('Composer Subcomponents (Issue #600)', () => {
       const onResult = jest.fn();
       const mockResult: composerApi.FeeBumpResult = {
         xdr: 'AAAAAFEEBUMP==',
+        type: 'fee_bump',
+        network: 'testnet',
         feeSource: 'GBFEE',
         baseFee: '5000',
         innerHash: 'innertxhash1234567890',
         hash: 'outertxhash1234567890',
-        fee: 5000,
+        fee: '5000',
         operationCount: 1,
       };
       (composerApi.buildFeeBump as jest.Mock).mockResolvedValue(mockResult);
@@ -244,7 +267,7 @@ describe('Composer Subcomponents (Issue #600)', () => {
             submitting={false}
             submitResult={null}
           />
-        </NetworkProvider>
+        </NetworkProvider>,
       );
 
       expect(screen.getByText('3')).toBeInTheDocument();
@@ -264,18 +287,26 @@ describe('Composer Subcomponents (Issue #600)', () => {
     it('validates none, time_bounds, and ledger_bounds correctly', () => {
       expect(validatePreconditions('none', {})).toBeNull();
 
-      expect(validatePreconditions('time_bounds', { minTime: '', maxTime: '' })).toBe('minTime is required');
-      expect(validatePreconditions('time_bounds', { minTime: '100', maxTime: '' })).toBe('maxTime is required');
+      expect(validatePreconditions('time_bounds', { minTime: '', maxTime: '' })).toBe(
+        'minTime is required',
+      );
+      expect(validatePreconditions('time_bounds', { minTime: '100', maxTime: '' })).toBe(
+        'maxTime is required',
+      );
       expect(validatePreconditions('time_bounds', { minTime: '200', maxTime: '100' })).toBe(
-        'minTime must be less than or equal to maxTime'
+        'minTime must be less than or equal to maxTime',
       );
       expect(validatePreconditions('time_bounds', { minTime: '100', maxTime: '200' })).toBeNull();
 
-      expect(validatePreconditions('ledger_bounds', { minLedger: '', maxLedger: '' })).toBe('minLedger is required');
-      expect(validatePreconditions('ledger_bounds', { minLedger: '500', maxLedger: '200' })).toBe(
-        'minLedger must be less than or equal to maxLedger'
+      expect(validatePreconditions('ledger_bounds', { minLedger: '', maxLedger: '' })).toBe(
+        'minLedger is required',
       );
-      expect(validatePreconditions('ledger_bounds', { minLedger: '200', maxLedger: '500' })).toBeNull();
+      expect(validatePreconditions('ledger_bounds', { minLedger: '500', maxLedger: '200' })).toBe(
+        'minLedger must be less than or equal to maxLedger',
+      );
+      expect(
+        validatePreconditions('ledger_bounds', { minLedger: '200', maxLedger: '500' }),
+      ).toBeNull();
     });
   });
 });

@@ -14,7 +14,7 @@ Object.defineProperty(window, 'location', {
   writable: true,
 });
 
-function ThrowingComponent({ error }: { error: Error }) {
+function ThrowingComponent({ error }: { error: Error }): never {
   throw error;
 }
 
@@ -122,8 +122,9 @@ describe('ErrorBoundary', () => {
   });
 
   it('shows stack trace in development mode', () => {
-    const originalEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'development';
+    const env = process.env as Record<string, string | undefined>;
+    const originalEnv = env.NODE_ENV;
+    env.NODE_ENV = 'development';
 
     const testError = new Error('Stack trace test');
     testError.stack = 'Error: Stack trace test\n  at TestComponent\n  at ErrorBoundary';
@@ -137,7 +138,7 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText(/Developer stack trace/i)).toBeInTheDocument();
     expect(screen.getByText(/at TestComponent/i)).toBeInTheDocument();
 
-    process.env.NODE_ENV = originalEnv;
+    env.NODE_ENV = originalEnv;
   });
 
   it('applies custom className to error container', () => {
@@ -166,8 +167,8 @@ describe('ErrorBoundary', () => {
     expect(consoleError).toHaveBeenCalled();
     // Check that console.error was called with something that includes TestTool
     const calls = consoleError.mock.calls;
-    const hasTestTool = calls.some(call => 
-      call.some(arg => typeof arg === 'string' && arg.includes('TestTool'))
+    const hasTestTool = calls.some((call) =>
+      call.some((arg) => typeof arg === 'string' && arg.includes('TestTool')),
     );
     expect(hasTestTool).toBe(true);
   });
@@ -194,7 +195,7 @@ describe('ErrorBoundary', () => {
 
     // Simulate recovery - component no longer throws
     shouldThrow = false;
-    
+
     const retryButton = screen.getByRole('button', { name: /Retry/i });
     await user.click(retryButton);
 

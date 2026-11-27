@@ -1,30 +1,21 @@
-import { NestFactory } from "@nestjs/core";
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from "@nestjs/platform-fastify";
-import {
-  Logger,
-  RequestMethod,
-  ValidationPipe,
-  VersioningType,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import cookie from "@fastify/cookie";
-import helmet from "@fastify/helmet";
-import multipart from "@fastify/multipart";
-import { AppModule } from "./app.module";
-import { enableGracefulShutdown } from "./config/graceful-shutdown";
-import { parseTrustProxy } from "./config/trust-proxy";
-import { parseWebOrigins } from "./config/web-origins";
-import { VALIDATION_PIPE_OPTIONS } from "./config/validation-pipe.config";
-import { WebSocketCorsAdapter } from "./config/websocket-cors.adapter";
-import { REQUEST_ID_HEADER } from "./common/interceptors/request-id.interceptor";
+import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Logger, RequestMethod, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
+import { AppModule } from './app.module';
+import { enableGracefulShutdown } from './config/graceful-shutdown';
+import { parseTrustProxy } from './config/trust-proxy';
+import { parseWebOrigins } from './config/web-origins';
+import { VALIDATION_PIPE_OPTIONS } from './config/validation-pipe.config';
+import { WebSocketCorsAdapter } from './config/websocket-cors.adapter';
+import { REQUEST_ID_HEADER } from './common/interceptors/request-id.interceptor';
 
 /** Strict CSP for JSON/API responses. */
-const STRICT_CSP =
-  "default-src 'self';frame-ancestors 'none';object-src 'none';base-uri 'self'";
+const STRICT_CSP = "default-src 'self';frame-ancestors 'none';object-src 'none';base-uri 'self'";
 
 /** Relaxed CSP required by Swagger UI (non-production `/api/docs` only). */
 const SWAGGER_CSP =
@@ -39,10 +30,7 @@ const SWAGGER_CSP =
  * any directive tightening under consideration can be validated against real
  * traffic without immediately breaking clients.
  */
-function buildReportOnlyCsp(
-  reportOnlyEnv: string | undefined,
-  reportUri: string,
-): string | null {
+function buildReportOnlyCsp(reportOnlyEnv: string | undefined, reportUri: string): string | null {
   if (reportOnlyEnv === 'false' || !reportOnlyEnv) return null;
   return `${STRICT_CSP};report-to csp-endpoint;report-uri ${reportUri}`;
 }
@@ -59,7 +47,8 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
   const maxWasmFileSize = Number(config.get<string>('MAX_WASM_FILE_SIZE') ?? '5242880');
-  const resolvedMaxWasmFileSize = Number.isFinite(maxWasmFileSize) && maxWasmFileSize > 0 ? maxWasmFileSize : 5 * 1024 * 1024;
+  const resolvedMaxWasmFileSize =
+    Number.isFinite(maxWasmFileSize) && maxWasmFileSize > 0 ? maxWasmFileSize : 5 * 1024 * 1024;
 
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: resolvedMaxWasmFileSize } });
@@ -76,9 +65,7 @@ async function bootstrap() {
   // relax it only for Swagger UI in non-production.
   await app.register(helmet, {
     contentSecurityPolicy: false,
-    hsts: isProduction
-      ? { maxAge: 63_072_000, includeSubDomains: true, preload: true }
-      : false,
+    hsts: isProduction ? { maxAge: 63_072_000, includeSubDomains: true, preload: true } : false,
   });
 
   const docsPath = `/${prefix}/docs`;
@@ -90,42 +77,33 @@ async function bootstrap() {
   // CSP_REPORT_ONLY is enabled); in other environments we fall back to
   // constructing a localhost URL so local testing still works.
   const reportOnlyEnv = config.get<string>('CSP_REPORT_ONLY');
-  const apiPublicUrl = config.get<string>(
-    'API_PUBLIC_URL',
-    `http://localhost:${port}`,
-  ).replace(/\/$/, '');
+  const apiPublicUrl = config
+    .get<string>('API_PUBLIC_URL', `http://localhost:${port}`)
+    .replace(/\/$/, '');
   const reportUri = `${apiPublicUrl}/${prefix}/v1/csp-report`;
   const reportOnlyCsp = buildReportOnlyCsp(reportOnlyEnv, reportUri);
 
   // Reporting-Endpoints group name referenced by the `report-to` CSP directive.
   const reportingEndpointsHeader = `csp-endpoint="${reportUri}"`;
 
-  fastifyForHeaders.addHook(
-    'onSend',
-    async (request: any, reply: any, payload: unknown) => {
-      const path = String(request.url ?? '').split('?')[0];
-      const isDocs =
-        !isProduction &&
-        (path === docsPath || path.startsWith(`${docsPath}/`));
-      if (!reply.getHeader('content-security-policy')) {
-        reply.header(
-          'Content-Security-Policy',
-          isDocs ? SWAGGER_CSP : STRICT_CSP,
-        );
-      }
-      if (reportOnlyCsp && !reply.getHeader('content-security-policy-report-only')) {
-        reply.header('Content-Security-Policy-Report-Only', reportOnlyCsp);
-        reply.header('Reporting-Endpoints', reportingEndpointsHeader);
-      }
-      return payload;
-    },
-  );
+  fastifyForHeaders.addHook('onSend', async (request: any, reply: any, payload: unknown) => {
+    const path = String(request.url ?? '').split('?')[0];
+    const isDocs = !isProduction && (path === docsPath || path.startsWith(`${docsPath}/`));
+    if (!reply.getHeader('content-security-policy')) {
+      reply.header('Content-Security-Policy', isDocs ? SWAGGER_CSP : STRICT_CSP);
+    }
+    if (reportOnlyCsp && !reply.getHeader('content-security-policy-report-only')) {
+      reply.header('Content-Security-Policy-Report-Only', reportOnlyCsp);
+      reply.header('Reporting-Endpoints', reportingEndpointsHeader);
+    }
+    return payload;
+  });
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   app.setGlobalPrefix(prefix, {
-    exclude: [{ path: "metrics", method: RequestMethod.GET }],
+    exclude: [{ path: 'metrics', method: RequestMethod.GET }],
   });
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.enableCors({
     origin: webOrigins,
     credentials: true,
@@ -149,10 +127,7 @@ async function bootstrap() {
         (request.query && request.query.query) ||
         null;
 
-      if (
-        typeof rawQuery === 'string' &&
-        /\b___schema|__type\b/i.test(rawQuery)
-      ) {
+      if (typeof rawQuery === 'string' && /\b___schema|__type\b/i.test(rawQuery)) {
         await reply.code(400).send({
           errors: [{ message: 'GraphQL introspection is not allowed in production.' }],
         });
@@ -165,9 +140,9 @@ async function bootstrap() {
   // Only enable Swagger in development and staging environments
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
-      .setTitle("SaviTools API")
-      .setDescription("Developer infrastructure for the Stellar ecosystem")
-      .setVersion("1.0")
+      .setTitle('SaviTools API')
+      .setDescription('Developer infrastructure for the Stellar ecosystem')
+      .setVersion('1.0')
       .addBearerAuth()
       .build();
 
@@ -181,8 +156,8 @@ async function bootstrap() {
   // whole lifetime of the process.
   enableGracefulShutdown(app);
 
-  await app.listen(port, "0.0.0.0");
-  const logger = new Logger("Bootstrap");
+  await app.listen(port, '0.0.0.0');
+  const logger = new Logger('Bootstrap');
   logger.log(`SaviTools API running on http://localhost:${port}/${prefix}`);
   if (nodeEnv !== 'production') {
     logger.log(`Swagger docs at http://localhost:${port}/${prefix}/docs`);
@@ -190,10 +165,8 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  new Logger("Bootstrap").error(
-    `Savitools API failed to start: ${
-      error instanceof Error ? error.message : String(error)
-    }`,
+  new Logger('Bootstrap').error(
+    `Savitools API failed to start: ${error instanceof Error ? error.message : String(error)}`,
     error instanceof Error ? error.stack : undefined,
   );
   process.exit(1);

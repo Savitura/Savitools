@@ -33,7 +33,9 @@ describe('Contracts and Contract Events Tools (Issue #603)', () => {
       render(<ContractsTool />);
 
       const argsInput = screen.getByPlaceholderText(/\["GAIH3YPF3Y6\.\.\.", 1234567890\]/);
-      const fakeWasm = new File(['wasm-binary-content'], 'test_contract.wasm', { type: 'application/wasm' });
+      const fakeWasm = new File(['wasm-binary-content'], 'test_contract.wasm', {
+        type: 'application/wasm',
+      });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
 
       fireEvent.change(fileInput, { target: { files: [fakeWasm] } });
@@ -71,7 +73,7 @@ describe('Contracts and Contract Events Tools (Issue #603)', () => {
       });
 
       const [beforeTextarea, afterTextarea] = screen.getAllByPlaceholderText(
-        /\{"methods":\[\.\.\.\],"events":\[\.\.\.\]\}/i
+        /\{"methods":\[\.\.\.\],"events":\[\.\.\.\]\}/i,
       );
 
       fireEvent.change(beforeTextarea, { target: { value: beforeAbi } });
@@ -135,7 +137,7 @@ describe('Contracts and Contract Events Tools (Issue #603)', () => {
           expect.objectContaining({
             contractId: 'CAAAA1111222233334444555566667777888899990000AAAABBBBCCCCDDDD',
             network: 'testnet',
-          })
+          }),
         );
       });
 
@@ -206,7 +208,9 @@ describe('Contracts and Contract Events Tools (Issue #603)', () => {
     });
 
     it('displays error state when event query fails', async () => {
-      (api.getContractEvents as jest.Mock).mockRejectedValue(new Error('RPC node connection failed'));
+      (api.getContractEvents as jest.Mock).mockRejectedValue(
+        new Error('RPC node connection failed'),
+      );
 
       render(<ContractEventsTool />);
 

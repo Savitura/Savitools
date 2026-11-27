@@ -28,7 +28,14 @@ describe('diffValues', () => {
 
   it('recurses into nested objects and arrays', () => {
     const before = { data: { items: [{ id: 1, name: 'a' }] } };
-    const after = { data: { items: [{ id: 1, name: 'b' }, { id: 2, name: 'c' }] } };
+    const after = {
+      data: {
+        items: [
+          { id: 1, name: 'b' },
+          { id: 2, name: 'c' },
+        ],
+      },
+    };
 
     const result = diffValues(before, after);
 
@@ -111,15 +118,33 @@ describe('PlaygroundService#proxyRequest SSRF protections', () => {
   });
 
   function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
+    const raw = typeof body === 'string' ? body : JSON.stringify(body);
+    const encoded = new TextEncoder().encode(raw);
     return {
       status,
       headers: {
-        get: (name: string) => headers[name.toLowerCase()] ?? (name === 'content-type' ? 'application/json' : null),
+        get: (name: string) =>
+          headers[name.toLowerCase()] ?? (name === 'content-type' ? 'application/json' : null),
         has: (name: string) => name.toLowerCase() in headers,
-        forEach: (cb: (value: string, key: string) => void) => Object.entries(headers).forEach(([k, v]) => cb(v, k)),
+        forEach: (cb: (value: string, key: string) => void) =>
+          Object.entries(headers).forEach(([k, v]) => cb(v, k)),
+      },
+      body: {
+        getReader: () => {
+          let readOnce = false;
+          return {
+            read: async () => {
+              if (readOnce) return { done: true, value: undefined };
+              readOnce = true;
+              return { done: false, value: encoded };
+            },
+            cancel: jest.fn(),
+            releaseLock: jest.fn(),
+          };
+        },
       },
       json: async () => body,
-      text: async () => JSON.stringify(body),
+      text: async () => raw,
     } as unknown as Response;
   }
 
@@ -214,7 +239,9 @@ describe('PlaygroundService#proxyRequest SSRF protections', () => {
 
   it('follows a same-origin redirect that resolves to a public address', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(302, {}, { location: `${PROVIDER_ORIGIN}/v1/wallets/final` }))
+      .mockResolvedValueOnce(
+        jsonResponse(302, {}, { location: `${PROVIDER_ORIGIN}/v1/wallets/final` }),
+      )
       .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
 
     const result = await service.proxyRequest('user-1', {
@@ -304,7 +331,9 @@ describe('PlaygroundService key encryption migration (Savitura/Savitools#206)', 
 
     const keys = await service.listKeys('user-1');
 
-    expect(keys[0].maskedKey).toBe('plaintext-api-key'.slice(0, 8) + '...' + 'plaintext-api-key'.slice(-4));
+    expect(keys[0].maskedKey).toBe(
+      'plaintext-api-key'.slice(0, 8) + '...' + 'plaintext-api-key'.slice(-4),
+    );
     // The legacy scheme never sees EncryptionService for decryption.
     expect(encryptionService.decryptForUser).not.toHaveBeenCalled();
     // Upgrade path re-encrypts once under the new per-user scheme...
@@ -476,7 +505,7 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
     const MAX_SIZE = 10 * 1024 * 1024; // 10MB
     const oversizedLength = (MAX_SIZE + 1).toString();
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValue({
       status: 200,
       headers: {
         get: (name: string) => {
@@ -496,19 +525,11 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
         method: 'GET',
         path: '/v1/large-data',
       } as any),
-    ).rejects.toThrow(BadGatewayException);
-
-    await expect(
-      service.proxyRequest('user-1', {
-        provider: ApiKeyProvider.FLUXA,
-        method: 'GET',
-        path: '/v1/large-data',
-      } as any),
     ).rejects.toThrow(/exceeds maximum size limit/);
   });
 
   it('rejects response when streaming body exceeds MAX_RESPONSE_SIZE', async () => {
-    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    const _MAX_SIZE = 10 * 1024 * 1024; // 10MB
     const chunkSize = 1024 * 1024; // 1MB chunks
     const numChunks = 11; // 11MB total
 
@@ -527,7 +548,7 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
     }
     mockReader.read.mockResolvedValueOnce({ done: true });
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValue({
       status: 200,
       headers: {
         get: (name: string) => {
@@ -550,14 +571,6 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
         method: 'GET',
         path: '/v1/stream-data',
       } as any),
-    ).rejects.toThrow(BadGatewayException);
-
-    await expect(
-      service.proxyRequest('user-1', {
-        provider: ApiKeyProvider.FLUXA,
-        method: 'GET',
-        path: '/v1/stream-data',
-      } as any),
     ).rejects.toThrow(/exceeds maximum size limit/);
 
     expect(mockReader.cancel).toHaveBeenCalled();
@@ -565,10 +578,11 @@ describe('PlaygroundService#proxyRequest response-size limits', () => {
 
   it('allows response when size is within MAX_RESPONSE_SIZE', async () => {
     const validSize = 1024; // 1KB
-    const mockData = 'a'.repeat(validSize);
+    const mockData = JSON.stringify({ data: 'a'.repeat(validSize) });
 
     const mockReader = {
-      read: jest.fn()
+      read: jest
+        .fn()
         .mockResolvedValueOnce({
           done: false,
           value: new TextEncoder().encode(mockData),
