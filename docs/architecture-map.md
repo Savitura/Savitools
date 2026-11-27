@@ -225,6 +225,33 @@ When an upstream Horizon node or proxy repeats an already-visited cursor
   the request `requestId` without leaking upstream endpoint internals in public
   HTTP error bodies.
 
+### 4.8 Structured Logging for Tool Execution Failures (`tool-execution-logger.ts`)
+
+`logToolExecutionFailure` (`apps/web/src/lib/tool-execution-logger.ts`) establishes
+a standard, observable telemetry envelope for all tool execution and rendering
+failures across `@savitools/web` and `ErrorBoundary` (`components/tools/error-boundary.tsx`):
+
+- **Structured Log Schema**: Emits normalized JSON events with:
+  - `level`: `'error'`
+  - `event`: `'tool_execution_failed'`
+  - `toolName`: Sanitized tool identifier (e.g. `'Composer'`, `'Inspector'`, `'Sandbox'`)
+  - `action`: Specific execution phase or user action (e.g. `'render'`, `'simulate_transaction'`, `'generate_keypair'`)
+  - `error`: Normalized error record `{ name, message, stack?, code?, statusCode? }`
+  - `componentStack`: React component stack trace (when caught in rendering boundaries)
+  - `context`: Redacted contextual metadata and inputs
+  - `timestamp`: ISO-8601 UTC timestamp
+  - `environment`: `NODE_ENV` (`'development'`, `'production'`, `'test'`)
+  - `url`: Sanitized pathname without credentials or query strings
+- **Privacy & Security Redaction**:
+  - Automatically scrubs Stellar secret seeds (`S[A-Z2-7]{55}`), JWTs (`eyJ...`),
+    and Bearer authentication tokens from messages, stacks, and nested context objects.
+  - Recursively censors sensitive context dictionary keys matching `/secret|private|key|token|password|auth|credential|signature|seed|cookie/i`.
+  - Enforces length clamping (`MAX_STRING_LENGTH = 2048`) and context recursion limits (`MAX_CONTEXT_DEPTH = 3`, cycle detection) to prevent log bloat and denial of service.
+- **Operational Integration & Extensibility**:
+  - `ErrorBoundary` automatically logs structured diagnostics on render crashes while preserving user-facing accessible error UI (`role="alert"`, `aria-live="assertive"`) and existing console tag compatibility.
+  - Supports `addToolExecutionFailureListener` for non-invasive subscriber integration with external telemetry aggregators and testing assertions.
+  - Provides `executeToolAction<T>(toolName, action, fn, context)` for transparently logging asynchronous operational failures while re-throwing the original error.
+
 ---
 
 ## 5. Security & Operational Boundaries

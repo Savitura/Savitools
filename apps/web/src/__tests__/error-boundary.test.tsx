@@ -173,6 +173,32 @@ describe('ErrorBoundary', () => {
     expect(hasTestTool).toBe(true);
   });
 
+  it('triggers structured logging and optional onError callback when a tool execution fails', () => {
+    const onError = jest.fn();
+    const testError = new Error('Component crashed during execution');
+
+    render(
+      <ErrorBoundary toolName="Composer" onError={onError}>
+        <ThrowingComponent error={testError} />
+      </ErrorBoundary>,
+    );
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    const [rawError, structuredLog] = onError.mock.calls[0];
+    expect(rawError).toBe(testError);
+    expect(structuredLog).toMatchObject({
+      level: 'error',
+      event: 'tool_execution_failed',
+      toolName: 'Composer',
+      action: 'render',
+      error: {
+        name: 'Error',
+        message: 'Component crashed during execution',
+      },
+    });
+    expect(structuredLog.timestamp).toBeDefined();
+  });
+
   it('recovers and renders children after error state is reset', async () => {
     const testError = new Error('Recovery test');
     const user = userEvent.setup();

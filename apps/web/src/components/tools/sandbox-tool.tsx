@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keypair } from '@stellar/stellar-sdk';
 import { addRecentItem } from '@/lib/recent-items';
+import { logToolExecutionFailure } from '@/lib/tool-execution-logger';
 import { useCommandPalette, ShortcutBadge } from '@/components/command-palette';
 import {
   Plus,
@@ -154,6 +155,11 @@ export function SandboxTool() {
         href: '/sandbox',
       });
     } catch (err) {
+      logToolExecutionFailure({
+        toolName: 'Sandbox',
+        action: 'generate_keypair',
+        error: err,
+      });
       console.error('Failed to generate keypair:', err);
     } finally {
       setGenerating(false);

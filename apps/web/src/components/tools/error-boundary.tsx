@@ -3,6 +3,12 @@
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import {
+  logToolExecutionFailure,
+  type ToolExecutionFailureLog,
+} from '@/lib/tool-execution-logger';
+
+export type { ToolExecutionFailureLog };
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -10,6 +16,8 @@ interface ErrorBoundaryProps {
   onReset?: () => void;
   toolName?: string;
   className?: string;
+  /** Optional callback receiving the raw Error and structured failure log payload. */
+  onError?: (error: Error, log: ToolExecutionFailureLog) => void;
 }
 
 interface ErrorBoundaryState {
@@ -28,7 +36,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    const structuredLog = logToolExecutionFailure({
+      toolName: this.props.toolName ?? 'UnknownTool',
+      action: 'render',
+      error,
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
     console.error(`[ErrorBoundary${this.props.toolName ? `:${this.props.toolName}` : ''}]`, error, errorInfo);
+    this.props.onError?.(error, structuredLog);
   }
 
   private handleReset = () => {
