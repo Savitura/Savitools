@@ -62,7 +62,7 @@ function loadSavedCounterparties(): SavedCounterparty[] {
   );
 }
 
-function detectInputType(value: string): InputType | null {
+export function detectInputType(value: string): InputType | null {
   const v = value.trim();
   if (/^G[A-Z2-7]{55}$/.test(v)) return 'publicKey';
   if (/^[^\s*]+[*][^\s*]+\.[^\s*]+$/.test(v)) return 'federation';
@@ -75,7 +75,7 @@ function detectInputType(value: string): InputType | null {
   return null;
 }
 
-function stripProtocol(domain: string): string {
+export function stripProtocol(domain: string): string {
   return domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 }
 
@@ -89,7 +89,7 @@ function useCopy() {
   return { copied, copy };
 }
 
-function DiagnosticsPanel({
+export function DiagnosticsPanel({
   domain,
   copied,
   copy,
@@ -228,7 +228,7 @@ function CollapsiblePanel({
   );
 }
 
-function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' | 'timeout' }) {
+export function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' | 'timeout' }) {
   if (status === 'green')
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-green-400 bg-green-400/10 rounded px-1.5 py-0.5">
@@ -254,7 +254,7 @@ function SepBadge({ status }: { status: 'green' | 'yellow' | 'red' | 'none' | 't
   );
 }
 
-function FederationPanel({
+export function FederationPanel({
   data,
   copied,
   copy,
@@ -297,7 +297,7 @@ function FederationPanel({
   );
 }
 
-function TomlPanel({
+export function TomlPanel({
   data,
   copied,
   copy,
