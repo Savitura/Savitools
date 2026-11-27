@@ -36,6 +36,39 @@ function inIpv4Range(ip: string, cidr: string): boolean {
   return (ipv4ToInt(ip) & mask) === (ipv4ToInt(range) & mask);
 }
 
+function embeddedIpv4(ip: string): string | undefined {
+  let normalized = ip.toLowerCase();
+  const dotted = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    if (isIP(dotted[1]) !== 4) return undefined;
+    const octets = dotted[1].split('.').map(Number);
+    normalized = `${normalized.slice(0, -dotted[1].length)}${(
+      (octets[0] << 8) |
+      octets[1]
+    ).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
+  }
+
+  const halves = normalized.split('::');
+  if (halves.length > 2) return undefined;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) return undefined;
+  const groups = [...left, ...new Array(missing).fill('0'), ...right];
+  if (groups.length !== 8) return undefined;
+
+  const isZero = (group: string) => Number.parseInt(group, 16) === 0;
+  if (
+    groups.slice(0, 5).every(isZero) &&
+    (groups[5] === 'ffff' || isZero(groups[5]))
+  ) {
+    const high = Number.parseInt(groups[6], 16);
+    const low = Number.parseInt(groups[7], 16);
+    return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+  }
+  return undefined;
+}
+
 /** Every IPv4 range this guard refuses to call out to. */
 export const FORBIDDEN_IPV4_RANGES = [
   '0.0.0.0/8',
@@ -74,12 +107,9 @@ export function isForbiddenIp(ip: string): boolean {
     }
     if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // unique local fc00::/7
 
-    // IPv4-mapped / IPv4-compatible IPv6 addresses ("::ffff:10.0.0.1") — check
-    // the embedded IPv4 address too.
-    const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) {
-      return isForbiddenIp(mapped[1]);
-    }
+    // IPv4-mapped and compatible IPv6 forms can encode internal IPv4 targets.
+    const embedded = embeddedIpv4(normalized);
+    if (embedded) return isForbiddenIp(embedded);
 
     return false;
   }
@@ -129,6 +159,63 @@ async function assertHttpDestination(url: URL): Promise<void> {
  */
 export async function assertSafeWebhookDestination(url: URL): Promise<void> {
   await assertHttpDestination(url);
+}
+
+/**
+ * Fetches an HTTP destination without allowing fetch to follow redirects
+ * implicitly. Every redirect target is revalidated before the next request.
+ */
+export async function fetchWithSafeRedirects(
+  rawUrl: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  let currentUrl: URL;
+  try {
+    currentUrl = new URL(rawUrl);
+  } catch {
+    throw new BadRequestException('Invalid destination URL');
+  }
+
+  let currentInit: RequestInit = {
+    ...init,
+    headers: new Headers(init.headers),
+    redirect: 'manual',
+  };
+
+  for (let redirects = 0; ; redirects += 1) {
+    await assertSafeWebhookDestination(currentUrl);
+    const response = await fetch(currentUrl.toString(), currentInit);
+    const location = response.headers.get('location');
+    if (![301, 302, 303, 307, 308].includes(response.status) || !location) {
+      return response;
+    }
+    if (redirects >= MAX_SAFE_REDIRECTS) {
+      throw new BadRequestException('Too many redirects while contacting destination');
+    }
+
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, currentUrl);
+    } catch {
+      throw new BadRequestException('Destination returned an invalid redirect URL');
+    }
+    const headers = new Headers(currentInit.headers);
+    if (nextUrl.origin !== currentUrl.origin) {
+      headers.delete('authorization');
+      headers.delete('proxy-authorization');
+    }
+    if (
+      currentInit.method?.toUpperCase() === 'POST' &&
+      [301, 302, 303].includes(response.status)
+    ) {
+      headers.delete('content-type');
+      headers.delete('content-length');
+      currentInit = { ...currentInit, method: 'GET', body: undefined, headers };
+    } else {
+      currentInit = { ...currentInit, headers };
+    }
+    currentUrl = nextUrl;
+  }
 }
 
 /**

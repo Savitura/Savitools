@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import * as nodeDns from 'dns/promises';
 import { Sep10DebuggerService } from './sep10-debugger.service';
 import {
   Keypair,
@@ -38,6 +39,10 @@ describe('Sep10DebuggerService', () => {
   let clientKeypair: Keypair;
 
   beforeEach(async () => {
+    jest.spyOn(nodeDns, 'lookup').mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+    ] as any);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [Sep10DebuggerService],
     }).compile();
@@ -47,6 +52,10 @@ describe('Sep10DebuggerService', () => {
     clientKeypair = Keypair.random();
 
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('fetchChallenge', () => {
@@ -79,6 +88,56 @@ describe('Sep10DebuggerService', () => {
       expect(result.challenge.operations[0].type).toBe('manageData');
       expect(result.httpDiagnostics).toBeDefined();
       expect(result.validationChecks).toBeDefined();
+    });
+
+    it('rejects a link-local anchor without making an outbound request', async () => {
+      await expect(
+        service.fetchChallenge({
+          domain: 'http://169.254.169.254',
+          account: clientKeypair.publicKey(),
+          network: 'testnet',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it('rejects a private web-auth endpoint advertised by stellar.toml', async () => {
+      mockedAxios.get.mockResolvedValueOnce({
+        status: 200,
+        statusText: 'OK',
+        data: 'WEB_AUTH_ENDPOINT="http://127.0.0.1/auth"',
+        headers: {},
+      });
+
+      await expect(
+        service.fetchChallenge({
+          domain: 'https://anchor.example.com',
+          account: clientKeypair.publicKey(),
+          network: 'testnet',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not follow a redirect to a link-local address', async () => {
+      mockedAxios.get.mockResolvedValueOnce({
+        status: 302,
+        statusText: 'Found',
+        data: '',
+        headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+      });
+
+      await expect(
+        service.fetchChallenge({
+          domain: 'https://anchor.example.com',
+          account: clientKeypair.publicKey(),
+          network: 'testnet',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
     });
 
     it('should handle missing WEB_AUTH_ENDPOINT in stellar.toml', async () => {

@@ -1,11 +1,12 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Transaction, Keypair, Networks, Operation, StrKey } from '@stellar/stellar-sdk';
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ChallengeRequestDto } from './dto/challenge-request.dto';
 import { ValidateChallengeDto } from './dto/validate-challenge.dto';
 import { SignChallengeDto } from './dto/sign-challenge.dto';
 import { TokenExchangeDto } from './dto/token-exchange.dto';
 import { redactHeaders } from '../../common/redaction';
+import { assertSafeExternalUrl, MAX_SAFE_REDIRECTS } from '../../common/ssrf-guard';
 
 export interface ValidationCheck {
   name: string;
@@ -63,6 +64,50 @@ export interface HttpDiagnostics {
 export class Sep10DebuggerService {
   private readonly logger = new Logger(Sep10DebuggerService.name);
 
+  private async requestWithSafeRedirects<T>(
+    method: 'GET' | 'POST',
+    rawUrl: string,
+    body: unknown,
+    config: AxiosRequestConfig,
+  ): Promise<AxiosResponse<T>> {
+    let url = rawUrl;
+    let requestMethod = method;
+    let requestBody = body;
+
+    for (let redirects = 0; ; redirects += 1) {
+      await assertSafeExternalUrl(url);
+      const requestConfig: AxiosRequestConfig = {
+        ...config,
+        maxRedirects: 0,
+        validateStatus: (status) => status < 400,
+      };
+      const response =
+        requestMethod === 'GET'
+          ? await axios.get<T>(url, requestConfig)
+          : await axios.post<T>(url, requestBody, requestConfig);
+
+      const location = response.headers.location;
+      if (
+        ![301, 302, 303, 307, 308].includes(response.status) ||
+        typeof location !== 'string'
+      ) {
+        return response;
+      }
+      if (redirects >= MAX_SAFE_REDIRECTS) {
+        throw new BadRequestException('Too many redirects while contacting anchor');
+      }
+
+      url = new URL(location, url).toString();
+      if (
+        requestMethod === 'POST' &&
+        [301, 302, 303].includes(response.status)
+      ) {
+        requestMethod = 'GET';
+        requestBody = undefined;
+      }
+    }
+  }
+
   /**
    * Fetch a challenge from an anchor domain
    */
@@ -79,10 +124,12 @@ export class Sep10DebuggerService {
       const challengeUrl = `${domain}/.well-known/stellar.toml`;
 
       // First, get stellar.toml to find web auth endpoint
-      const tomlResponse = await axios.get(challengeUrl, {
-        timeout: 10000,
-        headers: { Accept: 'text/plain' },
-      });
+      const tomlResponse = await this.requestWithSafeRedirects<string>(
+        'GET',
+        challengeUrl,
+        undefined,
+        { timeout: 10000, headers: { Accept: 'text/plain' } },
+      );
 
       const webAuthEndpoint = this.parseWebAuthEndpoint(tomlResponse.data);
       if (!webAuthEndpoint) {
@@ -97,10 +144,12 @@ export class Sep10DebuggerService {
       const challengeRequestUrl = `${webAuthEndpoint}?${new URLSearchParams(challengeParams).toString()}`;
 
       // Make challenge request
-      const challengeResponse = await axios.get(challengeRequestUrl, {
-        timeout: 10000,
-        headers: { Accept: 'application/json' },
-      });
+      const challengeResponse = await this.requestWithSafeRedirects<{ transaction?: string }>(
+        'GET',
+        challengeRequestUrl,
+        undefined,
+        { timeout: 10000, headers: { Accept: 'application/json' } },
+      );
 
       const httpDiagnostics: HttpDiagnostics = {
         request: {
@@ -237,7 +286,12 @@ export class Sep10DebuggerService {
       const domain = dto.domain.endsWith('/') ? dto.domain.slice(0, -1) : dto.domain;
 
       // Get web auth endpoint from stellar.toml
-      const tomlResponse = await axios.get(`${domain}/.well-known/stellar.toml`);
+      const tomlResponse = await this.requestWithSafeRedirects<string>(
+        'GET',
+        `${domain}/.well-known/stellar.toml`,
+        undefined,
+        {},
+      );
       const webAuthEndpoint = this.parseWebAuthEndpoint(tomlResponse.data);
 
       if (!webAuthEndpoint) {
@@ -245,7 +299,11 @@ export class Sep10DebuggerService {
       }
 
       // Exchange token
-      const tokenResponse = await axios.post(
+      const tokenResponse = await this.requestWithSafeRedirects<{
+        token?: string;
+        [key: string]: unknown;
+      }>(
+        'POST',
         webAuthEndpoint,
         {
           transaction: dto.signedChallengeXdr,

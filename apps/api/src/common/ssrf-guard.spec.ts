@@ -12,6 +12,7 @@ import {
   assertRelativePath,
   assertSafeDestination,
   assertSafeWebhookDestination,
+  fetchWithSafeRedirects,
   isForbiddenIp,
 } from './ssrf-guard';
 
@@ -28,6 +29,9 @@ describe('isForbiddenIp', () => {
     'fe80::1',
     'fc00::1',
     '::ffff:127.0.0.1',
+    '::ffff:7f00:1',
+    '0:0:0:0:0:ffff:c0a8:101',
+    '::ffff:a9fe:a9fe',
   ])('flags private/internal address %s', (ip) => {
     expect(isForbiddenIp(ip)).toBe(true);
   });
@@ -103,6 +107,63 @@ describe('assertSafeWebhookDestination', () => {
     await expect(
       assertSafeWebhookDestination(new URL('https://example.com/hook')),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('fetchWithSafeRedirects', () => {
+  beforeEach(() => {
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('follows a public redirect after validating each destination', async () => {
+    const finalResponse = new Response('ok');
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://next.example.com/resource' },
+        }),
+      )
+      .mockResolvedValueOnce(finalResponse);
+
+    await expect(fetchWithSafeRedirects('https://example.com/resource')).resolves.toBe(
+      finalResponse,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://example.com/resource',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://next.example.com/resource',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('rejects a redirect to a link-local address before fetching it', async () => {
+    lookupMock
+      .mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }])
+      .mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }]);
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://metadata.example/resource' },
+      }),
+    );
+
+    await expect(fetchWithSafeRedirects('https://example.com/resource')).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

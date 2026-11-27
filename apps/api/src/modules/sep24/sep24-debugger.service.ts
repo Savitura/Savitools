@@ -5,14 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodeDns from 'node:dns/promises';
-import * as nodeNet from 'node:net';
 import { randomUUID } from 'node:crypto';
 import {
   Sep24Timeline,
   TimelineEntry,
 } from './sep24-timeline';
 import { StartSessionDto, Sep24Operation } from './dto/start-session.dto';
+import {
+  fetchWithSafeRedirects,
+} from '../../common/ssrf-guard';
 
 export type Sep24TransactionStatus =
   | 'incomplete'
@@ -78,25 +79,6 @@ const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 const ALLOWED_SCHEMES = new Set(['stellar:']);
 
-const PRIVATE_HOST_PATTERNS = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^172\.(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\./,
-  /^192\.168\./,
-  /^169\.254\./,
-  /^fc00:/i,
-  /^fd00:/i,
-  /^0\.0\.0\.0$/,
-  /^0x[0-9a-f]+$/i,
-  /^::1$/,
-  /^\[::1]$/,
-];
-
-function isPrivateIP(ip: string): boolean {
-  return PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(ip));
-}
-
 export function assertSafeExternalUrl(urlString: string): URL {
   let url: URL;
   try {
@@ -112,45 +94,6 @@ export function assertSafeExternalUrl(urlString: string): URL {
   return url;
 }
 
-async function assertSafeServerTarget(urlString: string): Promise<URL> {
-  const url = assertSafeExternalUrl(urlString);
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new BadRequestException(
-      'Server fetches only support http/https targets.',
-    );
-  }
-  const hostname = url.hostname;
-  if (isPrivateIP(hostname)) {
-    throw new BadRequestException(
-      `Refusing to fetch private/loopback host '${hostname}'.`,
-    );
-  }
-  let addresses: string[] = [];
-  try {
-    if (nodeNet.isIP(hostname) !== 0) {
-      addresses = [hostname];
-    } else {
-      const resolved = await nodeDns.lookup(hostname, { all: true });
-      addresses = resolved.map((entry: { address: string }) => entry.address);
-    }
-  } catch (err) {
-    throw new BadRequestException(
-      `Could not resolve host '${hostname}': ${(err as Error).message}`,
-    );
-  }
-  if (addresses.length === 0) {
-    throw new BadRequestException(`Could not resolve host '${hostname}'.`);
-  }
-  for (const address of addresses) {
-    if (isPrivateIP(address)) {
-      throw new BadRequestException(
-        `Refusing to fetch '${hostname}' which resolves to private address '${address}'.`,
-      );
-    }
-  }
-  return url;
-}
-
 @Injectable()
 export class Sep24DebuggerService {
   private readonly logger = new Logger(Sep24DebuggerService.name);
@@ -158,7 +101,7 @@ export class Sep24DebuggerService {
 
   private http = {
     get: async <T>(url: string, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
+      const res = await fetchWithSafeRedirects(url, {
         method: 'GET',
         headers: opts?.headers,
         signal: opts?.timeout ? AbortSignal.timeout(opts.timeout) : undefined,
@@ -176,7 +119,7 @@ export class Sep24DebuggerService {
       return { status: res.status, data };
     },
     post: async <T>(url: string, body: any, opts?: any): Promise<{ status: number; data: T }> => {
-      const res = await fetch(url, {
+      const res = await fetchWithSafeRedirects(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
         body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -214,7 +157,6 @@ export class Sep24DebuggerService {
 
   private async fetchStellarToml(domain: string): Promise<Record<string, unknown>> {
     const url = `https://${domain}/.stellar.toml`;
-    await assertSafeServerTarget(url);
     const response = await this.http.get<string>(url, {
       responseType: 'text',
       timeout: 15000,
@@ -354,7 +296,6 @@ export class Sep24DebuggerService {
       }
     }
 
-    await assertSafeServerTarget(interactiveEndpoint);
     const interactiveStart = Date.now();
     const response = await this.http.post<Sep24TransactionResponse>(
       interactiveEndpoint,
@@ -587,7 +528,6 @@ export class Sep24DebuggerService {
     const endpoint = `${session.transferServer.replace(/\/+$/, '')}/transaction?id=${encodeURIComponent(
       session.transactionId,
     )}`;
-    await assertSafeServerTarget(endpoint);
     const start = Date.now();
     const response = await this.http.get<Sep24TransactionResponse>(endpoint, {
       headers: {

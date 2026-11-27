@@ -58,6 +58,8 @@ jobs:
 
       - run: npm ci
       - run: npx turbo build
+      - name: Check Next.js client bundle budgets
+        run: node apps/web/scripts/check-client-bundle-budget.mjs
 
       - run: npm run sbom
         env:

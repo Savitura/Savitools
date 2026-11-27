@@ -6,6 +6,11 @@ import {
 } from '@stellar/stellar-sdk';
 import { AssetControlService } from './assetcontrol.service';
 
+const lookupMock = jest.fn();
+jest.mock('dns/promises', () => ({
+  lookup: (...args: unknown[]) => lookupMock(...args),
+}));
+
 const ISSUER = Keypair.random().publicKey();
 const HOLDER_A = Keypair.random().publicKey();
 const HOLDER_B = Keypair.random().publicKey();
@@ -73,6 +78,7 @@ function stubHorizonPages(
   pages.forEach((page) => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
+      headers: new Headers(),
       json: async () => page,
     });
   });
@@ -111,6 +117,7 @@ async function expectFailure(
 describe('AssetControlService', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    lookupMock.mockReset().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
   });
 
   describe('parseAsset', () => {
@@ -261,6 +268,7 @@ describe('AssetControlService', () => {
         ok: false,
         status: 404,
         statusText: 'Not Found',
+        headers: new Headers(),
       }) as unknown as typeof fetch;
       const service = new AssetControlService(fakeStellar());
 
