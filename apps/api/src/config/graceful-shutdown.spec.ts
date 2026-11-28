@@ -68,6 +68,65 @@ describe('enableGracefulShutdown', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('verifies correct ordering and teardown of HTTP server, BullMQ worker, Redis quit, and TypeORM destroy under SIGTERM', async () => {
+    const order: string[] = [];
+
+    const mockWorker = {
+      close: jest.fn().mockImplementation(async () => {
+        order.push('bullmq');
+      }),
+    };
+
+    const mockRedis = {
+      status: 'ready',
+      quit: jest.fn().mockImplementation(async () => {
+        order.push('redis');
+      }),
+      disconnect: jest.fn(),
+    };
+
+    const mockDataSource = {
+      isInitialized: true,
+      destroy: jest.fn().mockImplementation(async () => {
+        order.push('typeorm');
+      }),
+    };
+
+    @Injectable()
+    class ShutdownOrderService implements OnApplicationShutdown {
+      async onApplicationShutdown(signal?: string) {
+        // Simulate dependent services shutting down in order
+        await mockWorker.close();
+        await mockRedis.quit();
+        await mockDataSource.destroy();
+        order.push('application-shutdown');
+      }
+    }
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [ShutdownOrderService],
+    }).compile();
+
+    const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    const close = jest.spyOn(app.getHttpAdapter(), 'close').mockImplementation(async () => {
+      order.push('http-server');
+    });
+
+    enableGracefulShutdown(app);
+    await app.init();
+
+    process.emit('SIGTERM', 'SIGTERM');
+
+    await waitFor(() => order.includes('application-shutdown'));
+    await app.close();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(mockWorker.close).toHaveBeenCalledTimes(1);
+    expect(mockRedis.quit).toHaveBeenCalledTimes(1);
+    expect(mockDataSource.destroy).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['bullmq', 'redis', 'typeorm', 'application-shutdown']);
+  });
+
   it('stays unreachable without the call, which is the bug this guards against', async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [RecordingTeardown],

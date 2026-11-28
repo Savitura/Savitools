@@ -15,10 +15,7 @@
   },
   "ignorePatterns": [".eslintrc.js"],
   "rules": {
-    // `any` still appears across legacy modules (unchecked Horizon/RPC payloads
-    // and Nest DTO bags). Raising it to `warn` keeps the lint gate honest for
-    // every other rule while the `any` surface is tracked instead of silently
-    // failing CI. New code should still prefer explicit types.
+    "no-console": "error",
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/no-unused-vars": [
       "error",
@@ -30,5 +27,13 @@
         "caughtErrorsIgnorePattern": "^_"
       }
     ]
+  },
+  "overrides": [
+    {
+      "files": ["src/main.ts", "src/**/*.cli.ts", "src/scripts/**/*"],
+      "rules": {
+        "no-console": ["error", { "allow": ["log", "warn", "error"] }]
   }
+    }
+  ]
 }

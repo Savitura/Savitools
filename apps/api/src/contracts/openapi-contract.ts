@@ -73,6 +73,37 @@ export interface OpenApiModuleFixture {
   validationError: OpenApiEndpointFixture;
 }
 
+/**
+ * Validates that every operation has non-empty tags, a summary, and at least one 4xx or 5xx error response.
+ */
+export function validateOpenApiOperationCoverage(document: OpenApiDocumentLike): string[] {
+  const errors: string[] = [];
+  for (const [path, methods] of Object.entries(document.paths ?? {})) {
+    for (const method of OPENAPI_METHODS) {
+      const operation = methods?.[method];
+      if (!operation) continue;
+      const label = `${method.toUpperCase()} ${path}`;
+
+      if (!operation.tags || !Array.isArray(operation.tags) || operation.tags.length === 0) {
+        errors.push(`${label}: missing or empty tags`);
+      }
+      if (!operation.summary || typeof operation.summary !== 'string' || operation.summary.trim() === '') {
+        errors.push(`${label}: missing or empty summary`);
+      }
+
+      const responses = operation.responses ?? {};
+      const hasErrorResponse = Object.keys(responses).some((code) => {
+        const num = Number(code);
+        return num >= 400 && num < 600;
+      });
+      if (!hasErrorResponse) {
+        errors.push(`${label}: missing 4xx or 5xx error response`);
+      }
+    }
+  }
+  return errors;
+}
+
 const OPENAPI_METHODS: readonly OpenApiHttpMethod[] = [
   'get',
   'post',
