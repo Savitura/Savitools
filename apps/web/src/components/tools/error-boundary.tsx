@@ -3,6 +3,7 @@
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -28,7 +29,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error(`[ErrorBoundary${this.props.toolName ? `:${this.props.toolName}` : ''}]`, error, errorInfo);
+    reportClientError(error, {
+      area: 'ErrorBoundary',
+      ...(this.props.toolName ? { action: this.props.toolName } : {}),
+      details: { componentStack: errorInfo.componentStack },
+    });
   }
 
   private handleReset = () => {
@@ -71,9 +76,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <h2 className="text-base font-semibold text-foreground mb-1">
             Something went wrong{toolLabel}
           </h2>
-          <p className="text-sm text-muted-foreground max-w-md mb-4 break-words">
-            {errorMessage}
-          </p>
+          <p className="text-sm text-muted-foreground max-w-md mb-4 break-words">{errorMessage}</p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 export default function GlobalError({
   error,
@@ -10,7 +11,11 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    reportClientError(error, {
+      area: 'app',
+      action: 'global-render-error',
+      details: { digest: error.digest },
+    });
   }, [error]);
 
   return (
@@ -18,12 +23,8 @@ export default function GlobalError({
       <body>
         <div className="flex min-h-screen flex-col items-center justify-center p-6 text-center">
           <div className="max-w-md space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight">
-              Something went wrong!
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              A critical error occurred.
-            </p>
+            <h2 className="text-2xl font-bold tracking-tight">Something went wrong!</h2>
+            <p className="text-muted-foreground text-sm">A critical error occurred.</p>
             <div>
               <button
                 onClick={() => reset()}

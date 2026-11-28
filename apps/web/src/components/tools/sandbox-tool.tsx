@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keypair } from '@stellar/stellar-sdk';
 import { addRecentItem } from '@/lib/recent-items';
+import { reportClientError } from '@/lib/client-error-reporter';
 import { useCommandPalette, ShortcutBadge } from '@/components/command-palette';
 import {
   Plus,
@@ -70,6 +71,7 @@ export function SandboxTool() {
   const { registerContextActions } = useCommandPalette();
   const [keypair, setKeypair] = useState<GeneratedKeypair | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
 
@@ -123,6 +125,7 @@ export function SandboxTool() {
 
   const handleGenerateKeypair = useCallback(() => {
     setGenerating(true);
+    setGenerationError(null);
     try {
       // Generate the seed ourselves so the entropy buffer can be zeroed after
       // use. `Keypair.random()` hides its internal buffer, so we use the
@@ -154,7 +157,11 @@ export function SandboxTool() {
         href: '/sandbox',
       });
     } catch (err) {
-      console.error('Failed to generate keypair:', err);
+      reportClientError(err, {
+        area: 'sandbox',
+        action: 'generate-keypair',
+      });
+      setGenerationError(err instanceof Error ? err.message : 'Key generation failed. Try again.');
     } finally {
       setGenerating(false);
     }
@@ -368,29 +375,41 @@ export function SandboxTool() {
 
   const actionStatus: AsyncStatusAnnouncement | null = funding
     ? { tone: 'loading', message: 'Funding account via Friendbot…' }
-    : resetting
-      ? { tone: 'loading', message: 'Resetting sandbox account…' }
-      : fundError
-        ? { tone: 'error', message: `Funding failed: ${fundError}`, key: `fund-error:${fundError}` }
-        : resetError
-          ? {
-              tone: 'error',
-              message: `Reset failed: ${resetError}`,
-              key: `reset-error:${resetError}`,
-            }
-          : fundResult
+    : generating
+      ? { tone: 'loading', message: 'Generating keypair…' }
+      : generationError
+        ? {
+            tone: 'error',
+            message: `Key generation failed: ${generationError}`,
+            key: `generation-error:${generationError}`,
+          }
+        : resetting
+          ? { tone: 'loading', message: 'Resetting sandbox account…' }
+          : fundError
             ? {
-                tone: 'success',
-                message: `Account funded with ${fundResult.startingBalance} XLM.`,
-                key: `fund-success:${fundResult.publicKey}:${fundResult.txHash ?? fundResult.startingBalance}`,
+                tone: 'error',
+                message: `Funding failed: ${fundError}`,
+                key: `fund-error:${fundError}`,
               }
-            : resetResult
+            : resetError
               ? {
-                  tone: 'success',
-                  message: `Account reset. ${resetResult.message}`,
-                  key: `reset-success:${resetResult.publicKey}:${resetResult.txHash ?? resetResult.message}`,
+                  tone: 'error',
+                  message: `Reset failed: ${resetError}`,
+                  key: `reset-error:${resetError}`,
                 }
-              : null;
+              : fundResult
+                ? {
+                    tone: 'success',
+                    message: `Account funded with ${fundResult.startingBalance} XLM.`,
+                    key: `fund-success:${fundResult.publicKey}:${fundResult.txHash ?? fundResult.startingBalance}`,
+                  }
+                : resetResult
+                  ? {
+                      tone: 'success',
+                      message: `Account reset. ${resetResult.message}`,
+                      key: `reset-success:${resetResult.publicKey}:${resetResult.txHash ?? resetResult.message}`,
+                    }
+                  : null;
 
   const stellarExpertUrl = (txHash: string) =>
     `https://stellar.expert/tx/${txHash}?network=testnet`;
@@ -471,6 +490,14 @@ export function SandboxTool() {
             </>
           )}
         </button>
+
+        {generationError && (
+          <div className="rounded-md bg-red-500/10 border border-red-500/30 p-2">
+            <p className="text-xs text-red-700">
+              <strong>Key generation failed:</strong> {generationError}
+            </p>
+          </div>
+        )}
 
         {keypair && (
           <div className="space-y-3">

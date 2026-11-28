@@ -15,6 +15,7 @@ import {
   shareComposerWorkspace,
 } from './composer-api';
 import { useAuth } from './auth-context';
+import { reportClientWarning } from './client-error-reporter';
 import { parseWorkspaceFile, serializeWorkspaceFile } from './workspace-format';
 import {
   BROWSER_STORAGE_KEYS,
@@ -55,7 +56,17 @@ export function readGuestWorkspace<T>(tool: WorkspaceTool, fallback: T): T {
 export function writeGuestWorkspace<T>(tool: WorkspaceTool, data: T): boolean {
   const result = safeSetItem(guestStorageKey(tool), data);
   if (!result.success) {
-    console.warn(`[storage] Failed to write guest workspace for ${tool}:`, result.error);
+    reportClientWarning(`Failed to write guest workspace for ${tool}`, {
+      area: 'workspace-storage',
+      action: 'write-guest-workspace',
+      userMessage:
+        'Your guest workspace could not be saved in this browser. Check storage settings or free up space.',
+      details: {
+        tool,
+        quotaExceeded: result.quotaExceeded,
+        cause: result.error instanceof Error ? result.error.message : result.error,
+      },
+    });
   }
   return result.success;
 }

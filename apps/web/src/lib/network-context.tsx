@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import { reportClientWarning } from './client-error-reporter';
 import {
   parseNetworkProfile,
   parseNetworkProfileStore,
@@ -217,7 +218,16 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         // Leave invalid/unknown-version data untouched so the user can inspect
         // or re-import it instead of losing it to an empty rewrite.
-        console.warn('Invalid profiles in localStorage', error);
+        reportClientWarning('Invalid profiles in localStorage', {
+          area: 'network-profiles',
+          action: 'hydrate',
+          userMessage:
+            'Saved network profiles could not be read. They were left unchanged so you can inspect or re-import them.',
+          details: {
+            key: STORAGE_KEYS.profiles,
+            cause: error instanceof Error ? error.message : String(error),
+          },
+        });
       }
     }
 
@@ -311,7 +321,12 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         const isMain = profile.networkPassphrase === MAINNET_PASSPHRASE;
         setNetworkState(isTest ? 'testnet' : isMain ? 'mainnet' : 'custom');
       } else {
-        console.warn(`Profile ${id} not found`);
+        reportClientWarning(`Profile ${id} not found`, {
+          area: 'network-profiles',
+          action: 'select',
+          userMessage: 'That network profile is no longer available. Choose another profile.',
+          details: { profileId: id },
+        });
       }
     },
     [profiles],

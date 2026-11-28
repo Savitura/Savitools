@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 export default function Error({
   error,
@@ -10,15 +11,17 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    reportClientError(error, {
+      area: 'app',
+      action: 'render-error',
+      details: { digest: error.digest },
+    });
   }, [error]);
 
   return (
     <div className="flex min-h-[400px] flex-col items-center justify-center p-6 text-center">
       <div className="max-w-md space-y-4">
-        <h2 className="text-2xl font-bold tracking-tight">
-          Something went wrong!
-        </h2>
+        <h2 className="text-2xl font-bold tracking-tight">Something went wrong!</h2>
         <p className="text-muted-foreground text-sm">
           An unexpected error occurred while loading this page.
         </p>

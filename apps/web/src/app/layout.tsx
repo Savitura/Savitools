@@ -5,10 +5,8 @@ import { AuthProvider } from '@/lib/auth-context';
 import { NetworkProvider } from '@/lib/network-context';
 import { ThemeProvider } from '@/lib/theme-context';
 import { SiteHeader } from '@/components/site-header';
-import {
-  CommandPaletteProvider,
-  CommandPaletteDialog,
-} from '@/components/command-palette';
+import { ClientErrorNotice } from '@/components/client-error-notice';
+import { CommandPaletteProvider, CommandPaletteDialog } from '@/components/command-palette';
 import './globals.css';
 
 const geistSans = Geist({
@@ -27,11 +25,7 @@ export const metadata: Metadata = {
     'Professional developer infrastructure for the Stellar ecosystem. Transaction inspection, wallet tooling, webhooks, and more.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
@@ -47,8 +41,8 @@ export default function RootLayout({
           </ThemeProvider>
         </AuthProvider>
         <QuickstartWidget />
+        <ClientErrorNotice />
       </body>
     </html>
   );
 }
-

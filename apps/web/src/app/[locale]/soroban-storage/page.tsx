@@ -9,8 +9,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle, XCircle, AlertCircle, Database, GitCompare, Key, Clock, Info } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Database,
+  GitCompare,
+  Key,
+  Clock,
+  Info,
+} from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 interface StorageEntry {
   key: {
@@ -93,7 +103,8 @@ export default function SorobanStoragePage() {
 
   // State for typed key form
   const [typedKeyForm, setTypedKeyForm] = useState({
-    keyType: 'symbol' as 'symbol' | 'string' | 'address' | 'instance' | 'u32' | 'i32' | 'u64' | 'i64' | 'bytes',
+    keyType: 'symbol' as
+      'symbol' | 'string' | 'address' | 'instance' | 'u32' | 'i32' | 'u64' | 'i64' | 'bytes',
     keyValue: '',
     additionalKeys: '',
   });
@@ -102,7 +113,10 @@ export default function SorobanStoragePage() {
   const [queryResult, setQueryResult] = useState<StorageQueryResult | null>(null);
   const [compareResult, setCompareResult] = useState<StorageCompareResult | null>(null);
   const [typedKeyResult, setTypedKeyResult] = useState<{ xdr: string; decoded: any } | null>(null);
-  const [durabilityInfo, setDurabilityInfo] = useState<Record<string, { description: string; expiry: string }> | null>(null);
+  const [durabilityInfo, setDurabilityInfo] = useState<Record<
+    string,
+    { description: string; expiry: string }
+  > | null>(null);
 
   // Loading states
   const [loading, setLoading] = useState({
@@ -125,7 +139,14 @@ export default function SorobanStoragePage() {
       const info = await apiFetch<any>('/soroban-storage/durability-info');
       setDurabilityInfo(info);
     } catch (error: any) {
-      console.error('Failed to load durability info:', error);
+      reportClientError(error, {
+        area: 'soroban-storage',
+        action: 'load-durability-info',
+      });
+      setErrors((prev) => ({
+        ...prev,
+        durability: 'Durability information could not be loaded. Retry to load it again.',
+      }));
     } finally {
       setLoading({ ...loading, durability: false });
     }
@@ -141,7 +162,6 @@ export default function SorobanStoragePage() {
         body: JSON.stringify(queryForm),
       });
       setQueryResult(result);
-      
     } catch (error: any) {
       setErrors({ ...errors, query: error.message });
     } finally {
@@ -163,7 +183,6 @@ export default function SorobanStoragePage() {
         }),
       });
       setCompareResult(result);
-      
     } catch (error: any) {
       setErrors({ ...errors, compare: error.message });
     } finally {
@@ -187,7 +206,6 @@ export default function SorobanStoragePage() {
         ...queryForm,
         storageKey: result.xdr,
       });
-      
     } catch (error: any) {
       setErrors({ ...errors, typedKey: error.message || String(error) });
     } finally {
@@ -199,25 +217,30 @@ export default function SorobanStoragePage() {
     if (value === null || value === undefined) {
       return 'null';
     }
-    
+
     if (type === 'Bytes') {
       return `0x${Buffer.from(value).toString('hex')}`;
     }
-    
+
     if (typeof value === 'object') {
       return JSON.stringify(value, null, 2);
     }
-    
+
     return String(value);
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'added': return 'bg-green-100 text-green-800';
-      case 'removed': return 'bg-red-100 text-red-800';
-      case 'modified': return 'bg-yellow-100 text-yellow-800';
-      case 'unchanged': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'added':
+        return 'bg-green-100 text-green-800';
+      case 'removed':
+        return 'bg-red-100 text-red-800';
+      case 'modified':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'unchanged':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -226,9 +249,28 @@ export default function SorobanStoragePage() {
       <div className="text-center space-y-4">
         <h1 className="text-3xl font-bold">Soroban Contract Storage Explorer</h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Inspect Soroban contract storage keys, decode values, and compare changes across ledgers with comprehensive history tracking.
+          Inspect Soroban contract storage keys, decode values, and compare changes across ledgers
+          with comprehensive history tracking.
         </p>
       </div>
+
+      {errors.durability && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>{errors.durability}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading.durability}
+              onClick={loadDurabilityInfo}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="query" className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
@@ -266,7 +308,7 @@ export default function SorobanStoragePage() {
                     onChange={(e) => setQueryForm({ ...queryForm, contractId: e.target.value })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="storageKey">Storage Key (XDR or Symbol)</Label>
                   <Input
@@ -284,7 +326,9 @@ export default function SorobanStoragePage() {
                       id="durability"
                       className="w-full p-2 border rounded"
                       value={queryForm.durability}
-                      onChange={(e) => setQueryForm({ ...queryForm, durability: e.target.value as any })}
+                      onChange={(e) =>
+                        setQueryForm({ ...queryForm, durability: e.target.value as any })
+                      }
                     >
                       <option value="persistent">Persistent</option>
                       <option value="temporary">Temporary</option>
@@ -298,7 +342,9 @@ export default function SorobanStoragePage() {
                       id="network"
                       className="w-full p-2 border rounded"
                       value={queryForm.network}
-                      onChange={(e) => setQueryForm({ ...queryForm, network: e.target.value as any })}
+                      onChange={(e) =>
+                        setQueryForm({ ...queryForm, network: e.target.value as any })
+                      }
                     >
                       <option value="testnet">Testnet</option>
                       <option value="mainnet">Mainnet</option>
@@ -320,13 +366,15 @@ export default function SorobanStoragePage() {
                   <Alert>
                     <Info className="h-4 w-4" />
                     <AlertDescription>
-                      <strong>{queryForm.durability}:</strong> {durabilityInfo[queryForm.durability]?.description} - {durabilityInfo[queryForm.durability]?.expiry}
+                      <strong>{queryForm.durability}:</strong>{' '}
+                      {durabilityInfo[queryForm.durability]?.description} -{' '}
+                      {durabilityInfo[queryForm.durability]?.expiry}
                     </AlertDescription>
                   </Alert>
                 )}
 
-                <Button 
-                  onClick={handleQueryStorage} 
+                <Button
+                  onClick={handleQueryStorage}
                   disabled={loading.query || !queryForm.contractId || !queryForm.storageKey}
                   className="w-full"
                 >
@@ -359,10 +407,18 @@ export default function SorobanStoragePage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><strong>Contract:</strong> {queryResult.contractId}</div>
-                    <div><strong>Durability:</strong> {queryResult.durability}</div>
-                    <div><strong>Ledger:</strong> {queryResult.ledgerInfo.sequence}</div>
-                    <div><strong>Response Time:</strong> {queryResult.rpcMetadata.responseTime}ms</div>
+                    <div>
+                      <strong>Contract:</strong> {queryResult.contractId}
+                    </div>
+                    <div>
+                      <strong>Durability:</strong> {queryResult.durability}
+                    </div>
+                    <div>
+                      <strong>Ledger:</strong> {queryResult.ledgerInfo.sequence}
+                    </div>
+                    <div>
+                      <strong>Response Time:</strong> {queryResult.rpcMetadata.responseTime}ms
+                    </div>
                   </div>
 
                   {queryResult.found && queryResult.entry && (
@@ -370,7 +426,9 @@ export default function SorobanStoragePage() {
                       <div>
                         <Label>Storage Key</Label>
                         <div className="p-2 border rounded bg-gray-50">
-                          <div className="text-xs text-gray-500">Type: {queryResult.entry.key.type}</div>
+                          <div className="text-xs text-gray-500">
+                            Type: {queryResult.entry.key.type}
+                          </div>
                           <div className="font-mono text-sm">
                             {formatValue(queryResult.entry.key.decoded, queryResult.entry.key.type)}
                           </div>
@@ -380,9 +438,14 @@ export default function SorobanStoragePage() {
                       <div>
                         <Label>Storage Value</Label>
                         <div className="p-2 border rounded bg-gray-50">
-                          <div className="text-xs text-gray-500">Type: {queryResult.entry.value.type}</div>
+                          <div className="text-xs text-gray-500">
+                            Type: {queryResult.entry.value.type}
+                          </div>
                           <pre className="font-mono text-sm whitespace-pre-wrap">
-                            {formatValue(queryResult.entry.value.decoded, queryResult.entry.value.type)}
+                            {formatValue(
+                              queryResult.entry.value.decoded,
+                              queryResult.entry.value.type,
+                            )}
                           </pre>
                         </div>
                       </div>
@@ -460,7 +523,7 @@ export default function SorobanStoragePage() {
                     onChange={(e) => setCompareForm({ ...compareForm, contractId: e.target.value })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="compareStorageKey">Storage Key</Label>
                   <Input
@@ -479,10 +542,12 @@ export default function SorobanStoragePage() {
                       type="number"
                       placeholder="1000"
                       value={compareForm.ledgerSeq1}
-                      onChange={(e) => setCompareForm({ ...compareForm, ledgerSeq1: e.target.value })}
+                      onChange={(e) =>
+                        setCompareForm({ ...compareForm, ledgerSeq1: e.target.value })
+                      }
                     />
                   </div>
-                  
+
                   <div>
                     <Label htmlFor="ledgerSeq2">Second Ledger Sequence</Label>
                     <Input
@@ -490,7 +555,9 @@ export default function SorobanStoragePage() {
                       type="number"
                       placeholder="1100"
                       value={compareForm.ledgerSeq2}
-                      onChange={(e) => setCompareForm({ ...compareForm, ledgerSeq2: e.target.value })}
+                      onChange={(e) =>
+                        setCompareForm({ ...compareForm, ledgerSeq2: e.target.value })
+                      }
                     />
                   </div>
                 </div>
@@ -501,13 +568,21 @@ export default function SorobanStoragePage() {
                     id="compareRpcEndpoint"
                     placeholder="https://soroban-testnet.stellar.org"
                     value={compareForm.rpcEndpoint}
-                    onChange={(e) => setCompareForm({ ...compareForm, rpcEndpoint: e.target.value })}
+                    onChange={(e) =>
+                      setCompareForm({ ...compareForm, rpcEndpoint: e.target.value })
+                    }
                   />
                 </div>
 
-                <Button 
+                <Button
                   onClick={handleCompareStorage}
-                  disabled={loading.compare || !compareForm.contractId || !compareForm.storageKey || !compareForm.ledgerSeq1 || !compareForm.ledgerSeq2}
+                  disabled={
+                    loading.compare ||
+                    !compareForm.contractId ||
+                    !compareForm.storageKey ||
+                    !compareForm.ledgerSeq1 ||
+                    !compareForm.ledgerSeq2
+                  }
                   className="w-full"
                 >
                   {loading.compare ? 'Comparing...' : 'Compare Storage'}
@@ -572,19 +647,17 @@ export default function SorobanStoragePage() {
                       <div>
                         <Label>Ledger {compareResult.ledger1}</Label>
                         <pre className="text-xs p-2 border rounded bg-gray-50 max-h-32 overflow-y-auto">
-                          {compareResult.diff.oldValue !== undefined 
+                          {compareResult.diff.oldValue !== undefined
                             ? JSON.stringify(compareResult.diff.oldValue, null, 2)
-                            : 'Entry not found'
-                          }
+                            : 'Entry not found'}
                         </pre>
                       </div>
                       <div>
                         <Label>Ledger {compareResult.ledger2}</Label>
                         <pre className="text-xs p-2 border rounded bg-gray-50 max-h-32 overflow-y-auto">
-                          {compareResult.diff.newValue !== undefined 
+                          {compareResult.diff.newValue !== undefined
                             ? JSON.stringify(compareResult.diff.newValue, null, 2)
-                            : 'Entry not found'
-                          }
+                            : 'Entry not found'}
                         </pre>
                       </div>
                     </div>
@@ -612,7 +685,9 @@ export default function SorobanStoragePage() {
                     id="keyType"
                     className="w-full p-2 border rounded"
                     value={typedKeyForm.keyType}
-                    onChange={(e) => setTypedKeyForm({ ...typedKeyForm, keyType: e.target.value as any })}
+                    onChange={(e) =>
+                      setTypedKeyForm({ ...typedKeyForm, keyType: e.target.value as any })
+                    }
                   >
                     <option value="symbol">Symbol</option>
                     <option value="string">String</option>
@@ -625,7 +700,7 @@ export default function SorobanStoragePage() {
                     <option value="bytes">Bytes</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="keyValue">Key Value</Label>
                   <Input
@@ -642,24 +717,29 @@ export default function SorobanStoragePage() {
                     id="additionalKeys"
                     placeholder='["key2", "key3"]'
                     value={typedKeyForm.additionalKeys}
-                    onChange={(e) => setTypedKeyForm({ ...typedKeyForm, additionalKeys: e.target.value })}
+                    onChange={(e) =>
+                      setTypedKeyForm({ ...typedKeyForm, additionalKeys: e.target.value })
+                    }
                   />
                 </div>
 
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>{typedKeyForm.keyType}:</strong> {
-                      typedKeyForm.keyType === 'symbol' ? 'Short string identifier (max 32 chars)' :
-                      typedKeyForm.keyType === 'string' ? 'UTF-8 string value' :
-                      typedKeyForm.keyType === 'address' ? 'Stellar account or contract address' :
-                      typedKeyForm.keyType === 'bytes' ? 'Hexadecimal byte array' :
-                      'Numeric value in the specified format'
-                    }
+                    <strong>{typedKeyForm.keyType}:</strong>{' '}
+                    {typedKeyForm.keyType === 'symbol'
+                      ? 'Short string identifier (max 32 chars)'
+                      : typedKeyForm.keyType === 'string'
+                        ? 'UTF-8 string value'
+                        : typedKeyForm.keyType === 'address'
+                          ? 'Stellar account or contract address'
+                          : typedKeyForm.keyType === 'bytes'
+                            ? 'Hexadecimal byte array'
+                            : 'Numeric value in the specified format'}
                   </AlertDescription>
                 </Alert>
 
-                <Button 
+                <Button
                   onClick={handleCreateTypedKey}
                   disabled={loading.typedKey || !typedKeyForm.keyValue}
                   className="w-full"
@@ -680,9 +760,7 @@ export default function SorobanStoragePage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Generated Key</CardTitle>
-                  <CardDescription>
-                    XDR representation of your typed key
-                  </CardDescription>
+                  <CardDescription>XDR representation of your typed key</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>

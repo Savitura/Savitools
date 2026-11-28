@@ -52,6 +52,7 @@ import {
   apiErrorMessage,
 } from '@/lib/api';
 import { NETWORK_DETECTION_TIMEOUT_MS } from '@/lib/network-detection';
+import { reportClientError } from '@/lib/client-error-reporter';
 
 const MAINNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -110,7 +111,7 @@ export default function NetworkStatusPage() {
           setHistory(historyData);
         }
       } catch (err) {
-        console.error(err);
+        reportClientError(err, { area: 'network-status', action: 'fetch-status' });
         if (!cancelled) setError('Could not load network status history.');
       } finally {
         if (!cancelled) setLoading(false);
@@ -148,7 +149,11 @@ export default function NetworkStatusPage() {
         }
       }
     } catch (err) {
-      console.error(err);
+      reportClientError(err, {
+        area: 'network-status',
+        action: 'load-profiles',
+        userMessage: 'Network profiles could not be loaded. Open Profiles to review the error.',
+      });
       setProfileError('Could not load network profiles.');
     }
   }
@@ -247,7 +252,7 @@ export default function NetworkStatusPage() {
       setProfiles(data);
       resetProfileForm();
     } catch (err) {
-      console.error(err);
+      reportClientError(err, { area: 'network-status', action: 'save-profile' });
       setProfileError('Could not save profile.');
     } finally {
       setProfileLoading(false);
@@ -265,7 +270,7 @@ export default function NetworkStatusPage() {
         setNetwork('mainnet');
       }
     } catch (err) {
-      console.error(err);
+      reportClientError(err, { area: 'network-status', action: 'delete-profile' });
       setProfileError('Could not delete profile.');
     }
   }
@@ -281,7 +286,7 @@ export default function NetworkStatusPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error(err);
+      reportClientError(err, { area: 'network-status', action: 'export-profile' });
       setProfileError('Could not export profile.');
     }
   }
@@ -294,7 +299,11 @@ export default function NetworkStatusPage() {
       const data = await listNetworkProfiles();
       setProfiles(data);
     } catch (err) {
-      console.error(err);
+      reportClientError(err, {
+        area: 'network-status',
+        action: 'import-profile',
+        details: { fileName: file.name },
+      });
       setProfileError(apiErrorMessage(err, 'Could not import profile. Ensure the JSON is valid.'));
     }
   }
