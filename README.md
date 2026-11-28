@@ -104,11 +104,12 @@ savitools/
 │   │       ├── rpc/              # Soroban RPC Runner
 │   │       ├── qr-handoff/       # Air-gapped QR transaction handoff
 │   │       ├── liquidity-pools/  # Liquidity Pool Explorer
-│   │       └── [locale]/         # Localized routes (i18n)
-│   │           ├── soroban-storage/  # Soroban Storage Explorer
-│   │           ├── sep10/            # SEP-10 WebAuth Helper
-│   │           ├── sequence-planner/ # Sequence Bump Planner
-│   │           └── stellar-toml/     # Stellar TOML Inspector
+│   │       ├── soroban-expiration/ # TTL & expiration estimator
+│   │       ├── sep10/            # SEP-10 WebAuth Helper
+│   │       ├── sequence-planner/ # Sequence Bump Planner
+│   │       ├── soroban-storage/  # Soroban Storage Explorer
+│   │       ├── stellar-toml/     # Stellar TOML Inspector
+│   │       └── [locale]/         # Mirrored localized routes (i18n)
 │   │
 │   └── api/                      # NestJS backend
 │       └── src/modules/

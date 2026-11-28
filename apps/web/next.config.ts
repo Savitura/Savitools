@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
 
 import { playgroundConnectOrigins } from './src/lib/playground-origins';
 
@@ -141,4 +142,4 @@ const nextConfig: NextConfig = {
   turbopack: {},
 };
 
-export default nextConfig;
+export default createNextIntlPlugin('./src/i18n.ts')(nextConfig);
