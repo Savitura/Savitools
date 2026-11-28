@@ -128,7 +128,9 @@ describe('NetworkController', () => {
     it('lists the profiles owned by the authenticated user', async () => {
       service.listNetworkProfiles.mockResolvedValue([profile]);
 
-      await expect(controller.listProfiles({ id: 'user-1' })).resolves.toEqual([profile]);
+      await expect(controller.listProfiles({ id: 'user-1' }, {} as any)).resolves.toEqual([
+        profile,
+      ]);
       expect(service.listNetworkProfiles).toHaveBeenCalledWith('user-1');
     });
 
@@ -170,7 +172,9 @@ describe('NetworkController', () => {
     it('marks a profile as default for the authenticated user', async () => {
       service.setDefaultNetworkProfile.mockResolvedValue(profile);
 
-      await expect(controller.setDefaultProfile('np-1', { id: 'user-1' })).resolves.toEqual(profile);
+      await expect(controller.setDefaultProfile('np-1', { id: 'user-1' })).resolves.toEqual(
+        profile,
+      );
       expect(service.setDefaultNetworkProfile).toHaveBeenCalledWith('user-1', 'np-1');
     });
 
@@ -211,9 +215,7 @@ describe('NetworkController', () => {
 
   describe('dead profile surface', () => {
     it('drops the caller-less select endpoint', () => {
-      expect(
-        (controller as unknown as Record<string, unknown>).selectProfile,
-      ).toBeUndefined();
+      expect((controller as unknown as Record<string, unknown>).selectProfile).toBeUndefined();
       expect(
         Object.getOwnPropertyNames(NetworkController.prototype).filter((name) =>
           name.toLowerCase().includes('select'),

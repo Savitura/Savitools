@@ -5,11 +5,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { AuthProvider } from '@/lib/auth-context';
 import { NetworkProvider } from '@/lib/network-context';
-import {
-  CommandPaletteProvider,
-  CommandPaletteDialog,
-} from '@/components/command-palette';
+import { CommandPaletteProvider, CommandPaletteDialog } from '@/components/command-palette';
+import { locales } from '@/i18n';
 import './globals.css';
+
+export function generateStaticParams() {
+  return locales.map((locale) => ({ locale }));
+}
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -22,23 +24,25 @@ const geistMono = Geist_Mono({
 });
 
 export async function generateMetadata({
-  params
+  params,
 }: {
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
   const { locale } = await params;
   const messages = await getMessages();
   const metadata = messages.metadata as any;
-  
+
   return {
     title: metadata?.title || 'SaviTools — Stellar Developer Workstation',
-    description: metadata?.description || 'Professional developer infrastructure for the Stellar ecosystem. Transaction inspection, wallet tooling, webhooks, and more.',
+    description:
+      metadata?.description ||
+      'Professional developer infrastructure for the Stellar ecosystem. Transaction inspection, wallet tooling, webhooks, and more.',
   };
 }
 
 export default async function RootLayout({
   children,
-  params
+  params,
 }: {
   children: React.ReactNode;
   params: Promise<{ locale: string }>;
@@ -65,4 +69,3 @@ export default async function RootLayout({
     </html>
   );
 }
-

@@ -936,6 +936,157 @@
         "tags": ["Users"]
       }
     },
+    "/api/campaigns": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asset",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "campaigns": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List campaigns",
+        "tags": ["Campaigns"]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_type": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "deadline": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "description": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "max_contribution": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "milestones": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "min_contribution": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "target_amount": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": ["title", "target_amount", "asset_type"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create campaign",
+        "tags": ["Campaigns"]
+      }
+    },
     "/api/campaigns/bulk/import": {
       "post": {
         "security": [
@@ -1533,6 +1684,72 @@
         "tags": ["Campaigns — Outcome Surveys"]
       }
     },
+    "/api/campaigns/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "summary": "Get campaign by id",
+        "tags": ["Campaigns"]
+      }
+    },
+    "/api/campaigns/{id}/balance": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "asset_type": {
+                        "type": "string"
+                      },
+                      "balance": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "summary": "Get live on-chain balance for a campaign wallet",
+        "tags": ["Campaigns"]
+      }
+    },
     "/api/campaigns/{id}/matches": {
       "get": {
         "parameters": [
@@ -2096,6 +2313,63 @@
         ],
         "summary": "List thank-you delivery history for a campaign",
         "tags": ["Thank You"]
+      }
+    },
+    "/api/campaigns/{id}/tiers": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of reward tiers"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "summary": "List a campaign's reward tiers with remaining availability",
+        "tags": ["Campaigns"]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Updated list of reward tiers"
+          },
+          "400": {
+            "description": "Invalid input or tier cap exceeded"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Campaign not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Add one or more reward tiers to an existing campaign (creator only)",
+        "tags": ["Campaigns"]
       }
     },
     "/api/campaigns/{id}/treasury/policy": {

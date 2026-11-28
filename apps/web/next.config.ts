@@ -1,6 +1,10 @@
 import type { NextConfig } from 'next';
+import path from 'path';
+import createNextIntlPlugin from 'next-intl/plugin';
 
 import { playgroundConnectOrigins } from './src/lib/playground-origins';
+
+const withNextIntl = createNextIntlPlugin('./src/i18n.ts');
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -113,8 +117,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   transpilePackages: [],
+  outputFileTracingRoot: path.resolve(__dirname, '../../'),
   poweredByHeader: false,
-  output: 'standalone',
+  output: process.env.OUTPUT_STANDALONE === 'true' ? 'standalone' : undefined,
   images: {
     remotePatterns: [
       {
@@ -141,4 +146,4 @@ const nextConfig: NextConfig = {
   turbopack: {},
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

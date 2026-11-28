@@ -178,6 +178,19 @@ async function generateFluxaSpec(source) {
   return sortObjectKeys(parsed);
 }
 
+function collectRouteFiles(dir) {
+  let files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(collectRouteFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.js') && !entry.name.includes('.test.')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
 function generateCrowdPaySpecFromRoutes(routesDir) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-spec-'));
   const defPath = path.join(tmpDir, 'def.json');
@@ -209,10 +222,7 @@ function generateCrowdPaySpecFromRoutes(routesDir) {
   fs.writeFileSync(defPath, JSON.stringify(definition, null, 2));
 
   try {
-    const routeFiles = fs
-      .readdirSync(routesDir)
-      .filter((file) => file.endsWith('.js') && !file.includes('.test.'))
-      .map((file) => path.join(routesDir, file));
+    const routeFiles = collectRouteFiles(routesDir);
 
     if (routeFiles.length === 0) {
       throw new Error(`No route files found in ${routesDir}`);

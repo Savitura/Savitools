@@ -10,17 +10,15 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 
+import { locales } from '@/i18n';
+
 const allToolDocs = toolDocs;
 
 export function generateStaticParams() {
-  return allToolDocs.map((tool) => ({ tool: tool.slug }));
+  return locales.flatMap((locale) => allToolDocs.map((tool) => ({ locale, tool: tool.slug })));
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ tool: string }>;
-}) {
+export async function generateMetadata({ params }: { params: Promise<{ tool: string }> }) {
   const { tool: slug } = await params;
   const doc = allToolDocs.find((entry) => entry.slug === slug);
   if (!doc) return { title: 'Not Found — SaviTools Docs' };
@@ -30,13 +28,7 @@ export async function generateMetadata({
   };
 }
 
-function SectionHeading({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function SectionHeading({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <h2 className="flex items-center gap-2 text-sm font-semibold mt-8 mb-3">
       {icon}
@@ -45,11 +37,7 @@ function SectionHeading({
   );
 }
 
-export default async function ToolDocPage({
-  params,
-}: {
-  params: Promise<{ tool: string }>;
-}) {
+export default async function ToolDocPage({ params }: { params: Promise<{ tool: string }> }) {
   const { tool: slug } = await params;
   const doc = allToolDocs.find((entry) => entry.slug === slug);
   if (!doc) notFound();
@@ -84,7 +72,9 @@ export default async function ToolDocPage({
             ))}
           </div>
 
-          <SectionHeading icon={<CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" />}>
+          <SectionHeading
+            icon={<CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" />}
+          >
             Prerequisites
           </SectionHeading>
           <ul className="list-disc pl-5 space-y-1.5 text-sm text-muted-foreground">
@@ -102,7 +92,9 @@ export default async function ToolDocPage({
             ))}
           </ul>
 
-          <SectionHeading icon={<ListOrdered className="h-4 w-4 text-primary" aria-hidden="true" />}>
+          <SectionHeading
+            icon={<ListOrdered className="h-4 w-4 text-primary" aria-hidden="true" />}
+          >
             Usage
           </SectionHeading>
           <div className="space-y-6">

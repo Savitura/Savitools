@@ -9,6 +9,8 @@
     "lint": "next lint",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "test:smoke": "node ../../scripts/smoke-web-routes.mjs",
+    "smoke:routes": "node ../../scripts/smoke-web-routes.mjs",
     "check-translations": "node scripts/check-translations.js"
   },
   "dependencies": {

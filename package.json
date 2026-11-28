@@ -20,6 +20,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "smoke:playground": "node scripts/check-playground-hosts.mjs",
+    "smoke:routes": "node scripts/smoke-web-routes.mjs",
     "seed": "docker compose -f docker-compose.dev.yml exec -T api sh -c \"npx ts-node scripts/seed.ts\"",
     "sbom": "cyclonedx-bom -o dist/sbom/cyclonedx.json",
     "review:deps": "node scripts/check-dependency-review.mjs"

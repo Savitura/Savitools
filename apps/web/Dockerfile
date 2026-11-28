@@ -9,7 +9,7 @@ COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 
 COPY apps/web apps/web
-ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production OUTPUT_STANDALONE=true
 RUN npm run build --workspace=@savitools/web
 
 # Stage 2: Production runner

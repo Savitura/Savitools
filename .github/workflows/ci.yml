@@ -59,6 +59,9 @@ jobs:
       - run: npm ci
       - run: npx turbo build
 
+      - name: Next.js route smoke tests (HTTP 200 SSR rendering for localized & non-localized tool routes)
+        run: npm run smoke:routes
+
       - run: npm run sbom
         env:
           CYCLONEDX_COMPONENTS: 'projects,@savitools/api,@savitools/web'

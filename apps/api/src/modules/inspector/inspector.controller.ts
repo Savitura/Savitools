@@ -25,8 +25,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { DecodeXdrDto } from './dto/decode-xdr.dto';
 import { InspectAuthEntryDto } from './dto/inspect-auth-entry.dto';
-import { ReplayHorizonRequestDto, GetReplayHistoryDto } from './dto/replay-horizon-request.dto';
 import { ValidateStrKeysDto } from './dto/validate-strkeys.dto';
+import { ReplayHorizonRequestDto, GetReplayHistoryDto } from './dto/replay-horizon-request.dto';
 import { InspectorService } from './inspector.service';
 
 @ApiTags('inspector')
