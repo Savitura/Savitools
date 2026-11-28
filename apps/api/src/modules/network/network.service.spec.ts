@@ -330,6 +330,75 @@ describe('NetworkService', () => {
     });
   });
 
+  describe('Horizon error reporting (#478)', () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      global.fetch = jest.fn();
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    async function failureMessage(promise: Promise<unknown>): Promise<string> {
+      try {
+        await promise;
+      } catch (error) {
+        return (error as Error).message;
+      }
+      throw new Error('expected the promise to reject');
+    }
+
+    it('reports Horizon when the endpoint returns an error status', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, status: 503 });
+
+      const message = await failureMessage(
+        service.verifyNetworkPassphrase('https://horizon.stellar.org', 'any'),
+      );
+
+      expect(message).toBe('Horizon request failed with status 503');
+    });
+
+    it('reports Horizon when the response has no network_passphrase', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+
+      const message = await failureMessage(
+        service.verifyNetworkPassphrase('https://horizon.stellar.org', 'any'),
+      );
+
+      expect(message).toBe('Horizon response did not include network_passphrase');
+    });
+
+    it('reports Horizon for an invalid URL without making a request', async () => {
+      const message = await failureMessage(service.verifyNetworkPassphrase('not a url', 'any'));
+
+      expect(message).toBe('Invalid Horizon URL');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('never uses the old Hubmin wording in a failure message', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({ ok: false, status: 500 })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+
+      const messages = [
+        await failureMessage(service.verifyNetworkPassphrase('https://horizon.stellar.org', 'any')),
+        await failureMessage(service.verifyNetworkPassphrase('https://horizon.stellar.org', 'any')),
+        await failureMessage(service.verifyNetworkPassphrase('not a url', 'any')),
+      ];
+
+      for (const message of messages) {
+        expect(message).toMatch(/horizon/i);
+        expect(message).not.toMatch(/hubmin|hubimn/i);
+      }
+    });
+  });
+
   describe('profile import/export versioning', () => {
     it('exports the current schema version and omits owner metadata', async () => {
       jest.spyOn(service, 'getNetworkProfile').mockResolvedValue({
