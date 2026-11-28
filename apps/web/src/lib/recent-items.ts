@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeRemoveItem, safeSetItem } from './browser-storage';
 
-export const RECENT_ITEMS_STORAGE_KEY = 'savitools_recent_items';
+export const RECENT_ITEMS_STORAGE_KEY = BROWSER_STORAGE_KEYS.RECENT_ITEMS;
 export const RECENT_ITEMS_MAX_COUNT = 10;
 
 export type RecentCategory =
@@ -26,25 +27,14 @@ export interface RecentItem {
 }
 
 export function getRecentItems(): RecentItem[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(RECENT_ITEMS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch {
-    return [];
-  }
+  const parsed = safeGetItem<unknown>(RECENT_ITEMS_STORAGE_KEY, []);
+  return Array.isArray(parsed) ? (parsed as RecentItem[]) : [];
 }
 
 export function saveRecentItems(items: RecentItem[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(RECENT_ITEMS_STORAGE_KEY, JSON.stringify(items));
+  const result = safeSetItem(RECENT_ITEMS_STORAGE_KEY, items);
+  if (result.success && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('savitools-recent-update'));
-  } catch {
-    // ignore localStorage errors (e.g. quota)
   }
 }
 
@@ -78,14 +68,10 @@ export function removeRecentItem(id: string): RecentItem[] {
   return updated;
 }
 
-
 export function clearRecentItems(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(RECENT_ITEMS_STORAGE_KEY);
+  const result = safeRemoveItem(RECENT_ITEMS_STORAGE_KEY);
+  if (result.success && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('savitools-recent-update'));
-  } catch {
-    // ignore
   }
 }
 

@@ -35,11 +35,11 @@ with other applications hosted on the same origin:
 | `savitools_recent_items`                  | JSON Array      | User Recents | Command palette recent items history (`RecentItem[]`) across tools.                                                  | **10 entries** (LRU eviction) |
 | `savitools_user_preferences`              | JSON Object     | User Config  | Global preferences: keyboard shortcuts enabled, command palette status.                                              | Single JSON record            |
 | `savitools:profiles`                      | JSON Envelope   | Network      | Versioned envelope (`NetworkProfileStore`) containing custom Horizon/RPC endpoints.                                  | Migrated v0 to v1             |
-| `savitools:active-profile-id`             | String          | Network      | Active custom network profile identifier or preset tag.                                                              | Single string                 |
+| `savitools:activeProfile`                 | String          | Network      | Active custom network profile identifier or preset tag.                                                              | Single string                 |
 | `savitools:network`                       | String          | Network      | Fallback network type selection (`testnet`, `futurenet`, `local`).                                                   | Single string                 |
 | `savitools:theme`                         | String          | UI Display   | Color theme setting (`light`, `dark`, or `system`).                                                                  | Single string                 |
-| `savitools:onboarding`                    | JSON Object     | Walkthrough  | Interactive walkthrough task completion progress map.                                                                | Single JSON record            |
-| `savitools:onboarding:dismissed`          | String ('true') | Walkthrough  | Flag indicating user permanently dismissed onboarding modal.                                                         | Single boolean string         |
+| `savitools_onboarding_progress`           | JSON Object     | Walkthrough  | Interactive walkthrough task completion progress map.                                                                | Single JSON record            |
+| `savitools_onboarding_dismissed`          | String ('true') | Walkthrough  | Flag indicating user permanently dismissed onboarding modal.                                                         | Single boolean string         |
 | `savitools:contracts:history`             | JSON Array      | Contracts    | History of Soroban contract addresses and deployment artifacts on testnet.                                           | **50 entries** (FIFO cap)     |
 | `savitools:federation:counterparties`     | JSON Array      | Federation   | Saved counterparty federation addresses (`name*domain`).                                                             | **50 entries** (FIFO cap)     |
 | `composer-workspaces`                     | JSON Array      | Legacy       | Deprecated pre-v1 composer workspace storage key. Maintained for read migration.                                     | Read-only legacy              |
@@ -120,6 +120,7 @@ In restricted contexts (e.g. Safari with strict tracking prevention, disabled
 cookies, or restricted iframe embedding):
 
 - `isStorageAvailable()` detects storage unavailability during initialization.
+- `safeGetRawItem()` and `safeSetRawItem()` apply the same guards to legacy raw-string values such as themes, network ids, and dismissal flags.
 - Reads fall back gracefully to default in-memory configurations.
 - Writes fail safely without crashing React render lifecycles.
 

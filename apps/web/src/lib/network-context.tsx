@@ -11,6 +11,13 @@ import {
   verifyNetworkProfile as verifyNetworkProfileRequest,
   type NetworkDetectionOptions,
 } from './network-detection';
+import {
+  BROWSER_STORAGE_KEYS,
+  safeGetRawItem,
+  safeRemoveItem,
+  safeSetRawItem,
+  type StorageWriteResult,
+} from './browser-storage';
 
 export {
   NETWORK_PROFILE_SCHEMA_VERSION,
@@ -93,9 +100,9 @@ const QUICKSTART_PASSPHRASE = 'Standalone Network ; February 2017';
 const QUICKSTART_FRIENDBOT = 'http://localhost:8000/friendbot';
 
 const STORAGE_KEYS = {
-  profiles: 'savitools:profiles',
-  activeProfileId: 'savitools:activeProfile',
-  network: 'savitools:network',
+  profiles: BROWSER_STORAGE_KEYS.PROFILES,
+  activeProfileId: BROWSER_STORAGE_KEYS.ACTIVE_PROFILE_ID,
+  network: BROWSER_STORAGE_KEYS.NETWORK,
 } as const;
 
 const NetworkContext = createContext<NetworkContextValue>({
@@ -154,15 +161,16 @@ function getBuiltInProfile(network: Network): NetworkProfile {
   };
 }
 
-function readStorage(Key: string): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(Key);
+function readStorage(key: string): string | null {
+  return safeGetRawItem(key);
 }
 
-function writeStorage(Key: string, value: string) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(Key, value);
+function writeStorage(key: string, value: string): StorageWriteResult {
+  const result = safeSetRawItem(key, value);
+  if (!result.success) {
+    console.warn(`[storage] Failed to persist ${key}`, result.error);
   }
+  return result;
 }
 
 function sanitizeUrl(url: string): string {
@@ -261,7 +269,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     if (activeProfileId) {
       writeStorage(STORAGE_KEYS.activeProfileId, activeProfileId);
     } else {
-      window?.localStorage && window.localStorage.removeItem(STORAGE_KEYS.activeProfileId);
+      safeRemoveItem(STORAGE_KEYS.activeProfileId);
     }
   }, [activeProfileId]);
 

@@ -1,8 +1,8 @@
 import { EXAMPLE_TX_HASH } from './examples';
-import { safeGetItem, safeSetItem } from './browser-storage';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from './browser-storage';
 
-export const ONBOARDING_STORAGE_KEY = 'savitools_onboarding_progress';
-export const ONBOARDING_DISMISSED_KEY = 'savitools_onboarding_dismissed';
+export const ONBOARDING_STORAGE_KEY = BROWSER_STORAGE_KEYS.ONBOARDING;
+export const ONBOARDING_DISMISSED_KEY = BROWSER_STORAGE_KEYS.ONBOARDING_DISMISSED;
 
 export type OnboardingStepId = 'inspect' | 'sandbox' | 'simulate' | 'fluxa';
 
@@ -67,7 +67,6 @@ export function isAllComplete(progress: OnboardingProgress): boolean {
 }
 
 export function readProgress(): OnboardingProgress {
-  if (typeof window === 'undefined') return getDefaultProgress();
   const parsed = safeGetItem<unknown>(ONBOARDING_STORAGE_KEY, null);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return getDefaultProgress();
@@ -76,7 +75,6 @@ export function readProgress(): OnboardingProgress {
 }
 
 export function writeProgress(progress: OnboardingProgress): void {
-  if (typeof window === 'undefined') return;
   safeSetItem(ONBOARDING_STORAGE_KEY, progress);
 }
 
@@ -89,13 +87,13 @@ export function markStepComplete(stepId: OnboardingStepId): OnboardingProgress {
 }
 
 export function isDismissed(): boolean {
-  if (typeof window === 'undefined') return false;
   const val = safeGetItem<unknown>(ONBOARDING_DISMISSED_KEY, false);
   return val === true || val === 'true';
 }
 
 export function dismissOnboarding(): void {
-  if (typeof window === 'undefined') return;
-  safeSetItem(ONBOARDING_DISMISSED_KEY, 'true');
-  window.dispatchEvent(new CustomEvent('savitools-onboarding-update'));
+  const result = safeSetItem(ONBOARDING_DISMISSED_KEY, true);
+  if (result.success && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('savitools-onboarding-update'));
+  }
 }

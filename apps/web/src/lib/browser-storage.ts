@@ -11,10 +11,11 @@ export const BROWSER_STORAGE_KEYS = {
   RECENT_ITEMS: 'savitools_recent_items',
   USER_PREFERENCES: 'savitools_user_preferences',
   PROFILES: 'savitools:profiles',
-  ACTIVE_PROFILE_ID: 'savitools:active-profile-id',
+  ACTIVE_PROFILE_ID: 'savitools:activeProfile',
+  NETWORK: 'savitools:network',
   THEME: 'savitools:theme',
-  ONBOARDING: 'savitools:onboarding',
-  ONBOARDING_DISMISSED: 'savitools:onboarding:dismissed',
+  ONBOARDING: 'savitools_onboarding_progress',
+  ONBOARDING_DISMISSED: 'savitools_onboarding_dismissed',
   CONTRACTS_HISTORY: 'savitools:contracts:history',
   FEDERATION_COUNTERPARTIES: 'savitools:federation:counterparties',
   LEGACY_COMPOSER_WORKSPACES: 'composer-workspaces',
@@ -25,6 +26,11 @@ export type StorageKey = (typeof BROWSER_STORAGE_KEYS)[keyof typeof BROWSER_STOR
 export interface StorageWriteResult {
   success: boolean;
   quotaExceeded: boolean;
+  error?: unknown;
+}
+
+export interface StorageRemoveResult {
+  success: boolean;
   error?: unknown;
 }
 
@@ -78,6 +84,35 @@ export function isQuotaExceededError(error: unknown): boolean {
     err.number === -2147024882 ||
     (typeof err.message === 'string' && /quota/i.test(err.message)),
   );
+}
+
+export function safeGetRawItem(key: StorageKey): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function safeSetRawItem(key: StorageKey, value: string): StorageWriteResult {
+  if (typeof window === 'undefined') {
+    return { success: false, quotaExceeded: false };
+  }
+
+  try {
+    window.localStorage.setItem(key, value);
+    return { success: true, quotaExceeded: false };
+  } catch (error) {
+    return {
+      success: false,
+      quotaExceeded: isQuotaExceededError(error),
+      error,
+    };
+  }
 }
 
 /**
@@ -142,16 +177,16 @@ export function safeSetItem<T>(key: StorageKey, value: T): StorageWriteResult {
 /**
  * Safely removes a key from localStorage.
  */
-export function safeRemoveItem(key: StorageKey): void {
+export function safeRemoveItem(key: StorageKey): StorageRemoveResult {
   if (typeof window === 'undefined') {
-    return;
+    return { success: false };
   }
 
   try {
     window.localStorage.removeItem(key);
-  } catch (err) {
-    // Storage blocked or restricted
-    // Ignore removal errors (e.g. security restrictions)
+    return { success: true };
+  } catch (error) {
+    return { success: false, error };
   }
 }
 
@@ -170,7 +205,10 @@ export function getStorageUsageSummary(prefix = 'savitools'): StorageUsageSummar
 
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
-      if (key && (key.startsWith(prefix) || key.startsWith('composer-workspaces'))) {
+      if (
+        key &&
+        (key.startsWith(prefix) || key.startsWith(BROWSER_STORAGE_KEYS.LEGACY_COMPOSER_WORKSPACES))
+      ) {
         matchingKeys.push(key);
         const val = window.localStorage.getItem(key) ?? '';
         totalChars += key.length + val.length;

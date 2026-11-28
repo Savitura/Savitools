@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { BROWSER_STORAGE_KEYS, safeGetRawItem, safeSetRawItem } from './browser-storage';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -14,14 +15,14 @@ const ThemeContext = createContext<ThemeContextValue>({
   setMode: () => {},
 });
 
-const THEME_STORAGE_KEY = 'savitools:theme';
+const THEME_STORAGE_KEY = BROWSER_STORAGE_KEYS.THEME;
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>('system');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const stored = safeGetRawItem(THEME_STORAGE_KEY);
     if (stored === 'light' || stored === 'dark' || stored === 'system') {
       setMode(stored);
     }
@@ -38,16 +39,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     applyTheme();
     preference.addEventListener('change', applyTheme);
-    if (loaded) window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+    if (loaded) safeSetRawItem(THEME_STORAGE_KEY, mode);
 
     return () => preference.removeEventListener('change', applyTheme);
   }, [loaded, mode]);
 
-  return (
-    <ThemeContext.Provider value={{ mode, setMode }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ mode, setMode }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

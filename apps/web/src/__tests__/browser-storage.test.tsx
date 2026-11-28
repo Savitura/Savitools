@@ -4,6 +4,8 @@
   isQuotaExceededError,
   safeGetItem,
   safeSetItem,
+  safeGetRawItem,
+  safeSetRawItem,
   safeRemoveItem,
   getStorageUsageSummary,
   clearGuestStorage,
@@ -106,12 +108,34 @@ describe('browser-storage utility and retention behavior', () => {
     });
   });
 
+  describe('safeGetRawItem and safeSetRawItem', () => {
+    it('preserves raw string values without JSON quoting', () => {
+      const result = safeSetRawItem(BROWSER_STORAGE_KEYS.THEME, 'dark');
+
+      expect(result.success).toBe(true);
+      expect(window.localStorage.getItem(BROWSER_STORAGE_KEYS.THEME)).toBe('dark');
+      expect(safeGetRawItem(BROWSER_STORAGE_KEYS.THEME)).toBe('dark');
+    });
+
+    it('returns fallback-safe results when storage is unavailable', () => {
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        const err = new Error('Quota exceeded');
+        err.name = 'QuotaExceededError';
+        throw err;
+      });
+
+      const result = safeSetRawItem(BROWSER_STORAGE_KEYS.THEME, 'light');
+      expect(result.success).toBe(false);
+      expect(result.quotaExceeded).toBe(true);
+    });
+  });
+
   describe('safeRemoveItem', () => {
     it('removes the specified key from localStorage', () => {
       safeSetItem('savitools:remove-me', 'sample');
       expect(window.localStorage.getItem('savitools:remove-me')).not.toBeNull();
 
-      safeRemoveItem('savitools:remove-me');
+      expect(safeRemoveItem('savitools:remove-me').success).toBe(true);
       expect(window.localStorage.getItem('savitools:remove-me')).toBeNull();
     });
 
@@ -120,7 +144,7 @@ describe('browser-storage utility and retention behavior', () => {
         throw new Error('Removal blocked');
       });
 
-      expect(() => safeRemoveItem('savitools:any')).not.toThrow();
+      expect(safeRemoveItem('savitools:any').success).toBe(false);
     });
   });
 

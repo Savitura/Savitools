@@ -40,6 +40,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorState } from './state-display';
+import { BROWSER_STORAGE_KEYS, safeGetItem, safeSetItem } from '@/lib/browser-storage';
 
 type InputType = 'publicKey' | 'federation' | 'domain';
 
